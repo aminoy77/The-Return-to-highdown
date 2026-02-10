@@ -363,4 +363,5 @@ MONARCA_DRAGONES_COOLDOWN_ESPECIAL    = 5
 MONARCA_DRAGONES_HABILIDAD_ESPECIAL   = "invoca dragones"
 
 
+#Graphics_________________________________
 
