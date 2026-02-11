@@ -13,7 +13,7 @@ Opción 1: Ejecución rápida (recomendada)
 
 1. Descarga o clona este repositorio
 2. Coloca todos los archivos en la misma carpeta, incluyendo la carpeta images/
-3. Haz doble clic en jugar.bat (Windows) o jugar.sh (Linux/macOS)
+3. Haz doble clic en windows.bat (Windows) o mac-linux.sh (Linux/macOS)
    - La primera vez instalará pgzero automáticamente si no lo tienes
    - Después simplemente iniciará el proyecto
 
