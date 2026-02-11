@@ -6,8 +6,8 @@ HEIGHT = 600
 
 vida = 100
 
-# Diccionario con todos los sprites
-corazones = {
+# Diccionario con los actores (barras de vida)
+barras = {
     100: Actor("pixil-frame-0"),
      95: Actor("pixil-frame-1"),
      90: Actor("pixil-frame-2"),
@@ -27,49 +27,43 @@ corazones = {
      20: Actor("pixil-frame-16"),
      15: Actor("pixil-frame-17"),
      10: Actor("pixil-frame-18"),
-      5: Actor("pixil-frame-19"),      # versión normal (amarillo/naranja/etc)
+      5: Actor("pixil-frame-19"),     # normal (no rojo)
       0: Actor("pixil-frame-21"),
 }
 
-# El sprite especial rojo para cuando vida == 5
-corazon_rojo = Actor("pixil-frame-20")
+# Actor especial para vida = 5 (rojo)
+barra_roja = Actor("pixil-frame-20")
 
-# Posición central para TODOS
-POS_X = WIDTH // 2
-POS_Y = HEIGHT // 2
+# Posición: esquina superior izquierda + pequeño margen
+MARGEN_IZQ = 20
+MARGEN_SUP = 20
 
-for actor in corazones.values():
-    actor.pos = (POS_X, POS_Y)
-corazon_rojo.pos = (POS_X, POS_Y)
+for barra in barras.values():
+    barra.topleft = (MARGEN_IZQ, MARGEN_SUP)
+
+barra_roja.topleft = (MARGEN_IZQ, MARGEN_SUP)
 
 
 def draw():
-    screen.clear()                 # ¡Siempre limpiar primero!
-
+    screen.clear()
+    
+    # Elegimos qué barra mostrar
     if vida == 5:
-        corazon_rojo.draw()
+        barra_roja.draw()
     elif vida == 0:
-        corazones[0].draw()
+        barras[0].draw()
     else:
-        # Buscamos el valor más cercano por debajo o igual
-        valores = sorted([k for k in corazones.keys() if k != 5 and k != 0], reverse=True)
-        for v in valores:
-            if vida >= v:
-                corazones[v].draw()
+        # Buscamos la barra más cercana por debajo o igual (excepto 5 y 0)
+        valores = sorted([k for k in barras if k not in (0,5)], reverse=True)
+        for nivel in valores:
+            if vida >= nivel:
+                barras[nivel].draw()
                 break
         else:
-            # Por si vida < 5 pero > 0 (ej: 3,4,2,1)
-            corazones[0].draw()   # o puedes poner corazon_rojo si prefieres
+            # vida entre 1 y 4 → mostramos la de 0 (o podrías usar roja)
+            barras[0].draw()
 
-    # Texto para ver el valor exacto (muy útil)
-    color_texto = "red" if vida <= 10 else "white"
-    screen.draw.text(
-        f"VIDA: {vida}",
-        center=(WIDTH//2, 80),
-        fontsize=48,
-        color=color_texto,
-        shadow=(1,1),
-        scolor="black"
+    # Texto informativo (opcional, pero útil)
     )
 
 
@@ -78,7 +72,7 @@ def on_key_down(key):
     
     if key == keys.UP:
         vida += 5
-    elif key == keys.DOWN:
+    if key == keys.DOWN:
         vida -= 5
         
     vida = max(0, min(100, vida))
