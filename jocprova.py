@@ -63,15 +63,6 @@ def draw():
             # vida entre 1 y 4 → mostramos la de 0 (o podrías usar roja)
             barras[0].draw()
 
-    # Texto informativo (opcional, pero útil)
-    screen.draw.text(
-        f"VIDA: {vida}",
-        topleft=(MARGEN_IZQ, MARGEN_SUP + 40),
-        fontsize=32,
-        color="yellow" if vida > 20 else "red",
-        shadow=(1,1),
-        scolor="black"
-    )
 
 
 def on_key_down(key):
