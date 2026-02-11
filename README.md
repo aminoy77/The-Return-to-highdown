@@ -13,7 +13,7 @@ Opción 1: Ejecución rápida (recomendada)
 
 1. Descarga o clona este repositorio
 2. Coloca todos los archivos en la misma carpeta, incluyendo la carpeta images/
-3. Haz doble clic en windows.bat (Windows) o mac-linux.sh (Linux/macOS)
+3. Haz doble clic en jugar.bat (Windows) o jugar.sh (Linux/macOS)
    - La primera vez instalará pgzero automáticamente si no lo tienes
    - Después simplemente iniciará el proyecto
 
@@ -39,35 +39,23 @@ The-Legends-of-Highdown/
 ├── jugar.bat
 └── jugar.sh
 
-Licencia
+Licencia (versión personalizada – no es MIT)
 
-Este proyecto está bajo la licencia MIT.
+Copyright © 2025-2026 Marcel Verhoeven Corella, Daniel Serrano Saz, Arnau Moyano Forné
 
-Puedes usar, modificar, distribuir y vender este código siempre que incluyas la siguiente nota de copyright y licencia en todas las copias o partes sustanciales del software.
+Se concede permiso a cualquier persona para descargar, usar y modificar este software de forma **personal y no comercial**, siempre y cuando:
 
-Ver el archivo LICENSE para el texto completo.
+1. Se mantenga intacta esta nota de copyright y la lista completa de autores originales.
+2. Se indique claramente en cualquier versión modificada o publicación que el trabajo original fue creado por Marcel Verhoeven Corella, Daniel Serrano Saz y Arnau Moyano Forné.
+3. No se distribuya, comparta públicamente ni se publique ninguna copia o versión derivada sin permiso expreso y por escrito de los autores originales.
 
-MIT License
+Queda **expresamente prohibido**:
 
-Copyright (c) 2025-2026 Marcel Verhoeven Corella, Daniel Serrano Saz, Arnau Moyano Forné
+- Vender, ofrecer en venta, licenciar comercialmente o monetizar de cualquier forma este software o cualquier versión derivada.
+- Distribuir, subir a plataformas, compartir en internet o republicar el proyecto (ni en su forma original ni modificado) sin autorización previa de los autores.
+- Eliminar o modificar los créditos de los autores originales.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+EL SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA.
 
 Créditos
 
