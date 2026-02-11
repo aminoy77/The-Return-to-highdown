@@ -63,8 +63,6 @@ def draw():
             # vida entre 1 y 4 → mostramos la de 0 (o podrías usar roja)
             barras[0].draw()
 
-    # Texto informativo (opcional, pero útil)
-    )
 
 
 def on_key_down(key):
