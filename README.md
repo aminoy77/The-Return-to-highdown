@@ -69,9 +69,11 @@ Arnau Moyano Forné
 Lore  
 Xabier Barcina Rosa 
 Marcel verhoeven Corella 
-Dani Serrano Saz 
+Dani Serrano Saz
 
 Gráficos  
 Arnau Moyano Forné  
+
+Fin
 
 ¡Gracias por tu interés!
