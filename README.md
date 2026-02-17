@@ -67,9 +67,9 @@ Daniel Serrano Saz
 Arnau Moyano Forné  
 
 Lore  
-Xabier Barcina Rosa  
-Dani Serrano Saz
-Marcel Verhoeven Corella
+Xabier Barcina Rosa 
+Marcel verhoeven Corella 
+Dani Serrano Saz 
 
 Gráficos  
 Arnau Moyano Forné  
