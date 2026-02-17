@@ -69,7 +69,6 @@ Arnau Moyano Forné
 Lore  
 Xabier Barcina Rosa  
 Dani Serrano Saz
-
 Marcel Verhoeven Corella
 
 Gráficos  
