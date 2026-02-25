@@ -1,6 +1,5 @@
 import random
 
-#Constatnts
 
 #Personaje__________________________________________________________________________________________________________________________________________________
 
@@ -362,9 +361,7 @@ MONARCA_DRAGONES_DANIO_ESPECIAL       = 150  # ejemplo
 MONARCA_DRAGONES_COOLDOWN_ESPECIAL    = 5
 MONARCA_DRAGONES_HABILIDAD_ESPECIAL   = "invoca dragones"
 
-
 #Graphics_________________________________
 
 WIDTH = 800
 HEIGHT = 600
-
