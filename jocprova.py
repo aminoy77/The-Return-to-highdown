@@ -28,7 +28,7 @@ barras = {
      15: Actor("pixil-frame-17"),
      10: Actor("pixil-frame-18"),
       5: Actor("pixil-frame-19"),     # normal (no rojo)
-      0: Actor("pixil-frame-21"),
+      0: Actor("pixil-frame-20"),
 }
 
 # Actor especial para vida = 5 (rojo)
@@ -77,3 +77,10 @@ def on_key_down(key):
 
 
 pgzrun.go()
+
+def rest (x,y):
+    t=(y/x)*100
+    resta=(t/100)*20
+    fin=round(resta)
+
+   
