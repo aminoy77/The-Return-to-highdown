@@ -1,12 +1,8 @@
 import random
-<<<<<<< HEAD
 from copy import deepcopy
-=======
-import math 
-
 
 # ==============================================================================
-# CLASES DE HÉROES (corregidas: ataques_turno como lista [min, max] donde aplica)
+# CLASES DE HÉROES
 # ==============================================================================
 CLASES = {
     "guerrero": {
@@ -37,7 +33,7 @@ CLASES = {
         "mana_max": 40,
         "mana_turno": 15,
         "danio_especial": 10,
-        "ataques_turno": [1, 4],           # aleatorio entre 1 y 4
+        "ataques_turno": [1, 4],
         "costo_especial": 40,
         "armas": ["Arco", "Ballesta"],
         "habilidad": "flecha_ignea",
@@ -63,7 +59,7 @@ CLASES = {
         "mana_max": 80,
         "mana_turno": 20,
         "danio_especial": 60,
-        "ataques_turno": [1, 5],           # aleatorio entre 1 y 5
+        "ataques_turno": [1, 5],
         "costo_especial": 60,
         "armas": ["Vara", "Varita"],
         "habilidad": "maldicion_tiempo",
@@ -110,7 +106,7 @@ CLASES = {
         "mana_max": 20,
         "mana_turno": 10,
         "danio_especial": 60,
-        "ataques_turno": [1, 3],           # aleatorio entre 1 y 3
+        "ataques_turno": [1, 3],
         "costo_especial": 20,
         "armas": ["Daga", "Espada Corta"],
         "habilidad": "muerte_garantizada"
@@ -129,7 +125,7 @@ CLASES = {
 }
 
 # ==============================================================================
-# ENEMIGOS (completado el "oso" y añadido cierre)
+# ENEMIGOS
 # ==============================================================================
 ENEMIGOS = {
     "bandido": {
@@ -207,22 +203,23 @@ ENEMIGOS = {
 }
 
 # ==============================================================================
-# FUNCIONES DEL JUEGO
+# FUNCIONES
 # ==============================================================================
 
-def crear_personaje(nombre_clase):
+def crear_personaje(nombre_personaje, nombre_clase):
     if nombre_clase not in CLASES:
         raise ValueError(f"Clase no existe: {nombre_clase}")
 
     base = deepcopy(CLASES[nombre_clase])
     
     personaje = {
+        "nombre": nombre_personaje.strip() or "Héroe sin nombre",
         "nombre_clase": nombre_clase,
         "vida_actual": base["vida_max"],
         "mana_actual": base["mana_max"],
         "vida_max": base["vida_max"],
         "mana_max": base["mana_max"],
-        **base,  # copia el resto de stats
+        **base,
     }
     
     return personaje
@@ -236,10 +233,7 @@ def mostrar_clases():
     for i, clase in enumerate(CLASES.keys(), 1):
         stats = CLASES[clase]
         ataques = stats["ataques_turno"]
-        if isinstance(ataques, list):
-            ataques_str = f"{ataques[0]}-{ataques[1]} (aleatorio)"
-        else:
-            ataques_str = str(ataques)
+        ataques_str = f"{ataques[0]}-{ataques[1]} (aleatorio)" if isinstance(ataques, list) else str(ataques)
             
         print(f"{i:2d}. {clase.capitalize():<12} "
               f" Vida: {stats['vida_max']:>3}   "
@@ -255,40 +249,44 @@ def elegir_clase():
         mostrar_clases()
         eleccion = input("\nElige una clase (nombre o número): ").strip().lower()
         
-        # Si es número
         if eleccion.isdigit():
             num = int(eleccion)
             if 1 <= num <= len(CLASES):
                 return list(CLASES.keys())[num - 1]
-            print("Número inválido. Intenta otra vez.")
+            print("Número fuera de rango.")
             continue
         
-        # Si es nombre
         if eleccion in CLASES:
             return eleccion
         
-        print("Clase no encontrada. Escribe el nombre o el número.")
+        print("Clase no encontrada. Intenta de nuevo.")
 
 
 def main():
     print("¡Bienvenido al Juego de Combate por Turnos!\n")
     
-    clase_elegida = elegir_clase()
-    jugador = crear_personaje(clase_elegida)
+    nombre = input("¿Cómo te llamas, valiente aventurero? ").strip()
+    if not nombre:
+        nombre = "Aventurero Anónimo"
     
-    print("\n" + "-"*40)
-    print(" TU PERSONAJE HA SIDO CREADO ")
-    print("-"*40)
+    print(f"\nEncantado, {nombre}.")
+    
+    clase_elegida = elegir_clase()
+    
+    jugador = crear_personaje(nombre, clase_elegida)
+    
+    print("\n" + "═"*50)
+    print(" ¡PERSONAJE CREADO! ")
+    print("═"*50)
+    print(f"Nombre:      {jugador['nombre']}")
     print(f"Clase:       {jugador['nombre_clase'].capitalize()}")
     print(f"Vida:        {jugador['vida_actual']}/{jugador['vida_max']}")
     print(f"Mana:        {jugador['mana_actual']}/{jugador['mana_max']}")
     print(f"Ataques/turno: {jugador['ataques_turno']}")
     print(f"Daño base:   {jugador['danio_base']}")
-    print(f"Daño especial: {jugador.get('danio_especial', '—')}")
-    print("-"*40)
+    print("═"*50)
     
-    # Aquí iría el resto del juego: elegir enemigo, combate, etc.
-    print("\n(El combate aún no está implementado. ¡Podemos seguir añadiéndolo!)")
+    print("\n(El sistema/lore de combate todavía no está implementado)")
 
 
 if __name__ == "__main__":
