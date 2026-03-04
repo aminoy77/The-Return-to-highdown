@@ -374,6 +374,200 @@ ENEMIGOS = {
 }
 
 # ==============================================================================
+# FUNCIONES DE COMBATE
+# ==============================================================================
+
+def ataques_por_turno(valor):
+    """Retorna el número de ataques por turno (soporta rango o valor fijo)."""
+    if isinstance(valor, list):
+        return random.randint(valor[0], valor[1])
+    return valor
+
+
+def crear_enemigo(nombre_enemigo):
+    """Crea una instancia independiente de un enemigo."""
+    if nombre_enemigo not in ENEMIGOS:
+        raise ValueError(f"Enemigo no existe: {nombre_enemigo}")
+    
+    base = deepcopy(ENEMIGOS[nombre_enemigo])
+    
+    enemigo = {
+        "nombre": nombre_enemigo.capitalize(),
+        "vida_actual": base["vidaMax"],
+        **base
+    }
+    
+    return enemigo
+
+
+def atacar(atacante, defensor, danio):
+    """Aplica daño al defensor."""
+    # Detectar si es jugador o enemigo por la clave disponible
+    if "vidaActual" in defensor:
+        defensor["vidaActual"] -= danio
+        if defensor["vidaActual"] < 0:
+            defensor["vidaActual"] = 0
+        print(f"  {atacante.get('nombre', atacante.get('nombreClase', 'Unknown'))} ataca por {danio} de daño!")
+        print(f"    {defensor.get('nombre', defensor.get('nombreClase', 'Unknown'))} tiene {defensor['vidaActual']}/{defensor.get('vidaMax', defensor.get('vidaActual'))} HP restantes.")
+    else:
+        # Es enemigo
+        defensor["vida_actual"] -= danio
+        if defensor["vida_actual"] < 0:
+            defensor["vida_actual"] = 0
+        print(f"  {atacante.get('nombre', atacante.get('nombreClase', 'Unknown'))} ataca por {danio} de daño!")
+        print(f"    {defensor.get('nombre', defensor.get('nombreClase', 'Unknown'))} tiene {defensor['vida_actual']}/{defensor.get('vidaMax', defensor.get('vida_actual'))} HP restantes.")
+
+
+def especial(jugador, enemigo):
+    """Ejecuta el ataque especial del jugador."""
+    clase = jugador["nombreClase"]
+    danio = jugador.get("danioEspecial", 0)
+    costo = jugador.get("costoEspecial", 0)
+    
+    if jugador["manaActual"] < costo:
+        print(f"  No tienes suficiente mana para el ataque especial (necesitas {costo}).")
+        return False
+    
+    # Gastar mana
+    jugador["manaActual"] -= costo
+    
+    # Aplicar efecto especial segun clase
+    if clase == "arquero":
+        print(f"  Flecha ignea! Causas {danio} de dano y efecto de quemadura.")
+        enemigo["vida_actual"] -= danio
+        if "efecto" not in enemigo:
+            enemigo["efecto"] = {"tipo": "quemadura", "danio": jugador.get("danioEfecto", 10), "turnos": jugador.get("duracionEfecto", 2)}
+    elif clase == "curandero":
+        curacion = jugador.get("curacionEspecial", 20)
+        jugador["vidaActual"] = min(jugador["vidaActual"] + curacion, jugador["vidaMax"])
+        print(f"  Sanacion! Te curas {curacion} HP. Ahora tienes {jugador['vidaActual']}/{jugador['vidaMax']} HP.")
+        return True
+    elif clase == "nigromante":
+        print(f"  Maldicion del tiempo! Causas {danio} de dano.")
+        enemigo["vida_actual"] -= danio
+    elif clase == "hechicero":
+        print(f"  Invocar esqueleto! Causas {danio} de dano.")
+        enemigo["vida_actual"] -= danio
+    elif clase == "caballero":
+        print(f"  Embestida! Causas {danio} de dano.")
+        enemigo["vida_actual"] -= danio
+    elif clase == "cazador":
+        print(f"  Inmovilizar! Causas {danio} de dano y efecto de represalia.")
+        enemigo["vida_actual"] -= danio
+    elif clase == "asesino":
+        print(f"  Muerte garantizada! Causas {danio} de dano critico!")
+        enemigo["vida_actual"] -= danio
+    elif clase == "barbaro":
+        print(f"  A bocajarro! Causas {danio} de dano brutal!")
+        enemigo["vida_actual"] -= danio
+    elif clase == "guerrero":
+        print(f"  Golpe de tanque! Causas {danio} de dano.")
+        enemigo["vida_actual"] -= danio
+    elif clase == "mago":
+        print(f"  Magia antigua! Causas {danio} de dano arcano.")
+        enemigo["vida_actual"] -= danio
+    else:
+        print(f"  Ataque especial! Causas {danio} de dano.")
+        enemigo["vida_actual"] -= danio
+    
+    if enemigo["vida_actual"] < 0:
+        enemigo["vida_actual"] = 0
+    
+    print(f"    {enemigo['nombre']} tiene {enemigo['vida_actual']}/{enemigo['vidaMax']} HP restantes.")
+    return True
+
+
+def turno_enemigo(enemigo, jugador):
+    """El enemigo ataca al jugador."""
+    num_ataques = ataques_por_turno(enemigo.get("ataquesTurno", 1))
+    print(f"\n  Turno de {enemigo['nombre']} ({num_ataques} ataque(s)):")
+    
+    for i in range(num_ataques):
+        if jugador["vidaActual"] <= 0:
+            break
+        danio = enemigo.get("danioBase", 10)
+        danio = int(danio * random.uniform(0.8, 1.2))
+        atacar(enemigo, jugador, danio)
+    
+    if "efecto" in enemigo:
+        efecto = enemigo["efecto"]
+        print(f"  {enemigo['nombre']} sufre {efecto['danio']} de dano por {efecto['tipo']}!")
+        jugador["vidaActual"] -= efecto["danio"]
+        efecto["turnos"] -= 1
+        if efecto["turnos"] <= 0:
+            del enemigo["efecto"]
+
+
+def mostrar_menu_combate():
+    """Muestra el menu de opciones de combate."""
+    print("\n" + "="*40)
+    print("           MENU DE COMBATE           ")
+    print("="*40)
+    print("1. ATACAR")
+    print("2. ESPECIAL")
+    print("3. PASAR / HUIR")
+    print("="*40)
+
+
+def combate(jugador, nombre_enemigo):
+    """Sistema de combate por turnos."""
+    enemigo = crear_enemigo(nombre_enemigo)
+    
+    print("\n" + "="*20)
+    print(f"APARECE UN {enemigo['nombre'].upper()}!")
+    print(f"   Vida: {enemigo['vida_actual']}/{enemigo['vidaMax']}")
+    print(f"   Dano: {enemigo['danioBase']}")
+    print(f"   Ataques/turno: {enemigo.get('ataquesTurno', 1)}")
+    print("="*20)
+    
+    turno = 1
+    
+    while jugador["vidaActual"] > 0 and enemigo["vida_actual"] > 0:
+        print(f"\n--- TURNO {turno} ---")
+        print(f"  {jugador['nombre']} (Tu): {jugador['vidaActual']}/{jugador['vidaMax']} HP | {jugador['manaActual']}/{jugador['manaMax']} Mana")
+        print(f"  {enemigo['nombre']}: {enemigo['vida_actual']}/{enemigo['vidaMax']} HP")
+        
+        jugador["manaActual"] = min(jugador["manaActual"] + jugador.get("manaTurno", 0), jugador["manaMax"])
+        
+        mostrar_menu_combate()
+        accion = input("\nElige tu accion (1-3): ").strip()
+        
+        if accion == "1":
+            num_ataques = ataques_por_turno(jugador.get("ataquesTurno", 1))
+            print(f"\n  Atacas {num_ataques} vez(es)!")
+            for i in range(num_ataques):
+                if enemigo["vida_actual"] <= 0:
+                    break
+                danio = jugador.get("danioBase", 10)
+                danio = int(danio * random.uniform(0.8, 1.2))
+                atacar(jugador, enemigo, danio)
+        
+        elif accion == "2":
+            especial(jugador, enemigo)
+        
+        elif accion == "3":
+            print("\n  Huye del combate!")
+            return False
+        
+        else:
+            print("\n  Accion invalida. Pasas el turno.")
+        
+        if enemigo["vida_actual"] > 0:
+            turno_enemigo(enemigo, jugador)
+        
+        turno += 1
+    
+    print("\n" + "="*40)
+    if jugador["vidaActual"] > 0:
+        print(f"  VICTORIA! Has derrotado a {enemigo['nombre']}!")
+        print(f"  Has ganado experiencia y posibles tesoros.")
+        return True
+    else:
+        print("  DERROTA! Has sido derrotado...")
+        return False
+
+
+# ==============================================================================
 # FUNCIONES
 # ==============================================================================
 
@@ -384,7 +578,7 @@ def crearPersonaje(nombrePersonaje, nombreClase):
     base = deepcopy(CLASES[nombreClase])
     
     personaje = {
-        "nombre": nombrePersonaje.strip() or "Héroe sin nombre",
+        "nombre": nombrePersonaje.strip() or "Heroe sin nombre",
         "nombreClase": nombreClase,
         "vidaActual": base["vidaMax"],
         "manaActual": base["manaMax"],
@@ -408,7 +602,7 @@ def mostrarClases():
             
         print(f"{i:2d}. {clase.capitalize():<12} "
               f" Vida: {stats['vidaMax']:>3}   "
-              f" Daño: {stats['danioBase']:>3}   "
+              f" Dano: {stats['danioBase']:>3}   "
               f" Ataques: {ataquesStr:<14} "
               f" Mana: {stats['manaMax']:>3}")
     
@@ -418,13 +612,13 @@ def mostrarClases():
 def elegirClase():
     while True:
         mostrarClases()
-        eleccion = input("\nElige una clase (nombre o número): ").strip().lower()
+        eleccion = input("\nElige una clase (nombre o numero): ").strip().lower()
         
         if eleccion.isdigit():
             num = int(eleccion)
             if 1 <= num <= len(CLASES):
                 return list(CLASES.keys())[num - 1]
-            print("Número fuera de rango.")
+            print("Numero fuera de rango.")
             continue
         
         if eleccion in CLASES:
@@ -434,11 +628,11 @@ def elegirClase():
 
 
 def main():
-    print("¡Bienvenido al Juego de Combate por Turnos!\n")
+    print("Bienvenido al Juego de Combate por Turnos!\n")
     
-    nombre = input("¿Cómo te llamas, valiente aventurero? ").strip()
+    nombre = input("Como te llamas, valiente aventurero? ").strip()
     if not nombre:
-        nombre = "Aventurero Anónimo"
+        nombre = "Aventurero Annimo"
     
     print(f"\nEncantado, {nombre}.")
     
@@ -446,18 +640,29 @@ def main():
     
     jugador = crearPersonaje(nombre, claseElegida)
     
-    print("\n" + "═"*50)
-    print(" ¡PERSONAJE CREADO! ")
-    print("═"*50)
+    print("\n" + "="*50)
+    print(" PERSONAJE CREADO ")
+    print("="*50)
     print(f"Nombre:      {jugador['nombre']}")
     print(f"Clase:       {jugador['nombreClase'].capitalize()}")
     print(f"Vida:        {jugador['vidaActual']}/{jugador['vidaMax']}")
     print(f"Mana:        {jugador['manaActual']}/{jugador['manaMax']}")
     print(f"Ataques/turno: {jugador['ataquesTurno']}")
-    print(f"Daño base:   {jugador['danioBase']}")
-    print("═"*50)
+    print(f"Dano base:   {jugador['danioBase']}")
+    print("="*50)
     
-    print("\n(El sistema/lore de combate todavía no está implementado)")
+    # Combate automatico al crear el personaje
+    print("\n  Te dispones a salir al mundo... y un enemigo aparece!")
+    input("Presiona Enter para continuar...")
+    
+    # Elegir un enemigo aleatorio (solo tier Base)
+    enemigos_base = [k for k, v in ENEMIGOS.items() if v.get("tier") == "Base"]
+    enemigo_aleatorio = random.choice(enemigos_base)
+    
+    resultado = combate(jugador, enemigo_aleatorio)
+    
+    if resultado and jugador["vidaActual"] > 0:
+        print("\n  Continuara...")
 
 
 if __name__ == "__main__":
