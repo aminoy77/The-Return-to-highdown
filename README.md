@@ -27,18 +27,6 @@ python3 -m pgzero vida.py
 
 Nota: asegúrate de ejecutar los comandos desde la carpeta del proyecto.
 
-Estructura del proyecto
-
-The-Legends-of-Highdown/
-├── vida.py
-├── images/
-│   ├── pixil-frame-0.png
-│   ├── pixil-frame-1.png
-│   ...
-│   └── pixil-frame-21.png
-├── jugar.bat
-└── jugar.sh
-
 Licencia (versión personalizada – no es MIT)
 
 Copyright © 2025-2026 Marcel Verhoeven Corella, Daniel Serrano Saz, Arnau Moyano Forné
