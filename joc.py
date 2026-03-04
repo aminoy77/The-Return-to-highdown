@@ -6,119 +6,119 @@ from copy import deepcopy
 # ==============================================================================
 CLASES = {
     "guerrero": {
-        "vida_max": 90,
-        "danio_base": 40,
-        "mana_max": 30,
-        "mana_turno": 10,
-        "danio_especial": 70,
-        "ataques_turno": 1,
-        "costo_especial": 30,
+        "vidaMax": 90,
+        "danioBase": 40,
+        "manaMax": 30,
+        "manaTurno": 10,
+        "danioEspecial": 70,
+        "ataquesTurno": 1,
+        "costoEspecial": 30,
         "armas": ["Espada", "Escudo", "Hacha"],
         "habilidad": "tanque_10"
     },
     "mago": {
-        "vida_max": 50,
-        "danio_base": 30,
-        "mana_max": 70,
-        "mana_turno": 20,
-        "danio_especial": 60,
-        "ataques_turno": 1,
-        "costo_especial": 60,
+        "vidaMax": 50,
+        "danioBase": 30,
+        "manaMax": 70,
+        "manaTurno": 20,
+        "danioEspecial": 60,
+        "ataquesTurno": 1,
+        "costoEspecial": 60,
         "armas": ["Vara"],
         "habilidad": "magia_antigua"
     },
     "arquero": {
-        "vida_max": 40,
-        "danio_base": 10,
-        "mana_max": 40,
-        "mana_turno": 15,
-        "danio_especial": 10,
-        "ataques_turno": [1, 4],
-        "costo_especial": 40,
+        "vidaMax": 40,
+        "danioBase": 10,
+        "manaMax": 40,
+        "manaTurno": 15,
+        "danioEspecial": 10,
+        "ataquesTurno": [1, 4],
+        "costoEspecial": 40,
         "armas": ["Arco", "Ballesta"],
         "habilidad": "flecha_ignea",
-        "efecto_especial": "quemadura/veneno",
-        "danio_efecto": 10,
-        "duracion_efecto": 2
+        "efectoEspecial": "quemadura/veneno",
+        "danioEfecto": 10,
+        "duracionEfecto": 2
     },
     "curandero": {
-        "vida_max": 50,
-        "danio_base": 20,
-        "mana_max": 50,
-        "mana_turno": 20,
-        "danio_especial": 20,
-        "ataques_turno": 1,
-        "costo_especial": 30,
+        "vidaMax": 50,
+        "danioBase": 20,
+        "manaMax": 50,
+        "manaTurno": 20,
+        "danioEspecial": 20,
+        "ataquesTurno": 1,
+        "costoEspecial": 30,
         "armas": ["Espada Corta"],
         "habilidad": "absorcion",
-        "curacion_especial": 20
+        "curacionEspecial": 20
     },
     "nigromante": {
-        "vida_max": 50,
-        "danio_base": 10,
-        "mana_max": 80,
-        "mana_turno": 20,
-        "danio_especial": 60,
-        "ataques_turno": [1, 5],
-        "costo_especial": 60,
+        "vidaMax": 50,
+        "danioBase": 10,
+        "manaMax": 80,
+        "manaTurno": 20,
+        "danioEspecial": 60,
+        "ataquesTurno": [1, 5],
+        "costoEspecial": 60,
         "armas": ["Vara", "Varita"],
         "habilidad": "maldicion_tiempo",
-        "max_eskeletos": 5
+        "maxEskeletos": 5
     },
     "hechicero": {
-        "vida_max": 50,
-        "danio_base": 30,
-        "mana_max": 70,
-        "mana_turno": 30,
-        "danio_especial": 70,
-        "ataques_turno": 1,
-        "costo_especial": 70,
+        "vidaMax": 50,
+        "danioBase": 30,
+        "manaMax": 70,
+        "manaTurno": 30,
+        "danioEspecial": 70,
+        "ataquesTurno": 1,
+        "costoEspecial": 70,
         "armas": ["Grimorio"],
         "habilidad": "invocar_esqueleto"
     },
     "caballero": {
-        "vida_max": 70,
-        "danio_base": 50,
-        "mana_max": 40,
-        "mana_turno": 10,
-        "danio_especial": 60,
-        "ataques_turno": 1,
-        "costo_especial": 40,
+        "vidaMax": 70,
+        "danioBase": 50,
+        "manaMax": 40,
+        "manaTurno": 10,
+        "danioEspecial": 60,
+        "ataquesTurno": 1,
+        "costoEspecial": 40,
         "armas": ["Espada", "Lanza"],
         "habilidad": "embestida_copia"
     },
     "cazador": {
-        "vida_max": 60,
-        "danio_base": 50,
-        "mana_max": 30,
-        "mana_turno": 10,
-        "danio_especial": 30,
-        "ataques_turno": 1,
-        "costo_especial": 30,
+        "vidaMax": 60,
+        "danioBase": 50,
+        "manaMax": 30,
+        "manaTurno": 10,
+        "danioEspecial": 30,
+        "ataquesTurno": 1,
+        "costoEspecial": 30,
         "armas": ["Escopeta"],
         "habilidad": "inmovilizar",
-        "efecto_especial": "represalia",
-        "duracion_efecto": 1
+        "efectoEspecial": "represalia",
+        "duracionEfecto": 1
     },
     "asesino": {
-        "vida_max": 50,
-        "danio_base": 20,
-        "mana_max": 20,
-        "mana_turno": 10,
-        "danio_especial": 60,
-        "ataques_turno": [1, 3],
-        "costo_especial": 20,
+        "vidaMax": 50,
+        "danioBase": 20,
+        "manaMax": 20,
+        "manaTurno": 10,
+        "danioEspecial": 60,
+        "ataquesTurno": [1, 3],
+        "costoEspecial": 20,
         "armas": ["Daga", "Espada Corta"],
         "habilidad": "muerte_garantizada"
     },
     "barbaro": {
-        "vida_max": 60,
-        "danio_base": 50,
-        "mana_max": 30,
-        "mana_turno": 5,
-        "danio_especial": 70,
-        "ataques_turno": 1,
-        "costo_especial": 30,
+        "vidaMax": 60,
+        "danioBase": 50,
+        "manaMax": 30,
+        "manaTurno": 5,
+        "danioEspecial": 70,
+        "ataquesTurno": 1,
+        "costoEspecial": 30,
         "armas": ["Espada", "Escudo", "Hacha", "Maza"],
         "habilidad": "abocajarro"
     }
@@ -129,76 +129,247 @@ CLASES = {
 # ==============================================================================
 ENEMIGOS = {
     "bandido": {
-        "vida_max": 60,
-        "danio_base": 20,
+        "vidaMax": 60,
+        "danioBase": 20,
         "tier": "Base",
-        "ataques_turno": 1,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "slime": {
-        "vida_max": 90,
-        "danio_base": 5,
+        "vidaMax": 90,
+        "danioBase": 5,
         "tier": "Base",
-        "ataques_turno": 2,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 2,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "duende": {
-        "vida_max": 50,
-        "danio_base": 15,
+        "vidaMax": 50,
+        "danioBase": 15,
         "tier": "Base",
-        "ataques_turno": 2,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 2,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "esqueleto": {
-        "vida_max": 70,
-        "danio_base": 25,
+        "vidaMax": 70,
+        "danioBase": 25,
         "tier": "Base",
-        "ataques_turno": 1,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "zombie": {
-        "vida_max": 80,
-        "danio_base": 10,
+        "vidaMax": 80,
+        "danioBase": 10,
         "tier": "Base",
-        "ataques_turno": 1,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "orco": {
-        "vida_max": 70,
-        "danio_base": 30,
+        "vidaMax": 70,
+        "danioBase": 30,
         "tier": "Base",
-        "ataques_turno": 1,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "lobo": {
-        "vida_max": 60,
-        "danio_base": 15,
+        "vidaMax": 60,
+        "danioBase": 15,
         "tier": "Base",
-        "ataques_turno": [1, 2],
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": [1, 2],
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     },
     "oso": {
-        "vida_max": 75,
-        "danio_base": 35,
+        "vidaMax": 75,
+        "danioBase": 35,
         "tier": "Base",
-        "ataques_turno": 1,
-        "danio_especial": 0,
-        "cooldown_especial": 0,
-        "habilidad_especial": None
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "ogro": {
+        "vidaMax": 90,
+        "danioBase": 30,
+        "tier": "Especial",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "troll": {
+        "vidaMax": 100,
+        "danioBase": 35,
+        "tier": "Especial",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "gigante": {
+        "vidaMax": 110,
+        "danioBase": 45,
+        "tier": "Especial",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "ciclope": {
+        "vidaMax": 80,
+        "danioBase": 40,
+        "tier": "Especial",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "golem": {
+        "vidaMax": 180,
+        "danioBase": 50,
+        "tier": "Superior",
+        "ataquesTurno": 1,
+        "danioEspecial": 10,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "diamante_brillante"
+    },
+    "hombreLobo": {
+        "vidaMax": 90,
+        "danioBase": 30,
+        "tier": "Especial",
+        "ataquesTurno": [1, 3],
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "vampiro": {
+        "vidaMax": 125,
+        "danioBase": 20,
+        "tier": "Superior",
+        "ataquesTurno": [1, 2],
+        "danioEspecial": 60,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "sanguivampirismo"
+    },
+    "altoOrco": {
+        "vidaMax": 150,
+        "danioBase": 50,
+        "tier": "Superior",
+        "ataquesTurno": 1,
+        "danioEspecial": 70,
+        "cooldownEspecial": 4,
+        "habilidadEspecial": "golpe_devastador"
+    },
+    "quimera": {
+        "vidaMax": 80,
+        "danioBase": 20,
+        "tier": "Especial",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "elfoOscuro": {
+        "vidaMax": 150,
+        "danioBase": 60,
+        "tier": "Superior",
+        "ataquesTurno": 1,
+        "danioEspecial": 90,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "paralisis_golpe"
+    },
+    "demonioInferior": {
+        "vidaMax": 90,
+        "danioBase": 20,
+        "tier": "Especial",
+        "ataquesTurno": [1, 2],
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
+    },
+    "demonioSuperior": {
+        "vidaMax": 150,
+        "danioBase": 60,
+        "tier": "Superior",
+        "ataquesTurno": 1,
+        "danioEspecial": 60,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "absorcion_mana"
+    },
+    "reyDemonio": {
+        "vidaMax": 250,
+        "danioBase": 70,
+        "tier": "Boss(1)",
+        "ataquesTurno": 1,
+        "danioEspecial": 100,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "invoca_demonios"
+    },
+    "leviatan": {
+        "vidaMax": 250,
+        "danioBase": 80,
+        "tier": "Élite",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "grito_ensordecedor"
+    },
+    "reyEsqueleto": {
+        "vidaMax": 230,
+        "danioBase": 80,
+        "tier": "Élite",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 2,
+        "habilidadEspecial": "invoca_esqueletos"
+    },
+    "kraken": {
+        "vidaMax": 400,
+        "danioBase": 70,
+        "tier": "Boss(2)",
+        "ataquesTurno": 1,
+        "danioEspecial": 100,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "tentaclazo"
+    },
+    "dragon": {
+        "vidaMax": 250,
+        "danioBase": 80,
+        "tier": "Élite",
+        "ataquesTurno": 1,
+        "danioEspecial": 60,
+        "cooldownEspecial": 3,
+        "habilidadEspecial": "quemadura"
+    },
+    "alpha": {
+        "vidaMax": 500,
+        "danioBase": 90,
+        "tier": "(Final)Boss",
+        "ataquesTurno": 1,
+        "danioEspecial": 150,
+        "cooldownEspecial": 4,
+        "habilidadEspecial": "invoca_dragones"
+    },
+    "tiburon": {
+        "vidaMax": 80,
+        "danioBase": 30,
+        "tier": "Especial",
+        "ataquesTurno": 1,
+        "danioEspecial": 0,
+        "cooldownEspecial": 0,
+        "habilidadEspecial": None
     }
 }
 
@@ -206,47 +377,47 @@ ENEMIGOS = {
 # FUNCIONES
 # ==============================================================================
 
-def crear_personaje(nombre_personaje, nombre_clase):
-    if nombre_clase not in CLASES:
-        raise ValueError(f"Clase no existe: {nombre_clase}")
+def crearPersonaje(nombrePersonaje, nombreClase):
+    if nombreClase not in CLASES:
+        raise ValueError(f"Clase no existe: {nombreClase}")
 
-    base = deepcopy(CLASES[nombre_clase])
+    base = deepcopy(CLASES[nombreClase])
     
     personaje = {
-        "nombre": nombre_personaje.strip() or "Héroe sin nombre",
-        "nombre_clase": nombre_clase,
-        "vida_actual": base["vida_max"],
-        "mana_actual": base["mana_max"],
-        "vida_max": base["vida_max"],
-        "mana_max": base["mana_max"],
+        "nombre": nombrePersonaje.strip() or "Héroe sin nombre",
+        "nombreClase": nombreClase,
+        "vidaActual": base["vidaMax"],
+        "manaActual": base["manaMax"],
+        "vidaMax": base["vidaMax"],
+        "manaMax": base["manaMax"],
         **base,
     }
     
     return personaje
 
 
-def mostrar_clases():
+def mostrarClases():
     print("\n" + "="*60)
     print("               CLASES DISPONIBLES                ")
     print("="*60)
     
     for i, clase in enumerate(CLASES.keys(), 1):
         stats = CLASES[clase]
-        ataques = stats["ataques_turno"]
-        ataques_str = f"{ataques[0]}-{ataques[1]} (aleatorio)" if isinstance(ataques, list) else str(ataques)
+        ataques = stats["ataquesTurno"]
+        ataquesStr = f"{ataques[0]}-{ataques[1]} (aleatorio)" if isinstance(ataques, list) else str(ataques)
             
         print(f"{i:2d}. {clase.capitalize():<12} "
-              f" Vida: {stats['vida_max']:>3}   "
-              f" Daño: {stats['danio_base']:>3}   "
-              f" Ataques: {ataques_str:<14} "
-              f" Mana: {stats['mana_max']:>3}")
+              f" Vida: {stats['vidaMax']:>3}   "
+              f" Daño: {stats['danioBase']:>3}   "
+              f" Ataques: {ataquesStr:<14} "
+              f" Mana: {stats['manaMax']:>3}")
     
     print("="*60)
 
 
-def elegir_clase():
+def elegirClase():
     while True:
-        mostrar_clases()
+        mostrarClases()
         eleccion = input("\nElige una clase (nombre o número): ").strip().lower()
         
         if eleccion.isdigit():
@@ -271,19 +442,19 @@ def main():
     
     print(f"\nEncantado, {nombre}.")
     
-    clase_elegida = elegir_clase()
+    claseElegida = elegirClase()
     
-    jugador = crear_personaje(nombre, clase_elegida)
+    jugador = crearPersonaje(nombre, claseElegida)
     
     print("\n" + "═"*50)
     print(" ¡PERSONAJE CREADO! ")
     print("═"*50)
     print(f"Nombre:      {jugador['nombre']}")
-    print(f"Clase:       {jugador['nombre_clase'].capitalize()}")
-    print(f"Vida:        {jugador['vida_actual']}/{jugador['vida_max']}")
-    print(f"Mana:        {jugador['mana_actual']}/{jugador['mana_max']}")
-    print(f"Ataques/turno: {jugador['ataques_turno']}")
-    print(f"Daño base:   {jugador['danio_base']}")
+    print(f"Clase:       {jugador['nombreClase'].capitalize()}")
+    print(f"Vida:        {jugador['vidaActual']}/{jugador['vidaMax']}")
+    print(f"Mana:        {jugador['manaActual']}/{jugador['manaMax']}")
+    print(f"Ataques/turno: {jugador['ataquesTurno']}")
+    print(f"Daño base:   {jugador['danioBase']}")
     print("═"*50)
     
     print("\n(El sistema/lore de combate todavía no está implementado)")
@@ -291,3 +462,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
