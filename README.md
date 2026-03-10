@@ -20,7 +20,7 @@ Opción 1: Ejecución rápida (recomendada)
 Opción 2: Ejecución manual desde terminal
 
 pip install pgzero
-python -m pgzero vida.py
+python -m pgzero joc.py
 # o en algunos sistemas:
 pip3 install pgzero
 python3 -m pgzero vida.py
