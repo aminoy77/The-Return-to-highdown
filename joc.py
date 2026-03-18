@@ -24,41 +24,111 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 import websockets
 
 # ============================================================
-# DATOS
+# DATOS — CLASES COMPLETAS
 # ============================================================
 CLASES = {
-    "guerrero":  {"vidaMax": 90,  "danioBase": 40, "manaMax": 30,  "manaTurno": 10,
-                  "danioEspecial": 70, "ataquesTurno": 1,      "costoEspecial": 30},
-    "mago":      {"vidaMax": 50,  "danioBase": 30, "manaMax": 70,  "manaTurno": 20,
-                  "danioEspecial": 60, "ataquesTurno": 1,      "costoEspecial": 60},
-    "arquero":   {"vidaMax": 40,  "danioBase": 10, "manaMax": 40,  "manaTurno": 15,
-                  "danioEspecial": 10, "ataquesTurno": [1, 4], "costoEspecial": 40},
-    "asesino":   {"vidaMax": 50,  "danioBase": 20, "manaMax": 20,  "manaTurno": 10,
-                  "danioEspecial": 60, "ataquesTurno": [1, 3], "costoEspecial": 20},
-    "curandero": {"vidaMax": 50,  "danioBase": 20, "manaMax": 50,  "manaTurno": 20,
-                  "danioEspecial": 20, "ataquesTurno": 1,      "costoEspecial": 30,
-                  "curacionEspecial": 20},
-    "barbaro":   {"vidaMax": 60,  "danioBase": 50, "manaMax": 30,  "manaTurno": 5,
-                  "danioEspecial": 70, "ataquesTurno": 1,      "costoEspecial": 30},
-    "cazador":   {"vidaMax": 60,  "danioBase": 50, "manaMax": 30,  "manaTurno": 10,
-                  "danioEspecial": 30, "ataquesTurno": 1,      "costoEspecial": 30},
+    "guerrero": {
+        "vidaMax": 90, "danioBase": 40, "manaMax": 30, "manaTurno": 10,
+        "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30,
+        "habilidad": "golpe_tanque"
+    },
+    "mago": {
+        "vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 20,
+        "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 60,
+        "habilidad": "magia_antigua"
+    },
+    "arquero": {
+        "vidaMax": 40, "danioBase": 10, "manaMax": 40, "manaTurno": 15,
+        "danioEspecial": 10, "ataquesTurno": [1, 4], "costoEspecial": 40,
+        "habilidad": "flecha_ignea", "danioEfecto": 10, "duracionEfecto": 2
+    },
+    "curandero": {
+        "vidaMax": 50, "danioBase": 20, "manaMax": 50, "manaTurno": 20,
+        "danioEspecial": 20, "ataquesTurno": 1, "costoEspecial": 30,
+        "habilidad": "absorcion", "curacionEspecial": 20
+    },
+    "nigromante": {
+        "vidaMax": 50, "danioBase": 10, "manaMax": 80, "manaTurno": 20,
+        "danioEspecial": 60, "ataquesTurno": [1, 5], "costoEspecial": 60,
+        "habilidad": "maldicion_tiempo"
+    },
+    "hechicero": {
+        "vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 30,
+        "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 70,
+        "habilidad": "invocar_esqueleto"
+    },
+    "caballero": {
+        "vidaMax": 70, "danioBase": 50, "manaMax": 40, "manaTurno": 10,
+        "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 40,
+        "habilidad": "embestida"
+    },
+    "cazador": {
+        "vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 10,
+        "danioEspecial": 30, "ataquesTurno": 1, "costoEspecial": 30,
+        "habilidad": "inmovilizar"
+    },
+    "asesino": {
+        "vidaMax": 50, "danioBase": 20, "manaMax": 20, "manaTurno": 10,
+        "danioEspecial": 60, "ataquesTurno": [1, 3], "costoEspecial": 20,
+        "habilidad": "muerte_garantizada"
+    },
+    "barbaro": {
+        "vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 5,
+        "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30,
+        "habilidad": "abocajarro"
+    },
 }
 
+# ============================================================
+# ENEMIGOS COMPLETOS
+# ============================================================
 ENEMIGOS = {
-    "bandido": {"vidaMax": 60,  "danioBase": 20, "ataquesTurno": 1, "tier": "Base"},
-    "orco":    {"vidaMax": 70,  "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
-    "troll":   {"vidaMax": 100, "danioBase": 35, "ataquesTurno": 1, "tier": "Especial"},
-    "dragon":  {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
-    "alpha":   {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1, "tier": "Boss"},
+    # ── Tier Base ──
+    "bandido":       {"vidaMax": 60,  "danioBase": 20, "ataquesTurno": 1,      "tier": "Base"},
+    "slime":         {"vidaMax": 90,  "danioBase": 5,  "ataquesTurno": 2,      "tier": "Base"},
+    "duende":        {"vidaMax": 50,  "danioBase": 15, "ataquesTurno": 2,      "tier": "Base"},
+    "esqueleto":     {"vidaMax": 70,  "danioBase": 25, "ataquesTurno": 1,      "tier": "Base"},
+    "zombie":        {"vidaMax": 80,  "danioBase": 10, "ataquesTurno": 1,      "tier": "Base"},
+    "lobo":          {"vidaMax": 60,  "danioBase": 15, "ataquesTurno": [1, 2], "tier": "Base"},
+    "oso":           {"vidaMax": 75,  "danioBase": 35, "ataquesTurno": 1,      "tier": "Base"},
+    # ── Tier Especial ──
+    "orco":          {"vidaMax": 70,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
+    "ogro":          {"vidaMax": 90,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
+    "troll":         {"vidaMax": 100, "danioBase": 35, "ataquesTurno": 1,      "tier": "Especial"},
+    "gigante":       {"vidaMax": 110, "danioBase": 45, "ataquesTurno": 1,      "tier": "Especial"},
+    "ciclope":       {"vidaMax": 80,  "danioBase": 40, "ataquesTurno": 1,      "tier": "Especial"},
+    "hombreLobo":    {"vidaMax": 90,  "danioBase": 30, "ataquesTurno": [1, 3], "tier": "Especial"},
+    "quimera":       {"vidaMax": 80,  "danioBase": 20, "ataquesTurno": 1,      "tier": "Especial"},
+    "demonioInferior":{"vidaMax": 90, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Especial"},
+    "tiburon":       {"vidaMax": 80,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
+    # ── Tier Superior ──
+    "vampiro":       {"vidaMax": 125, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Superior"},
+    "altoOrco":      {"vidaMax": 150, "danioBase": 50, "ataquesTurno": 1,      "tier": "Superior"},
+    "golem":         {"vidaMax": 180, "danioBase": 50, "ataquesTurno": 1,      "tier": "Superior"},
+    "elfoOscuro":    {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1,      "tier": "Superior"},
+    "demonioSuperior":{"vidaMax": 150,"danioBase": 60, "ataquesTurno": 1,      "tier": "Superior"},
+    # ── Tier Elite ──
+    "leviatan":      {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
+    "reyEsqueleto":  {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
+    "dragon":        {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
+    # ── Tier Boss ──
+    "reyDemonio":    {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1,      "tier": "Boss"},
+    "kraken":        {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1,      "tier": "Boss"},
+    "alpha":         {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1,      "tier": "Boss"},
 }
 
-XP_POR_TIER    = {"Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250}
+XP_POR_TIER = {
+    "Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250
+}
 XP_POR_NIVEL   = 150
 MONEDAS_SUBIDA = 20
 SALA_RESPAWN   = 1
 TIEMPO_RESPAWN = 5
 MAX_JUGADORES  = 5
 
+# ============================================================
+# TIENDA
+# ============================================================
 CATALOGO = {
     "pocion_vida":    {"nombre": "Pocion de Vida",         "emoji": "🧪",
                        "descripcion": "Restaura toda tu vida.",
@@ -71,10 +141,16 @@ CATALOGO = {
                        "precio": 50, "usable_combate": False},
 }
 ALIAS_ITEMS = {
-    "vida": "pocion_vida", "danio": "pocion_danio", "dano": "pocion_danio",
-    "gema": "gema_teleporte", "teleport": "gema_teleporte",
+    "vida":     "pocion_vida",
+    "danio":    "pocion_danio",
+    "dano":     "pocion_danio",
+    "gema":     "gema_teleporte",
+    "teleport": "gema_teleporte",
 }
 
+# ============================================================
+# SALAS
+# ============================================================
 SALAS = {
     1: {"nombre": "Entrada del Dungeon",
         "descripcion": "Sala fria y humeda. Antorchas parpadean en las paredes.",
@@ -97,9 +173,9 @@ SALAS = {
 # ============================================================
 # ESTADO GLOBAL
 # ============================================================
-jugadores_conectados = []   # lista de Player (TCP)
-combates_activos     = {}   # sala_id -> Combate
-chat_ws_clients      = set()  # WebSocket del navegador (solo chat)
+jugadores_conectados = []
+combates_activos     = {}
+chat_ws_clients      = set()
 
 
 class EstadoCombate(Enum):
@@ -154,7 +230,6 @@ class Player:
         self.muerto      = False
         self.buff_danio  = False
         self.inventario  = {}
-        # Cola exclusiva — fix race condition combate
         self.input_queue = asyncio.Queue()
         self.addr        = writer.get_extra_info("peername")
 
@@ -165,16 +240,29 @@ class Player:
         except Exception:
             pass
 
-    async def recv(self) -> str:
+    async def recv(self):
+        """
+        Devuelve:
+          None  → desconexión real (reader cerró)
+          ""    → Enter vacío (el jugador pulsó Enter sin escribir nada)
+          str   → mensaje con contenido
+        """
         try:
             msg = await asyncio.wait_for(self.input_queue.get(), timeout=300)
-            return msg if msg is not None else ""
+            return msg  # None = desconexión, "" o str = input
         except asyncio.TimeoutError:
-            return ""
+            return None  # timeout → tratar como desconexión
 
     async def send_prompt(self, prompt: str) -> str:
+        """Envía prompt y espera respuesta. Ignora Enters vacíos."""
         await self.send(prompt)
-        return await self.recv()
+        while True:
+            r = await self.recv()
+            if r is None:
+                return ""   # desconexión durante prompt
+            if r.strip():   # tiene contenido
+                return r.strip()
+            # Enter vacío → volver a pedir silenciosamente
 
 
 # ============================================================
@@ -194,7 +282,6 @@ async def broadcast_todos(texto):
         await p.send(texto)
 
 async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
-    """Envía mensaje de chat a todos los navegadores conectados."""
     if not chat_ws_clients:
         return
     payload = json.dumps({"scope": scope, "nombre": nombre, "mensaje": mensaje})
@@ -208,7 +295,7 @@ async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
 
 
 # ============================================================
-# CHAT — va a terminales Y al navegador
+# CHAT
 # ============================================================
 
 async def cmd_chat(player: Player, mensaje: str, sala_solo: bool):
@@ -257,15 +344,17 @@ async def dar_xp(player: Player, cantidad: int):
         p["manaMax"]   += 5
         p["vidaActual"] = p["vidaMax"]
         await player.send(
-            f"\n  SUBISTE AL NIVEL {player.nivel}!\n"
-            f"  +{MONEDAS_SUBIDA} monedas  |  Total: {player.monedas}\n"
-            f"  HP:{p['vidaMax']}  Dano:{p['danioBase']}  Mana:{p['manaMax']}"
+            f"\n  ╔══════════════════════════════╗\n"
+            f"  ║  SUBISTE AL NIVEL {player.nivel:>2}!        ║\n"
+            f"  ║  +{MONEDAS_SUBIDA} monedas  Total:{player.monedas:<5}      ║\n"
+            f"  ║  HP:{p['vidaMax']}  Dano:{p['danioBase']}  Mana:{p['manaMax']}   ║\n"
+            f"  ╚══════════════════════════════╝"
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
 
 
 # ============================================================
-# RESPAWN
+# RESPAWN  — FIX: restaura 50% de vida, no 100%
 # ============================================================
 
 async def respawn(player: Player):
@@ -273,7 +362,7 @@ async def respawn(player: Player):
     await player.send(f"  Has muerto. Reapareces en {TIEMPO_RESPAWN}s...")
     await asyncio.sleep(TIEMPO_RESPAWN)
     p = player.personaje
-    p["vidaActual"] = max(1, p["vidaMax"])
+    p["vidaActual"] = max(1, p["vidaMax"] // 2)   # ← FIX: era p["vidaMax"]
     p["manaActual"] = p["manaMax"]
     player.sala_id  = SALA_RESPAWN
     player.muerto   = False
@@ -323,7 +412,7 @@ async def cmd_mochila(player: Player):
 async def usar_item(player: Player, nombre: str, combate=None) -> bool:
     iid = ALIAS_ITEMS.get(nombre.lower(), nombre.lower())
     if iid not in CATALOGO:
-        await player.send(f"  Objeto '{nombre}' no existe.")
+        await player.send(f"  Objeto '{nombre}' no existe. (vida / dano / gema)")
         return False
     if player.inventario.get(iid, 0) <= 0:
         await player.send(f"  No tienes {CATALOGO[iid]['nombre']}.")
@@ -339,10 +428,7 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
         p["vidaActual"] = p["vidaMax"]
         player.inventario[iid] -= 1
         msg = f"  {player.nombre} usa Pocion de Vida +{curado} HP! ({p['vidaActual']}/{p['vidaMax']})"
-        if combate:
-            await broadcast_sala(combate.sala_id, msg)
-        else:
-            await player.send(msg)
+        await broadcast_sala(combate.sala_id if combate else player.sala_id, msg)
         return True
 
     elif iid == "pocion_danio":
@@ -352,20 +438,18 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
         player.buff_danio = True
         player.inventario[iid] -= 1
         msg = f"  {player.nombre} usa Pocion de Danio +30% este combate!"
-        if combate:
-            await broadcast_sala(combate.sala_id, msg)
-        else:
-            await player.send(msg)
+        await broadcast_sala(combate.sala_id if combate else player.sala_id, msg)
         return True
 
     elif iid == "gema_teleporte":
         if combate and combate.estado != EstadoCombate.FINALIZADO:
-            await player.send("  No en combate.")
+            await player.send("  No usable en combate.")
             return False
-        lineas = ["  GEMA - Salas:"]
+        lineas = ["  GEMA - Salas disponibles:"]
         for sid, sala in SALAS.items():
             lineas.append(f"  {sid}. {sala['nombre']}")
         await player.send("\n".join(lineas))
+        destino_id = None
         while True:
             d = await player.send_prompt("  Numero de sala: ")
             if d.isdigit() and int(d) in SALAS:
@@ -388,16 +472,19 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
 # ============================================================
 
 async def setup_personaje(player: Player):
-    await player.send("=" * 50)
-    await player.send("     BIENVENIDO AL MUD MULTIPLAYER")
-    await player.send("=" * 50)
+    await player.send("=" * 52)
+    await player.send("       BIENVENIDO AL MUD MULTIPLAYER")
+    await player.send("=" * 52)
     player.nombre = (await player.send_prompt("Como te llamas? ")).strip() or f"Aventurero_{player.id}"
 
-    lineas = ["\nCLASES:"]
+    lineas = ["\nCLASES DISPONIBLES:"]
     for i, (clase, s) in enumerate(CLASES.items(), 1):
         atqs = s["ataquesTurno"]
         atq_str = f"{atqs[0]}-{atqs[1]}" if isinstance(atqs, list) else str(atqs)
-        lineas.append(f"  {i:2}. {clase:<12}  HP:{s['vidaMax']:>3}  Dano:{s['danioBase']:>3}  Atqs:{atq_str}")
+        lineas.append(
+            f"  {i:2}. {clase:<12}  HP:{s['vidaMax']:>3}  "
+            f"Dano:{s['danioBase']:>3}  Mana:{s['manaMax']:>3}  Atqs:{atq_str}"
+        )
     await player.send("\n".join(lineas))
 
     while True:
@@ -408,14 +495,19 @@ async def setup_personaje(player: Player):
         elif el in CLASES:
             clase_elegida = el
             break
-        await player.send("  Clase no encontrada.")
+        await player.send("  Clase no encontrada. Intenta de nuevo.")
 
     base = deepcopy(CLASES[clase_elegida])
     player.personaje = {
         "nombre": player.nombre, "nombreClase": clase_elegida,
         "vidaActual": base["vidaMax"], "manaActual": base["manaMax"], **base,
     }
-    await player.send(f"\nListo! {player.nombre} el {clase_elegida.capitalize()}")
+    await player.send(
+        f"\n  Listo! {player.nombre} el {clase_elegida.capitalize()}\n"
+        f"  HP:{player.personaje['vidaActual']}  "
+        f"Mana:{player.personaje['manaActual']}  "
+        f"Dano:{player.personaje['danioBase']}"
+    )
 
 
 # ============================================================
@@ -429,22 +521,22 @@ async def describir_sala(player: Player):
     otros   = [p.nombre for p in jugadores_en_sala(player.sala_id) if p != player]
     salidas = ", ".join(sala["conexiones"].keys())
     lineas  = [
-        f"\n{'=' * 50}",
+        f"\n{'=' * 52}",
         f"  [{player.sala_id}] {sala['nombre']}",
-        f"{'=' * 50}",
+        f"{'=' * 52}",
         f"  {sala['descripcion']}",
     ]
     if otros:
         lineas.append(f"  Aqui tambien: {', '.join(otros)}")
     lineas.append(f"  Salidas: {salidas}")
     if sala["encuentros"]:
-        lineas.append("  Hay enemigos aqui. (escribe 'atacar' para combatir)")
+        lineas.append("  Hay enemigos aqui. Escribe 'atacar' para combatir.")
     await player.send("\n".join(lineas))
 
 
 async def mover_jugador(player: Player, direccion: str):
     if player.muerto:
-        await player.send("  Estas muerto.")
+        await player.send("  Estas muerto. Espera el respawn.")
         return
     if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
         await player.send("  No puedes huir del combate!")
@@ -467,12 +559,11 @@ async def mover_jugador(player: Player, direccion: str):
 # ============================================================
 
 async def iniciar_combate(sala_id: int):
+    # Verificaciones silenciosas — los errores se manejan en procesar_comando
     if sala_id in combates_activos:
-        await broadcast_sala(sala_id, "  Ya hay combate en curso aqui.")
         return
     sala = SALAS.get(sala_id)
-    if not sala or not sala["encuentros"]:
-        await broadcast_sala(sala_id, "  No hay enemigos aqui.")
+    if not sala or not sala.get("encuentros"):
         return
     jug = [p for p in jugadores_en_sala(sala_id) if not p.muerto]
     if not jug:
@@ -484,9 +575,9 @@ async def iniciar_combate(sala_id: int):
     for p in jug:
         p.combate = combate
 
-    await broadcast_sala(sala_id, "\n" + "!" * 50)
+    await broadcast_sala(sala_id, "\n" + "=" * 52)
     await broadcast_sala(sala_id, "  COMBATE!")
-    await broadcast_sala(sala_id, "!" * 50)
+    await broadcast_sala(sala_id, "=" * 52)
     for e in combate.enemigos:
         await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}")
 
@@ -501,13 +592,15 @@ async def loop_combate(combate: Combate):
         combate.acciones = {}
         combate.estado   = EstadoCombate.ESPERANDO_ACCIONES
 
+        # Regen mana
         for p in combate.jugadores_vivos():
             p.personaje["manaActual"] = min(
                 p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
                 p.personaje["manaMax"]
             )
 
-        await broadcast_sala(sala_id, f"\n{'-'*50}\n  TURNO {combate.turno}\n{'-'*50}")
+        # Mostrar estado del turno
+        await broadcast_sala(sala_id, f"\n{'-'*52}\n  TURNO {combate.turno}\n{'-'*52}")
         for e in combate.enemigos_vivos():
             await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}")
         for p in combate.jugadores_vivos():
@@ -517,25 +610,31 @@ async def loop_combate(combate: Combate):
                 f"Mana:{p.personaje['manaActual']}/{p.personaje['manaMax']}"
             )
 
-        await broadcast_sala(sala_id, "  Esperando acciones...")
-        # Cada jugador elige en paralelo sin bloquearse entre si
+        await broadcast_sala(sala_id, "  Esperando acciones de todos...")
+
+        # Todos los jugadores vivos eligen en paralelo
         await asyncio.gather(*[
             asyncio.create_task(pedir_accion(p, combate))
             for p in combate.jugadores_vivos()
         ])
 
+        # Resolución
         combate.estado = EstadoCombate.RESOLVIENDO
-        await broadcast_sala(sala_id, "\n  RESOLUCION:")
-        for p in combate.jugadores_vivos():
+        await broadcast_sala(sala_id, "\n  --- RESOLUCION ---")
+        for p in list(combate.jugadores_vivos()):
             await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
             if not combate.enemigos_vivos():
                 break
 
+        # Turno enemigos
         if combate.enemigos_vivos() and combate.jugadores_vivos():
             combate.estado = EstadoCombate.TURNO_ENEMIGO
-            await broadcast_sala(sala_id, "\n  TURNO ENEMIGOS:")
+            await broadcast_sala(sala_id, "\n  --- TURNO ENEMIGOS ---")
             for e in combate.enemigos_vivos():
-                obj = random.choice(combate.jugadores_vivos())
+                vivos_jug = combate.jugadores_vivos()
+                if not vivos_jug:
+                    break
+                obj = random.choice(vivos_jug)
                 for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
                     if obj.personaje["vidaActual"] <= 0:
                         break
@@ -547,11 +646,13 @@ async def loop_combate(combate: Combate):
                         f"({obj.personaje['vidaActual']}/{obj.personaje['vidaMax']})"
                     )
 
+        # Detectar muertes
         for p in combate.jugadores:
             if p.personaje["vidaActual"] <= 0 and not p.muerto:
                 await broadcast_sala(sala_id, f"  {p.nombre} ha caido!")
                 asyncio.create_task(respawn(p))
 
+    # ── FIN DEL COMBATE ──
     combate.estado = EstadoCombate.FINALIZADO
 
     if combate.enemigos_vivos():
@@ -565,6 +666,7 @@ async def loop_combate(combate: Combate):
             p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
         await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
 
+    # Limpiar buffs
     for p in combate.jugadores:
         if p.buff_danio:
             p.buff_danio = False
@@ -576,18 +678,32 @@ async def loop_combate(combate: Combate):
 
 
 async def pedir_accion(player: Player, combate: Combate):
-    """Consume del input_queue. No compite con handle_player."""
+    """
+    Consume del input_queue EXCLUSIVAMENTE.
+    FIX: Enter vacío → ignora y repite. None → pasa turno (desconexión).
+    """
     if player.personaje["vidaActual"] <= 0:
         combate.acciones[player.id] = "3"
         return
 
     await player.send(
         "  1-Atacar  2-Especial  3-Pasar  4-Objeto\n"
-        "  decir <msg>   g <msg>"
+        "  decir <msg>  |  g <msg>"
     )
 
     while True:
-        accion = (await player.recv()).strip()
+        raw = await player.recv()
+
+        # Desconexión durante combate → pasar turno automáticamente
+        if raw is None:
+            combate.acciones[player.id] = "3"
+            return
+
+        accion = raw.strip()
+
+        # FIX: Enter vacío → ignorar, no romper
+        if not accion:
+            continue
 
         if accion.lower().startswith("decir "):
             await cmd_chat(player, accion[6:], sala_solo=True)
@@ -597,14 +713,15 @@ async def pedir_accion(player: Player, combate: Combate):
             continue
         if accion == "4":
             await cmd_mochila(player)
-            n = await player.send_prompt("  Que objeto usar? (Enter=cancelar): ")
-            if n.strip():
+            await player.send("  Que objeto usar? (Enter=cancelar, o escribe vida/dano/gema):")
+            n = await player.recv()
+            if n and n.strip():
                 await usar_item(player, n.strip(), combate=combate)
             await player.send("  1-Atacar  2-Especial  3-Pasar  4-Objeto")
             continue
         if accion in ("1", "2", "3"):
             combate.acciones[player.id] = accion
-            await broadcast_sala(combate.sala_id, f"  {player.nombre} eligio.", excluir=player)
+            await broadcast_sala(combate.sala_id, f"  {player.nombre} ha elegido.", excluir=player)
             return
 
         await player.send("  Elige 1, 2, 3 o 4.")
@@ -619,7 +736,8 @@ async def resolver_accion(player: Player, accion: str, combate: Combate):
     p   = player.personaje
 
     if accion == "1":
-        for _ in range(ataques_por_turno(p.get("ataquesTurno", 1))):
+        num = ataques_por_turno(p.get("ataquesTurno", 1))
+        for _ in range(num):
             if obj["vida_actual"] <= 0:
                 break
             base = calcular_danio(p["danioBase"])
@@ -633,10 +751,12 @@ async def resolver_accion(player: Player, accion: str, combate: Combate):
     elif accion == "2":
         costo = p.get("costoEspecial", 0)
         if p["manaActual"] < costo:
-            await player.send(f"  Sin mana (necesitas {costo}).")
+            await player.send(f"  Sin mana (necesitas {costo}, tienes {p['manaActual']}).")
             return
         p["manaActual"] -= costo
-        if p["nombreClase"] == "curandero":
+        clase = p["nombreClase"]
+
+        if clase == "curandero":
             cur = p.get("curacionEspecial", 20)
             p["vidaActual"] = min(p["vidaActual"] + cur, p["vidaMax"])
             await broadcast_sala(sala_id,
@@ -646,12 +766,23 @@ async def resolver_accion(player: Player, accion: str, combate: Combate):
             d    = int(base * 1.3) if player.buff_danio else base
             sfx  = " (+30%)" if player.buff_danio else ""
             obj["vida_actual"] = max(0, obj["vida_actual"] - d)
+            nombre_hab = {
+                "guerrero":   "Golpe de Tanque",
+                "mago":       "Magia Antigua",
+                "arquero":    "Flecha Ignea",
+                "nigromante": "Maldicion del Tiempo",
+                "hechicero":  "Invocar Esqueleto",
+                "caballero":  "Embestida",
+                "cazador":    "Inmovilizar",
+                "asesino":    "Muerte Garantizada",
+                "barbaro":    "A Bocajarro",
+            }.get(clase, "Habilidad Especial")
             await broadcast_sala(sala_id,
-                f"  {player.nombre} especial {obj['nombre']} -{d}{sfx}  "
+                f"  {player.nombre} usa {nombre_hab} en {obj['nombre']} -{d}{sfx}  "
                 f"({obj['vida_actual']}/{obj['vidaMax']})")
 
     elif accion == "3":
-        await broadcast_sala(sala_id, f"  {player.nombre} pasa.")
+        await broadcast_sala(sala_id, f"  {player.nombre} pasa el turno.")
 
 
 # ============================================================
@@ -676,12 +807,15 @@ async def procesar_comando(player: Player, cmd: str):
         xf = XP_POR_NIVEL - player.xp
         await player.send(
             f"\n  {player.nombre} [{p['nombreClase']}]  Nv.{player.nivel}\n"
-            f"  HP:{p['vidaActual']}/{p['vidaMax']}  Mana:{p['manaActual']}/{p['manaMax']}\n"
-            f"  Dano:{p['danioBase']}  XP:{player.xp}/{XP_POR_NIVEL}(faltan {xf})  Monedas:{player.monedas}"
+            f"  HP:      {p['vidaActual']}/{p['vidaMax']}\n"
+            f"  Mana:    {p['manaActual']}/{p['manaMax']}\n"
+            f"  Dano:    {p['danioBase']}\n"
+            f"  XP:      {player.xp}/{XP_POR_NIVEL}  (faltan {xf})\n"
+            f"  Monedas: {player.monedas}"
         )
 
     elif ac in ("jugadores", "who"):
-        lineas = ["\n  Jugadores:"]
+        lineas = ["\n  Jugadores conectados:"]
         for p in jugadores_conectados:
             st = "MUERTO" if p.muerto else f"Sala {p.sala_id}"
             lineas.append(f"  - {p.nombre} [Nv.{p.nivel} {p.personaje['nombreClase']}] ({st})")
@@ -689,10 +823,13 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac == "atacar":
         if player.muerto:
-            await player.send("  Estas muerto.")
+            await player.send("  Estas muerto. Espera el respawn.")
             return
-        if player.sala_id in combates_activos:
-            await player.send("  Ya hay combate aqui.")
+        sala = SALAS.get(player.sala_id)
+        if not sala or not sala.get("encuentros"):
+            await player.send("  No hay enemigos en esta sala.")
+        elif player.sala_id in combates_activos:
+            await player.send("  Ya hay un combate en curso aqui.")
         else:
             await iniciar_combate(player.sala_id)
 
@@ -703,8 +840,10 @@ async def procesar_comando(player: Player, cmd: str):
         await cmd_chat(player, cmd[2:].strip(), sala_solo=False)
 
     elif ac in ("tienda", "shop"):
-        if player.muerto or player.combate:
-            await player.send("  No disponible ahora.")
+        if player.muerto:
+            await player.send("  Estas muerto.")
+        elif player.combate:
+            await player.send("  No puedes abrir la tienda en combate.")
         else:
             await cmd_tienda(player)
 
@@ -713,7 +852,7 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac == "usar":
         if len(partes) < 2:
-            await player.send("  Uso: usar <objeto>  (vida/dano/gema)")
+            await player.send("  Uso: usar <objeto>  (vida / dano / gema)")
             return
         await usar_item(player, " ".join(partes[1:]))
 
@@ -728,15 +867,15 @@ async def procesar_comando(player: Player, cmd: str):
             "  TIENDA:   tienda | mochila | usar <objeto>\n"
             "  INFO:     stats | nivel | jugadores\n"
             "  CHAT:     decir <msg>  (sala)  |  g <msg>  (global)\n"
-            "  CHAT UI:  abre http://localhost:8080/chat.html en el navegador"
+            "  CHAT WEB: http://localhost:8080/chat.html"
         )
 
     else:
-        await player.send(f"  Desconocido: '{cmd}'. Escribe ayuda.")
+        await player.send(f"  Desconocido: '{cmd}'. Escribe 'ayuda'.")
 
 
 # ============================================================
-# HANDLE PLAYER (TCP)
+# HANDLE PLAYER (TCP)  — FIX PRINCIPAL: Enter vacío no desconecta
 # ============================================================
 
 async def handle_player(reader, writer):
@@ -744,24 +883,25 @@ async def handle_player(reader, writer):
     print(f"[TCP] Conexion: {player.addr}")
 
     if len(jugadores_conectados) >= MAX_JUGADORES:
-        await player.send("Servidor lleno.")
+        await player.send("Servidor lleno (max 5 jugadores). Intentalo mas tarde.")
         writer.close()
         return
 
     jugadores_conectados.append(player)
 
-    # Reader task: unico lector TCP — alimenta input_queue
+    # Reader task: UNICO lector del TCP — alimenta input_queue
+    # Pone el string (incluyendo "") en la cola, y None solo al cerrar
     async def reader_task():
         try:
             while True:
                 data = await reader.readline()
-                if not data:
+                if not data:          # conexión TCP cerrada
                     break
                 await player.input_queue.put(data.decode().strip())
         except Exception:
             pass
         finally:
-            await player.input_queue.put(None)
+            await player.input_queue.put(None)  # señal de desconexión real
 
     rt = asyncio.create_task(reader_task())
 
@@ -771,17 +911,23 @@ async def handle_player(reader, writer):
         await describir_sala(player)
 
         while True:
-            # Durante combate, pedir_accion consume el queue
-            # handle_player NO llama recv() aqui — fix de la race condition
+            # Durante combate, pedir_accion consume el queue.
+            # handle_player NO llama recv() aqui → fix race condition.
             if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
                 await asyncio.sleep(0.05)
                 continue
 
-            cmd = await player.recv()
-            if not cmd:
+            raw = await player.recv()
+
+            # None = desconexión real → salir del loop
+            if raw is None:
                 break
 
-            await procesar_comando(player, cmd)
+            # FIX: Enter vacío → ignorar completamente, no desconectar
+            if not raw.strip():
+                continue
+
+            await procesar_comando(player, raw.strip())
 
     except Exception as e:
         print(f"[TCP] Error {player.addr}: {e}")
@@ -791,7 +937,10 @@ async def handle_player(reader, writer):
             jugadores_conectados.remove(player)
         if player.nombre:
             await broadcast_todos(f"\n  {player.nombre} abandono el dungeon.")
-        writer.close()
+        try:
+            writer.close()
+        except Exception:
+            pass
         print(f"[TCP] Desconectado: {player.addr}")
 
 
@@ -800,22 +949,16 @@ async def handle_player(reader, writer):
 # ============================================================
 
 async def handle_chat_ws(websocket):
-    """
-    Conexion de un navegador al chat.
-    Solo recibe mensajes de chat y los reenvía a todos.
-    """
     chat_ws_clients.add(websocket)
-    print(f"[CHAT-WS] Navegador conectado: {websocket.remote_address}")
+    print(f"[WS] Navegador conectado: {websocket.remote_address}")
 
-    # Mandar lista de jugadores al conectar
     jugadores_info = [
         {"nombre": p.nombre, "clase": p.personaje["nombreClase"], "nivel": p.nivel}
         for p in jugadores_conectados if p.nombre
     ]
     try:
         await websocket.send(json.dumps({
-            "scope": "sistema",
-            "nombre": "Servidor",
+            "scope": "sistema", "nombre": "Servidor",
             "mensaje": f"{len(jugadores_info)} jugadores conectados",
             "jugadores": jugadores_info
         }))
@@ -825,35 +968,26 @@ async def handle_chat_ws(websocket):
     try:
         async for msg in websocket:
             try:
-                data = json.loads(msg)
+                data    = json.loads(msg)
                 nombre  = data.get("nombre", "Anonimo")
-                mensaje = data.get("mensaje", "")
+                mensaje = data.get("mensaje", "").strip()
                 scope   = data.get("scope", "global")
-
-                if not mensaje.strip():
+                if not mensaje:
                     continue
-
-                # Reenviar a otros navegadores
                 await broadcast_chat_ws(scope, nombre, mensaje)
-
-                # Reenviar a terminales
-                if scope == "global":
-                    await broadcast_todos(f"  [Global-Web] {nombre}: {mensaje}")
-                else:
-                    # sala_solo desde web va a todos (no sabemos en que sala esta)
-                    await broadcast_todos(f"  [Web] {nombre}: {mensaje}")
-
+                prefijo = "[Global-Web]" if scope == "global" else "[Web]"
+                await broadcast_todos(f"  {prefijo} {nombre}: {mensaje}")
             except json.JSONDecodeError:
                 pass
     except Exception:
         pass
     finally:
         chat_ws_clients.discard(websocket)
-        print(f"[CHAT-WS] Navegador desconectado: {websocket.remote_address}")
+        print(f"[WS] Navegador desconectado: {websocket.remote_address}")
 
 
 # ============================================================
-# HTTP — sirve chat.html
+# HTTP
 # ============================================================
 
 def iniciar_http():
@@ -872,19 +1006,17 @@ def iniciar_http():
 async def main():
     threading.Thread(target=iniciar_http, daemon=True).start()
 
-    # TCP server — juego en terminal
     tcp_server = await asyncio.start_server(handle_player, "0.0.0.0", 4000)
-
-    # WebSocket server — chat en navegador
-    ws_server = await websockets.serve(handle_chat_ws, "0.0.0.0", 4001)
+    ws_server  = await websockets.serve(handle_chat_ws, "0.0.0.0", 4001)
 
     print("[TCP]   :4000  ->  python3 client.py <IP>")
-    print("[WS]    :4001  ->  navegador usa este puerto para chat")
-    print(f"[INFO]  Max {MAX_JUGADORES} jugadores")
+    print("[WS]    :4001  ->  navegador chat")
+    print(f"[INFO]  Max {MAX_JUGADORES} jugadores  |  {len(CLASES)} clases  |  {len(ENEMIGOS)} enemigos")
     print("[INFO]  Ctrl+C para parar\n")
 
-    async with tcp_server, ws_server:
-        await asyncio.Future()
+    async with tcp_server:
+        async with ws_server:
+            await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
