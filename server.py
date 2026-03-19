@@ -2617,18 +2617,30 @@ async def process_request(connection, request):
 
 async def main():
     port = int(os.environ.get("PORT", 8080))
+    print(f"[START] Iniciando servidor - Puerto asignado por Render: {os.environ.get('PORT', 'no asignado')} (fallback: {port})")
+    print("[INFO] Bind a 0.0.0.0:" + str(port))
 
-    async with websockets.serve(
-        handle_connection,
-        "0.0.0.0",
-        port,
-        process_request=process_request,
-    ):
-        print(f"[SERVER] Puerto: {port}")
-        print(f"[SERVER] Abre http://localhost:{port} para jugar")
-        print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
-        print("[SERVER] Listo.\n")
-        await asyncio.Future()
+    app = web.Application()
+
+    # Health check (Render lo necesita para considerar el servicio "vivo")
+    async def health(request: web.Request) -> web.Response:
+        return web.Response(text="OK", status=200)
+    app.router.add_get("/health", health)
+
+    # Tus rutas actuales
+    app.router.add_route("*", "/ws", ws_handler)
+    app.router.add_route("*", "/{tail:.*}", http_handler)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    print(f"[HTTP+WS] Servidor escuchando en 0.0.0.0:{port}")
+    print(f"[URL] Abre https://tu-proyecto.onrender.com (o el dominio de Render) para el chat")
+    print("[SERVER] Listo y esperando conexiones...")
+
+    await asyncio.Future()  # Mantiene el servidor vivo forever
 
 if __name__ == "__main__":
     asyncio.run(main())
