@@ -352,6 +352,17 @@ SALAS = {
          "encuentros": [("alpha", 1)]},
 }
 
+
+#me lo ha dicho grok
+async def http_handler(request: web.Request) -> web.Response:
+    """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
+    html = get_html().encode("utf-8")
+    return web.Response(
+        body=html,
+        content_type="text/html",
+        charset="utf-8",
+    )
+
 # ============================================================
 # ESTADO GLOBAL
 # ============================================================
@@ -1887,14 +1898,7 @@ async def handle_dashboard_ws(ws, usuario: str):
 # AIOHTTP HANDLERS
 # ============================================================
 
-async def http_handler(request: web.Request) -> web.Response:
-    """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
-    html = get_html().encode("utf-8")
-    return web.Response(
-        body=html,
-        content_type="text/html",
-        charset="utf-8",
-    )
+
 
 
 async def ws_handler(request: web.Request) -> web.WebSocketResponse:
