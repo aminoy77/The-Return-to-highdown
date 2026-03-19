@@ -2638,39 +2638,6 @@ function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").
 </html>"""
 
 
-# ============================================================
-# MAIN — HTTP + WebSocket en el mismo puerto
-# ============================================================
-
-async def process_request(connection, request):
-    """
-    Intercepta peticiones HTTP antes de que websockets las procese.
-    Si es una petición HTTP normal → sirve el HTML.
-    Si tiene cabecera Upgrade: websocket → deja pasar al handler WS.
-    """
-    if request.headers.get("Upgrade", "").lower() != "websocket":
-        html = get_html().encode("utf-8")
-        headers = [
-            ("Content-Type", "text/html; charset=utf-8"),
-            ("Content-Length", str(len(html))),
-        ]
-        return connection.respond(200, "OK", headers, html)
-
-
-async def main():
-    port = int(os.environ.get("PORT", 8080))
-
-    async with websockets.serve(
-        handle_connection,
-        "0.0.0.0",
-        port,
-        process_request=process_request,
-    ):
-        print(f"[SERVER] Puerto: {port}")
-        print(f"[SERVER] Abre http://localhost:{port} para jugar")
-        print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
-        print("[SERVER] Listo.\n")
-        await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
