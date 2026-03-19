@@ -1,642 +1,3 @@
-import os
-# ... resto de imports ...
-# ============================================================
-# HTML EMBEBIDO — se sirve directamente desde el servidor
-# ============================================================
-def get_html() -> str:
-    """Devuelve el HTML de la aplicación completa."""
-    return r"""<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MUD — The Return to Highdown</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-:root{
-  --bg:#0a0a0a;--bg2:#111;--bg3:#181818;--border:#252525;
-  --gold:#c9a84c;--gold2:#e8c55c;--green:#4caf50;--red:#e53935;
-  --red2:#ff1744;--blue:#42a5f5;--mana:#5c6bc0;--purple:#ab47bc;
-  --orange:#ff9800;--text:#ccc;--dim:#555;--dim2:#222;
-}
-body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
-/* LOGIN */
-#lo{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;justify-content:center;z-index:999;}
-#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;padding:32px 40px;text-align:center;min-width:320px;max-width:400px;width:90%;}
-#lb h1{color:var(--gold);font-size:20px;margin-bottom:4px;}
-#lb p{color:var(--dim);font-size:11px;margin-bottom:16px;}
-.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;font-family:monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:8px;transition:border-color .15s;}
-.li:focus{border-color:var(--gold);}
-.li::placeholder{color:var(--dim);}
-.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:10px;font-weight:bold;font-size:13px;cursor:pointer;border-radius:4px;font-family:monospace;transition:background .15s;}
-.abtn:hover{background:var(--gold2);}
-#lerr{color:var(--red);font-size:11px;margin-top:8px;min-height:15px;}
-.tabs{display:flex;gap:5px;margin-bottom:12px;}
-.tab{flex:1;padding:5px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;color:var(--dim);background:var(--bg3);transition:all .15s;}
-.tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
-#reg-p{display:none;}
-/* TOPBAR */
-#top{background:var(--bg2);border-bottom:1px solid var(--border);padding:5px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:11px;}
-#top-nav{display:flex;gap:4px;margin-left:auto;}
-.nav-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 9px;border-radius:3px;cursor:pointer;font-family:monospace;font-size:10px;transition:all .15s;}
-.nav-btn.active,.nav-btn:hover{color:var(--text);border-color:var(--gold);}
-#top-title{color:var(--gold);font-weight:bold;font-size:13px;}
-#top-player{color:var(--text);}#top-player span{color:var(--gold);}
-#cdot{width:7px;height:7px;border-radius:50%;background:var(--red);}
-#cdot.on{background:var(--green);}
-/* VIEWS */
-#views{flex:1;overflow:hidden;display:flex;flex-direction:column;}
-.view{flex:1;display:none;overflow:hidden;}
-.view.active{display:flex;}
-/* ── GAME VIEW ── */
-#game-view{flex-direction:row;}
-#sp{background:var(--bg2);width:190px;flex-shrink:0;padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;border-right:1px solid var(--border);}
-.sh{color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);padding-bottom:3px;}
-.pid{text-align:center;}
-.pid-n{font-size:13px;color:var(--gold);font-weight:bold;}
-.pid-c{font-size:10px;color:var(--dim);margin-top:1px;}
-.lvr{display:flex;align-items:center;justify-content:space-between;font-size:11px;}
-.lvb{background:var(--gold);color:#000;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;}
-.bl{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;}
-.bl-n{color:var(--dim);}
-.bw{width:100%;height:11px;background:var(--bg3);border-radius:5px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;}
-.bf{height:100%;border-radius:5px;transition:width .4s,background .4s;}
-.bf-hp{background:var(--red);}
-.bf-mp{background:var(--mana);}
-.xw{width:100%;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;border:1px solid var(--border);margin-top:2px;}
-.bf-xp{background:var(--purple);border-radius:0;}
-.sr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--dim2);font-size:10px;}
-.sr:last-child{border-bottom:none;}
-.sr-l{color:var(--dim);}
-.sr-v{color:var(--text);font-weight:bold;}
-.qbtns{display:flex;flex-wrap:wrap;gap:3px;}
-.qb{flex:1;min-width:36px;background:var(--bg3);border:1px solid var(--border);color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;border-radius:3px;font-family:monospace;text-align:center;transition:all .15s;}
-.qb:hover{color:var(--text);border-color:var(--dim);}
-.qb.c{border-color:#2d4a2d;color:#81c784;}
-.qb.c:hover{background:#0a1a0a;}
-.qb.m{border-color:#1a2a3a;color:#64b5f6;}
-.qb.m:hover{background:#0a1020;}
-#gp{display:flex;flex-direction:column;flex:1;overflow:hidden;}
-#glog{flex:1;overflow-y:auto;padding:9px 13px;font-size:13px;line-height:1.65;}
-#glog::-webkit-scrollbar{width:4px;}
-#glog::-webkit-scrollbar-thumb{background:var(--border);}
-.gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
-.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#ff8a65;}
-.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
-.gi{color:#80cbc4;}.gs{color:var(--dim);font-style:italic;}
-.gl{color:var(--gold);background:#1a1500;border:1px solid var(--gold);padding:3px 7px;border-radius:3px;display:inline-block;margin:3px 0;}
-.cm2{background:#0a1a0a;border:1px solid #2d4a2d;border-radius:4px;padding:4px 8px;margin:2px 0;color:#81c784;}
-#ginput{display:flex;gap:5px;padding:7px 11px;border-top:1px solid var(--border);flex-shrink:0;}
-#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-family:'Courier New',monospace;font-size:13px;border-radius:4px;outline:none;}
-#cmd:focus{border-color:var(--gold);}
-#cmd:disabled{opacity:.4;}
-#cmd::placeholder{color:var(--dim);}
-#sbtn{background:var(--gold);border:none;color:#000;padding:6px 13px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:12px;}
-#sbtn:disabled{opacity:.4;cursor:default;}
-/* ── DASHBOARD VIEW ── */
-#dash-view{flex-direction:row;}
-#dash-app{display:grid;grid-template-columns:200px 1fr 180px;flex:1;overflow:hidden;gap:1px;background:var(--border);}
-#dsp{background:var(--bg2);padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;}
-#dmp{background:var(--bg);display:flex;flex-direction:column;overflow:hidden;}
-#dmp-hdr{padding:6px 11px;border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px;flex-shrink:0;}
-#dmp-hdr span{color:var(--gold);font-size:11px;}
-.leg{display:flex;gap:6px;margin-left:auto;}
-.ld{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--dim);}
-.ldot{width:6px;height:6px;border-radius:2px;}
-#map-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:6px;}
-#msvg{max-width:100%;max-height:100%;}
-#plp{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
-#plp-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
-#pl-list{flex:1;overflow-y:auto;padding:6px;}
-.pi{padding:5px 6px;border-bottom:1px solid var(--border);font-size:10px;}
-.pi:last-child{border-bottom:none;}
-.pi-n{color:var(--gold);font-weight:bold;margin-bottom:1px;}
-.pi-i{color:var(--dim);}
-.pi-s{color:var(--text);font-size:9px;margin-top:1px;}
-.pi-d{color:var(--red);}
-/* ── CHAT PANEL (bottom of dash) ── */
-#dash-chat{background:var(--bg2);border-top:1px solid var(--border);height:180px;display:flex;flex-direction:column;flex-shrink:0;}
-#ch-top{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.ctab{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;transition:all .15s;}
-.ctab.as{background:#1a3a1a;color:var(--green);border-color:var(--green);}
-.ctab.ag{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
-#ch-log{flex:1;overflow-y:auto;padding:5px 11px;font-size:11px;line-height:1.5;}
-#ch-log::-webkit-scrollbar{width:3px;}
-#ch-log::-webkit-scrollbar-thumb{background:var(--border);}
-.cm3{display:flex;gap:6px;align-items:baseline;margin-bottom:2px;}
-.cm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
-.cm-b{font-size:9px;padding:1px 4px;border-radius:4px;flex-shrink:0;font-weight:bold;}
-.bs{background:#1a3a1a;color:var(--green);}.bg2c{background:#3a2a0a;color:var(--orange);}.bx{background:#1a1a3a;color:var(--blue);}
-.cm-nm{font-weight:bold;flex-shrink:0;}
-.ns{color:var(--green);}.ng{color:var(--orange);}.nx{color:var(--blue);}
-.cm-tx{color:var(--text);}
-#ch-in-row{display:flex;gap:5px;padding:5px 10px;border-top:1px solid var(--border);flex-shrink:0;}
-#ch-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 9px;font-family:monospace;font-size:11px;border-radius:4px;outline:none;}
-#ch-in:focus{border-color:var(--gold);}
-#ch-in:disabled{opacity:.4;}
-.sbtn2{background:var(--gold);border:none;color:#000;padding:5px 11px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:11px;}
-.sbtn2:disabled{opacity:.4;cursor:default;}
-</style>
-</head>
-<body>
-<!-- LOGIN -->
-<div id="lo">
-  <div id="lb">
-    <h1>⚔ The Return to Highdown</h1>
-    <p>MUD Multiplayer — Juega desde el navegador</p>
-    <div class="tabs">
-      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
-      <button class="tab" onclick="showTab('register')">Crear cuenta</button>
-    </div>
-    <div id="login-p">
-      <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
-      <input class="li" id="lp" type="password" placeholder="Contraseña">
-      <button class="abtn" onclick="doLogin()">ENTRAR</button>
-    </div>
-    <div id="reg-p">
-      <input class="li" id="ru" type="text" placeholder="Usuario (mín. 3 caracteres)" autocomplete="off">
-      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 caracteres)">
-      <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
-      <input class="li" id="rn" type="text" placeholder="Nombre en el juego">
-      <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
-    </div>
-    <div id="lerr"></div>
-  </div>
-</div>
-<!-- TOPBAR -->
-<div id="top">
-  <div id="top-title">⚔ MUD</div>
-  <div id="top-player">—</div>
-  <div id="cdot"></div>
-  <div id="top-nav">
-    <button class="nav-btn active" onclick="setView('game')">🎮 Juego</button>
-    <button class="nav-btn" onclick="setView('dash')">📊 Dashboard</button>
-  </div>
-</div>
-<!-- VIEWS -->
-<div id="views">
-  <!-- GAME -->
-  <div class="view active" id="game-view">
-    <div id="sp">
-      <div class="sh">Personaje</div>
-      <div class="pid">
-        <div class="pid-n" id="s-nm">—</div>
-        <div class="pid-c" id="s-cl">—</div>
-      </div>
-      <div>
-        <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="s-nv">1</span></div>
-        <div style="margin-top:3px">
-          <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
-          <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
-        </div>
-      </div>
-      <div class="sh">Vida & Mana</div>
-      <div>
-        <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
-        <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
-        <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
-        <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
-      </div>
-      <div class="sh">Combate</div>
-      <div>
-        <div class="sr"><span class="sr-l">Daño base</span> <span class="sr-v" id="s-dmg">—</span></div>
-        <div class="sr"><span class="sr-l">Ataques/turno</span> <span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
-        <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
-        <div class="sr"><span class="sr-l">Monedas</span> <span class="sr-v" id="s-mo" style="color:var(--gold)">—</span></div>
-      </div>
-      <div class="sh">Combate rápido</div>
-      <div class="qbtns">
-        <button class="qb c" onclick="send('1')">1 Atacar</button>
-        <button class="qb c" onclick="send('2')">2 Especial</button>
-        <button class="qb c" onclick="send('3')">3 Pasar</button>
-        <button class="qb c" onclick="send('4')">4 Objeto</button>
-      </div>
-      <div class="sh">Mover</div>
-      <div class="qbtns">
-        <button class="qb m" onclick="send('n')">↑N</button>
-        <button class="qb m" onclick="send('s')">↓S</button>
-        <button class="qb m" onclick="send('e')">→E</button>
-        <button class="qb m" onclick="send('o')">←O</button>
-      </div>
-      <div class="sh">Acciones</div>
-      <div class="qbtns">
-        <button class="qb" onclick="send('mirar')">👁 Mirar</button>
-        <button class="qb" onclick="send('atacar')">⚔ Atacar</button>
-        <button class="qb" onclick="send('stats')">📊 Stats</button>
-        <button class="qb" onclick="send('ayuda')">❓ Ayuda</button>
-        <button class="qb" onclick="send('tienda')">🏪 Tienda</button>
-        <button class="qb" onclick="send('hospital')">🏥 Hospital</button>
-        <button class="qb" onclick="send('grupo')">👥 Grupo</button>
-        <button class="qb" onclick="send('jugadores')">🌍 Jugadores</button>
-        <button class="qb" onclick="send('guardar')">💾 Guardar</button>
-      </div>
-    </div>
-    <div id="gp">
-      <div id="glog"></div>
-      <div id="ginput">
-        <input id="cmd" type="text" placeholder="Escribe un comando... (ayuda para ver todos)"
-               disabled autocomplete="off" spellcheck="false"
-               onkeydown="if(event.key==='Enter') doSend()">
-        <button id="sbtn" onclick="doSend()" disabled>Enviar</button>
-      </div>
-    </div>
-  </div>
-  <!-- DASHBOARD -->
-  <div class="view" id="dash-view" style="flex-direction:column;">
-    <div id="dash-app">
-      <!-- Stats dashboard -->
-      <div id="dsp">
-        <div class="sh">Personaje</div>
-        <div class="pid"><div class="pid-n" id="ds-nm">—</div><div class="pid-c" id="ds-cl">—</div></div>
-        <div>
-          <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="ds-nv">1</span></div>
-          <div style="margin-top:3px">
-            <div class="bl"><span class="bl-n">XP</span><span id="ds-xp">0/150</span></div>
-            <div class="xw"><div class="bf bf-xp" id="db-xp" style="width:0%"></div></div>
-          </div>
-        </div>
-        <div class="sh">Vida & Mana</div>
-        <div>
-          <div class="bl"><span class="bl-n">❤ HP</span><span id="ds-hp">—</span></div>
-          <div class="bw"><div class="bf bf-hp" id="db-hp" style="width:100%"></div></div>
-          <div class="bl"><span class="bl-n">✦ Mana</span><span id="ds-mp">—</span></div>
-          <div class="bw"><div class="bf bf-mp" id="db-mp" style="width:100%"></div></div>
-        </div>
-        <div class="sh">Combate</div>
-        <div>
-          <div class="sr"><span class="sr-l">Daño</span> <span class="sr-v" id="ds-dmg">—</span></div>
-          <div class="sr"><span class="sr-l">Ataques</span> <span class="sr-v" id="ds-atq" style="color:var(--green)">—</span></div>
-          <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="ds-mc" style="color:var(--mana)">—</span></div>
-          <div class="sr"><span class="sr-l">Monedas</span> <span class="sr-v" id="ds-mo" style="color:var(--gold)">—</span></div>
-          <div class="sr"><span class="sr-l">Sala</span> <span class="sr-v" id="ds-sl">—</span></div>
-        </div>
-      </div>
-      <!-- Map -->
-      <div id="dmp">
-        <div id="dmp-hdr">
-          <span>🗺 MAPA</span>
-          <div class="leg">
-            <div class="ld"><div class="ldot" style="background:#8b6914"></div>Desierto</div>
-            <div class="ld"><div class="ldot" style="background:#1565c0"></div>Mar</div>
-            <div class="ld"><div class="ldot" style="background:#546e7a"></div>Nieve</div>
-            <div class="ld"><div class="ldot" style="background:#2e7d32"></div>Segura</div>
-            <div class="ld"><div class="ldot" style="background:#b71c1c"></div>Boss</div>
-            <div class="ld"><div class="ldot" style="background:#c9a84c;border-radius:50%"></div>Tú</div>
-          </div>
-        </div>
-        <div id="map-wrap">
-          <svg id="msvg" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
-            <defs><filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/>
-              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-            <rect x="10" y="10" width="500" height="205" rx="6" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
-            <text x="18" y="25" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
-            <rect x="10" y="222" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-            <text x="18" y="236" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
-            <rect x="10" y="277" width="500" height="200" rx="6" fill="#060810" stroke="#10103a" stroke-width="1"/>
-            <text x="18" y="291" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
-            <rect x="10" y="484" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-            <text x="18" y="498" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
-            <rect x="10" y="539" width="500" height="210" rx="6" fill="#100800" stroke="#302000" stroke-width="1"/>
-            <text x="18" y="553" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
-            <g id="conn-g"></g><g id="room-g"></g>
-          </svg>
-        </div>
-      </div>
-      <!-- Players -->
-      <div id="plp">
-        <div id="plp-hdr">👥 Jugadores</div>
-        <div id="pl-list"><div style="color:var(--dim);font-size:10px;padding:7px">Sin datos</div></div>
-      </div>
-    </div>
-    <!-- Chat -->
-    <div id="dash-chat">
-      <div id="ch-top">
-        <button class="ctab as" id="t-sala" onclick="setTab('sala')">📍 Sala</button>
-        <button class="ctab" id="t-global" onclick="setTab('global')">🌍 Global</button>
-      </div>
-      <div id="ch-log"></div>
-      <div id="ch-in-row">
-        <input id="ch-in" type="text" placeholder="Mensaje de chat..." disabled
-               onkeydown="if(event.key==='Enter') sendChat()">
-        <button class="sbtn2" id="ch-send" onclick="sendChat()" disabled>Enviar</button>
-      </div>
-    </div>
-  </div>
-</div><!-- #views -->
-<script>
-/* ── MAP ── */
-const RPOS={
-  24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
-  21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
-  23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
-  20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
-  22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
-  15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
-  14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
-  11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
-  13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
-  10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
-  12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
-   6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
-   5:{x:260,y:578,n:"Trono Rey Demonio",boss:true,b:"desierto"},
-   2:{x:105,y:645,n:"Dunas del Norte",boss:false,b:"desierto"},
-   4:{x:415,y:645,n:"Templo Maldito",boss:false,b:"desierto"},
-   1:{x:105,y:722,n:"Entrada Desierto",boss:false,b:"desierto"},
-   3:{x:415,y:722,n:"Ruinas",boss:false,b:"desierto"},
-};
-const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[5,10],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
-const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
-const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra",21:"Bosque Hielo",22:"Fortaleza",23:"Trono Hielo",24:"Cumbre Alpha"};
-function buildMap(){
-  const ns="http://www.w3.org/2000/svg";
-  const cg=document.getElementById("conn-g"),rg=document.getElementById("room-g");
-  CONNS.forEach(([a,b])=>{
-    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
-    const l=document.createElementNS(ns,"line");
-    l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
-    l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
-    l.setAttribute("stroke","#2a2a2a");l.setAttribute("stroke-width","1.5");
-    cg.appendChild(l);
-  });
-  Object.entries(RPOS).forEach(([id,r])=>{
-    const g=document.createElementNS(ns,"g");
-    g.setAttribute("id","r"+id);g.setAttribute("cursor","pointer");g.setAttribute("data-id",id);
-    const W=r.boss?62:54,H=22;
-    const rect=document.createElementNS(ns,"rect");
-    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
-    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",3);
-    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
-    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
-    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
-    const txt=document.createElementNS(ns,"text");
-    txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
-    txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
-    txt.setAttribute("fill",r.boss?"#cc4444":(BC[r.b]||"#666"));
-    txt.setAttribute("font-size","8");txt.setAttribute("font-family","monospace");
-    txt.textContent=id;
-    g.appendChild(rect);g.appendChild(txt);
-    let tt=null;
-    g.addEventListener("mouseenter",e=>{
-      tt=document.createElement("div");
-      tt.style.cssText="position:fixed;background:#1c1c1c;border:1px solid #444;padding:4px 8px;border-radius:4px;font-size:10px;color:#ccc;pointer-events:none;z-index:200;white-space:nowrap;font-family:monospace";
-      tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
-    });
-    g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-6)+"px";}});
-    g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
-    rg.appendChild(g);
-  });
-}
-buildMap();
-function highlightRoom(id){
-  document.querySelectorAll("[data-id]").forEach(g=>{
-    const rid=parseInt(g.getAttribute("data-id")),r=RPOS[rid];
-    if(!r)return;const rect=g.querySelector("rect");if(!rect)return;
-    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
-    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
-    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
-    rect.removeAttribute("filter");
-  });
-  const g=document.getElementById("r"+id);
-  if(g){const rect=g.querySelector("rect");if(rect){
-    rect.setAttribute("fill","#2a1800");rect.setAttribute("stroke","#c9a84c");
-    rect.setAttribute("stroke-width","2");rect.setAttribute("filter","url(#glow)");
-  }}
-}
-/* ── STATE ── */
-let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,currentView="game";
-/* ── VIEWS ── */
-function setView(v){
-  currentView=v;
-  document.querySelectorAll(".view").forEach(el=>el.classList.remove("active"));
-  document.getElementById(v==="game"?"game-view":"dash-view").classList.add("active");
-  document.querySelectorAll(".nav-btn").forEach((el,i)=>el.classList.toggle("active",(i===0&&v==="game")||(i===1&&v==="dash")));
-}
-/* ── LOGIN TABS ── */
-function showTab(t){
-  document.getElementById("login-p").style.display=t==="login"?"block":"none";
-  document.getElementById("reg-p").style.display=t==="register"?"block":"none";
-  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
-}
-showTab("login");
-/* ── CONEXIÓN ── */
-function getWsUrl(){
-  const loc=window.location;
-  const proto=loc.protocol==="https:"?"wss:":"ws:";
-  return proto+"//"+loc.host+"/ws";
-}
-function doLogin(){
-  const u=document.getElementById("lu").value.trim();
-  const p=document.getElementById("lp").value;
-  const err=document.getElementById("lerr");
-  if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
-  err.textContent="Conectando...";
-  connect({type:"game_auth",usuario:u,password:p});
-}
-function doRegister(){
-  const u=document.getElementById("ru").value.trim();
-  const p1=document.getElementById("rp1").value;
-  const p2=document.getElementById("rp2").value;
-  const nom=document.getElementById("rn").value.trim()||u;
-  const err=document.getElementById("lerr");
-  if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
-  if(u.length<3){err.textContent="Usuario: mínimo 3 caracteres.";return;}
-  if(p1.length<4){err.textContent="Contraseña: mínimo 4 caracteres.";return;}
-  if(p1!==p2){err.textContent="Las contraseñas no coinciden.";return;}
-  err.textContent="Creando cuenta...";
-  connect({type:"game_register",usuario:u,password:p1,nombre:nom});
-}
-function connect(authMsg){
-  ws=new WebSocket(getWsUrl());
-  ws.onopen=()=>ws.send(JSON.stringify(authMsg));
-  ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
-  ws.onclose=()=>{
-    setConn(false);
-    document.getElementById("cmd").disabled=true;
-    document.getElementById("sbtn").disabled=true;
-    document.getElementById("ch-in").disabled=true;
-    document.getElementById("ch-send").disabled=true;
-    appendLog("Conexión cerrada con el servidor.","gd");
-  };
-  ws.onerror=()=>{
-    document.getElementById("lerr").textContent="No se pudo conectar.";
-    ws=null;
-  };
-}
-["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
-["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
-/* ── MENSAJES ── */
-function handle(m){
-  if(m.type==="auth_ok"){
-    document.getElementById("lo").style.display="none";
-    setConn(true);
-    document.getElementById("cmd").disabled=false;
-    document.getElementById("sbtn").disabled=false;
-    document.getElementById("ch-in").disabled=false;
-    document.getElementById("ch-send").disabled=false;
-    document.getElementById("cmd").focus();
-  } else if(m.type==="auth_fail"){
-    document.getElementById("lerr").textContent=m.msg||"Error de autenticación";ws=null;
-  } else if(m.type==="game"){
-    appendLog(m.text,classify(m.text));
-  } else if(m.type==="prompt"){
-    appendLog(m.text,"gp2");
-  } else if(m.type==="combat_menu"){
-    appendLog(m.text,"cm2",true);
-  } else if(m.type==="levelup"){
-    appendLog(m.text,"gl");
-  } else if(m.type==="status"){
-    updateStats(m);
-  } else if(m.type==="chat"){
-    const tag=m.scope==="sala"?"[Sala]":"[Global]";
-    appendLog(tag+" "+m.nombre+": "+m.text,"gi");
-    appendChat(m.nombre,m.scope,m.text);
-  } else if(m.type==="players"){
-    updatePlayers(m.list);
-  } else if(m.type==="map"){
-    if(m.player_sala)highlightRoom(m.player_sala);
-  }
-}
-function classify(t){
-  const l=t.toLowerCase();
-  if(l.includes("victoria")||l.includes("🏆"))return "gv";
-  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto"))return "gd";
-  if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
-  if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
-  return "gg";
-}
-/* ── GAME LOG ── */
-function appendLog(text,cls,isBlock=false){
-  const log=document.getElementById("glog");
-  if(isBlock){
-    const d=document.createElement("div");d.className="gm "+cls;d.textContent=text;log.appendChild(d);
-  } else {
-    text.split("\n").forEach(line=>{
-      const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
-    });
-  }
-  log.scrollTop=log.scrollHeight;
-}
-/* ── STATS (game + dashboard) ── */
-function updateStats(s){
-  myStats=s;
-  // Game panel
-  set("s-nm",s.nombre||"—");set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  set("s-nv","Nv."+s.nivel);set("s-xp",s.xp+"/"+s.xpMax);
-  document.getElementById("top-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
-  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
-  document.getElementById("b-xp").style.width=xpPct+"%";
-  const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
-  const bh=document.getElementById("b-hp");
-  bh.style.width=hpPct+"%";bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
-  set("s-hp",s.hp+"/"+s.hpMax);
-  document.getElementById("b-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
-  set("s-mp",s.mana+"/"+s.manaMax);
-  const atqs=s.ataquesTurno;
-  set("s-dmg",s.danioBase||"—");
-  set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("s-mc",(s.costoEspecial||0)+" mana");set("s-mo",s.monedas+" 💰");
-  // Dashboard panel
-  set("ds-nm",s.nombre||"—");set("ds-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  set("ds-nv","Nv."+s.nivel);set("ds-xp",s.xp+"/"+s.xpMax);
-  document.getElementById("db-xp").style.width=xpPct+"%";
-  const dbh=document.getElementById("db-hp");
-  dbh.style.width=hpPct+"%";dbh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
-  set("ds-hp",s.hp+"/"+s.hpMax);
-  document.getElementById("db-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
-  set("ds-mp",s.mana+"/"+s.manaMax);
-  set("ds-dmg",s.danioBase||"—");
-  set("ds-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("ds-mc",(s.costoEspecial||0)+" mana");set("ds-mo",s.monedas+" 💰");
-  set("ds-sl","["+s.sala_id+"] "+(SNAMES[s.sala_id]||"?"));
-  highlightRoom(s.sala_id);
-}
-/* ── PLAYERS ── */
-function updatePlayers(list){
-  const div=document.getElementById("pl-list");
-  if(!list||!list.length){div.innerHTML='<div style="color:var(--dim);font-size:10px;padding:7px">Nadie conectado</div>';return;}
-  const grupos={};const sinGrupo=[];
-  list.forEach(p=>{
-    if(p.grupo_id){
-      if(!grupos[p.grupo_id])grupos[p.grupo_id]={lider:p.grupo_lider,miembros:[]};
-      grupos[p.grupo_id].miembros.push(p);
-    } else sinGrupo.push(p);
-  });
-  let html="";
-  Object.entries(grupos).forEach(([gid,g])=>{
-    html+=`<div style="margin-bottom:5px;border:1px solid #2a2a2a;border-radius:3px;overflow:hidden"><div style="background:#1a1a0a;padding:3px 6px;font-size:9px;color:var(--gold)">👥 Grupo #${gid} — ${esc(g.lider)}</div>`;
-    g.miembros.forEach(p=>{html+=`<div class="pi" style="padding-left:10px"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀":"📍 "+esc(p.sala_nombre)}</div></div>`;});
-    html+="</div>";
-  });
-  sinGrupo.forEach(p=>{html+=`<div class="pi"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀 Muerto":"📍 "+esc(p.sala_nombre)}</div></div>`;});
-  div.innerHTML=html;
-}
-/* ── CHAT ── */
-function setTab(t){
-  chatTab=t;
-  document.getElementById("t-sala").className="ctab"+(t==="sala"?" as":"");
-  document.getElementById("t-global").className="ctab"+(t==="global"?" ag":"");
-}
-function appendChat(nombre,scope,texto){
-  const log=document.getElementById("ch-log");
-  const now=new Date();
-  const time=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
-  const label=scope==="sala"?"SALA":scope==="global"?"GLOBAL":"SYS";
-  const bc=scope==="sala"?"bs":scope==="global"?"bg2c":"bx";
-  const nc=scope==="sala"?"ns":scope==="global"?"ng":"nx";
-  const div=document.createElement("div");div.className="cm3";
-  div.innerHTML=`<span class="cm-t">${time}</span><span class="cm-b ${bc}">${label}</span><span class="cm-nm ${nc}">${esc(nombre)}</span><span class="cm-tx">${esc(texto)}</span>`;
-  log.appendChild(div);log.scrollTop=log.scrollHeight;
-}
-function sendChat(){
-  const inp=document.getElementById("ch-in");
-  const msg=inp.value.trim();
-  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
-  const cmd=chatTab==="sala"?"decir "+msg:"g "+msg;
-  ws.send(cmd);
-  appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
-  inp.value="";
-}
-/* ── ENVÍO ── */
-function send(text){if(!ws||ws.readyState!==WebSocket.OPEN)return;ws.send(text);}
-function doSend(){
-  const inp=document.getElementById("cmd");
-  const cmd=inp.value.trim();
-  if(!cmd)return;
-  hist.unshift(cmd);if(hist.length>50)hist.pop();hidx=-1;
-  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
-}
-document.addEventListener("DOMContentLoaded",()=>{
-  document.getElementById("cmd").addEventListener("keydown",e=>{
-    if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
-    else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
-  });
-});
-/* ── UTILS ── */
-function setConn(on){document.getElementById("cdot").className=on?"on":"";}
-function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-</script>
-</body>
-</html>"""
-async def health(request):
-    return web.Response(text="OK", status=200)
-
-async def main():
-    port = int(os.environ.get("PORT", 8080))  # Render asigna PORT automáticamente
-    print(f"[START] Usando puerto {port} (asignado por Render)")
-
-    app = web.Application()
-    app.router.add_get("/health", health)          # ← Añade esto para health check
-    # ... añade tus otras rutas si las tienes separadas ...
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)   # ¡Importante: 0.0.0.0!
-    await site.start()
-
-    print(f"[HTTP+WS] Escuchando en 0.0.0.0:{port}")
-    print(f"[URL] Abre https://tu-proyecto.onrender.com para el chat")
-    await asyncio.Future()  # Mantiene vivo el servidor forever
 """
 server.py — MUD Multiplayer
 ============================
@@ -664,6 +25,37 @@ import aiohttp
 
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
+
+# ── Supabase config (se activa si hay variables de entorno) ──
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+USAR_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
+TABLA = "mud_saves"
+
+def _sb_headers():
+    return {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+        "Prefer":        "return=representation",
+    }
+
+async def _sb_get(usuario: str) -> dict | None:
+    """Lee una fila de Supabase. Devuelve el dict o None si no existe."""
+    url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
+    async with aiohttp.ClientSession() as s:
+        async with s.get(url, headers=_sb_headers()) as r:
+            if r.status == 200:
+                rows = await r.json()
+                return rows[0] if rows else None
+    return None
+
+async def _sb_upsert(row: dict):
+    """Inserta o actualiza una fila en Supabase."""
+    url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
+    headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
+    async with aiohttp.ClientSession() as s:
+        await s.post(url, headers=headers, json=row)
 
 # ============================================================
 # DATOS — CLASES COMPLETAS
@@ -1347,103 +739,136 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
 # ============================================================
 
 def _ruta_cuenta(usuario: str) -> str:
-    """Devuelve la ruta del fichero JSON de una cuenta."""
-    # Sanitizar: solo letras, números y guión bajo
     seguro = "".join(c for c in usuario.lower() if c.isalnum() or c == "_")
     return os.path.join(SAVES_DIR, f"{seguro}.json")
 
 def _hash_password(password: str, salt: str) -> str:
     return hashlib.sha256((salt + password).encode()).hexdigest()
 
-def cuenta_existe(usuario: str) -> bool:
-    return os.path.isfile(_ruta_cuenta(usuario))
+# ── Versiones síncronas (ficheros locales, fallback) ──────────
 
-def verificar_password(usuario: str, password: str) -> bool:
+def _leer_fichero(usuario: str) -> dict | None:
     ruta = _ruta_cuenta(usuario)
     if not os.path.isfile(ruta):
-        return False
+        return None
     with open(ruta, "r", encoding="utf-8") as f:
-        datos = json.load(f)
-    salt   = datos.get("salt", "")
-    hashed = datos.get("password_hash", "")
-    return _hash_password(password, salt) == hashed
+        return json.load(f)
 
-def guardar_cuenta(player: "Player"):
-    """Serializa el estado completo del jugador en su fichero JSON."""
-    if not player.usuario or not player.personaje:
-        return
-    ruta = _ruta_cuenta(player.usuario)
-    # Leer datos existentes para conservar password_hash y salt
-    datos_prev = {}
-    if os.path.isfile(ruta):
-        with open(ruta, "r", encoding="utf-8") as f:
-            datos_prev = json.load(f)
-
-    datos = {
-        "usuario":       player.usuario,
-        "password_hash": datos_prev.get("password_hash", ""),
-        "salt":          datos_prev.get("salt", ""),
-        "nombre":        player.nombre,
-        "nivel":         player.nivel,
-        "xp":            player.xp,
-        "monedas":       player.monedas,
-        "inventario":    player.inventario,
-        "sala_id":       player.sala_id,
-        "personaje": {
-            "nombreClase": player.personaje["nombreClase"],
-            "vidaMax":     player.personaje["vidaMax"],
-            "vidaActual":  player.personaje["vidaActual"],
-            "manaMax":     player.personaje["manaMax"],
-            "manaActual":  player.personaje["manaActual"],
-            "danioBase":   player.personaje["danioBase"],
-        },
-    }
+def _escribir_fichero(datos: dict):
+    seguro = "".join(c for c in datos["usuario"].lower() if c.isalnum() or c == "_")
+    ruta = os.path.join(SAVES_DIR, f"{seguro}.json")
     with open(ruta, "w", encoding="utf-8") as f:
         json.dump(datos, f, ensure_ascii=False, indent=2)
 
-def cargar_cuenta(player: "Player", usuario: str):
-    """Carga los datos de una cuenta en el objeto Player."""
-    ruta = _ruta_cuenta(usuario)
-    with open(ruta, "r", encoding="utf-8") as f:
-        datos = json.load(f)
+# ── API unificada (async, Supabase si disponible) ─────────────
 
-    player.usuario  = usuario
-    player.nombre   = datos["nombre"]
-    player.nivel    = datos.get("nivel", 1)
-    player.xp       = datos.get("xp", 0)
-    player.monedas  = datos.get("monedas", 0)
+async def cuenta_existe_async(usuario: str) -> bool:
+    if USAR_SUPABASE:
+        row = await _sb_get(usuario)
+        return row is not None
+    return _leer_fichero(usuario) is not None
+
+async def verificar_password_async(usuario: str, password: str) -> bool:
+    if USAR_SUPABASE:
+        row = await _sb_get(usuario)
+    else:
+        row = _leer_fichero(usuario)
+    if not row:
+        return False
+    return _hash_password(password, row.get("salt", "")) == row.get("password_hash", "")
+
+async def guardar_cuenta_async(player: "Player"):
+    if not player.usuario or not player.personaje:
+        return
+    # Leer salt/hash previos
+    if USAR_SUPABASE:
+        prev = await _sb_get(player.usuario)
+    else:
+        prev = _leer_fichero(player.usuario)
+    prev = prev or {}
+
+    datos = {
+        "usuario":       player.usuario,
+        "password_hash": prev.get("password_hash", ""),
+        "salt":          prev.get("salt", ""),
+        "data": {
+            "nombre":     player.nombre,
+            "nivel":      player.nivel,
+            "xp":         player.xp,
+            "monedas":    player.monedas,
+            "inventario": player.inventario,
+            "sala_id":    player.sala_id,
+            "personaje": {
+                "nombreClase": player.personaje["nombreClase"],
+                "vidaMax":     player.personaje["vidaMax"],
+                "vidaActual":  player.personaje["vidaActual"],
+                "manaMax":     player.personaje["manaMax"],
+                "manaActual":  player.personaje["manaActual"],
+                "danioBase":   player.personaje["danioBase"],
+            },
+        }
+    }
+    if USAR_SUPABASE:
+        await _sb_upsert(datos)
+    else:
+        merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
+        merged["nombre"] = datos["data"]["nombre"]
+        _escribir_fichero(merged)
+
+async def cargar_cuenta_async(player: "Player", usuario: str):
+    if USAR_SUPABASE:
+        row = await _sb_get(usuario)
+    else:
+        row = _leer_fichero(usuario)
+    if not row:
+        raise ValueError(f"Cuenta no encontrada: {usuario}")
+
+    # Supabase guarda en columna "data", fichero local es plano
+    datos = row.get("data", row)
+
+    player.usuario    = usuario
+    player.nombre     = datos.get("nombre", usuario)
+    player.nivel      = datos.get("nivel", 1)
+    player.xp         = datos.get("xp", 0)
+    player.monedas    = datos.get("monedas", 0)
     player.inventario = datos.get("inventario", {})
-    player.sala_id  = datos.get("sala_id", 1)
+    player.sala_id    = datos.get("sala_id", 1)
 
-    # Reconstruir personaje a partir de la clase base + stats guardados
-    clase = datos["personaje"]["nombreClase"]
+    clase = datos.get("personaje", {}).get("nombreClase", "guerrero")
     base  = deepcopy(CLASES[clase])
-    p_guardado = datos["personaje"]
+    pg    = datos.get("personaje", {})
     player.personaje = {
         "nombre":      player.nombre,
         "nombreClase": clase,
-        "vidaMax":     p_guardado.get("vidaMax",    base["vidaMax"]),
-        "vidaActual":  p_guardado.get("vidaActual", base["vidaMax"]),
-        "manaMax":     p_guardado.get("manaMax",    base["manaMax"]),
-        "manaActual":  p_guardado.get("manaActual", base["manaMax"]),
-        "danioBase":   p_guardado.get("danioBase",  base["danioBase"]),
+        "vidaMax":     pg.get("vidaMax",    base["vidaMax"]),
+        "vidaActual":  pg.get("vidaActual", base["vidaMax"]),
+        "manaMax":     pg.get("manaMax",    base["manaMax"]),
+        "manaActual":  pg.get("manaActual", base["manaMax"]),
+        "danioBase":   pg.get("danioBase",  base["danioBase"]),
         **base,
     }
-    # Sobreescribir los stats escalados sobre los base
-    player.personaje["vidaMax"]   = p_guardado.get("vidaMax",   base["vidaMax"])
-    player.personaje["vidaActual"]= p_guardado.get("vidaActual",base["vidaMax"])
-    player.personaje["manaMax"]   = p_guardado.get("manaMax",   base["manaMax"])
-    player.personaje["manaActual"]= p_guardado.get("manaActual",base["manaMax"])
-    player.personaje["danioBase"] = p_guardado.get("danioBase", base["danioBase"])
+    player.personaje["vidaMax"]    = pg.get("vidaMax",    base["vidaMax"])
+    player.personaje["vidaActual"] = pg.get("vidaActual", base["vidaMax"])
+    player.personaje["manaMax"]    = pg.get("manaMax",    base["manaMax"])
+    player.personaje["manaActual"] = pg.get("manaActual", base["manaMax"])
+    player.personaje["danioBase"]  = pg.get("danioBase",  base["danioBase"])
 
-
-def crear_cuenta_en_disco(usuario: str, password: str):
-    """Crea el fichero JSON vacío de una cuenta nueva con la contraseña hasheada."""
+async def crear_cuenta_async(usuario: str, password: str):
     salt   = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
     hashed = _hash_password(password, salt)
-    ruta   = _ruta_cuenta(usuario)
-    with open(ruta, "w", encoding="utf-8") as f:
-        json.dump({"usuario": usuario, "password_hash": hashed, "salt": salt}, f)
+    row    = {"usuario": usuario, "password_hash": hashed, "salt": salt, "data": {}}
+    if USAR_SUPABASE:
+        await _sb_upsert(row)
+    else:
+        _escribir_fichero({**row, "nombre": usuario})
+
+# ── Alias síncronos para compatibilidad con código existente ──
+# (los llamamos con await en los handlers ya async)
+cuenta_existe      = lambda u: None   # no usar directamente
+verificar_password = lambda u, p: None
+guardar_cuenta     = lambda player: None
+cargar_cuenta      = lambda player, u: None
+crear_cuenta_en_disco = lambda u, p: None
 
 
 # ============================================================
@@ -1489,7 +914,7 @@ async def flujo_registro(player: "Player") -> bool:
         if len(usuario) < 3:
             await player.send("  Minimo 3 caracteres.")
             continue
-        if cuenta_existe(usuario):
+        if await cuenta_existe_async(usuario):
             await player.send("  Ese usuario ya existe. Elige otro.")
             continue
         break
@@ -1535,7 +960,7 @@ async def flujo_registro(player: "Player") -> bool:
         await player.send("  Clase no encontrada.")
 
     # Crear cuenta en disco
-    crear_cuenta_en_disco(usuario, pw1)
+    await crear_cuenta_async(usuario, pw1)
 
     # Inicializar player
     player.usuario = usuario
@@ -1550,7 +975,7 @@ async def flujo_registro(player: "Player") -> bool:
     }
 
     # Guardar inmediatamente con los datos del personaje
-    guardar_cuenta(player)
+    await guardar_cuenta_async(player)
 
     await player.send(
         f"\n  Cuenta creada! Bienvenido, {nombre} el {clase_elegida.capitalize()}.\n"
@@ -1571,7 +996,7 @@ async def flujo_login(player: "Player") -> bool:
         if not usuario:
             return False
 
-        if not cuenta_existe(usuario):
+        if not await cuenta_existe_async(usuario):
             await player.send("  Usuario no encontrado.")
             intentos += 1
             continue
@@ -1588,13 +1013,13 @@ async def flujo_login(player: "Player") -> bool:
         if not pw:
             return False
 
-        if not verificar_password(usuario, pw):
+        if not await verificar_password_async(usuario, pw):
             await player.send("  Contrasena incorrecta.")
             intentos += 1
             continue
 
         # Autenticado — cargar datos
-        cargar_cuenta(player, usuario)
+        await cargar_cuenta_async(player, usuario)
         await player.send(
             f"\n  Bienvenido de vuelta, {player.nombre}!\n"
             f"  Nivel {player.nivel}  XP:{player.xp}/{XP_POR_NIVEL}  Monedas:{player.monedas}\n"
@@ -2229,7 +1654,7 @@ async def procesar_comando(player: Player, cmd: str):
             f"  Nivel {player.nivel}  XP:{player.xp}/{XP_POR_NIVEL}  Monedas:{player.monedas}")
 
     elif ac in ("guardar", "save"):
-        guardar_cuenta(player)
+        await guardar_cuenta_async(player)
         await player.send("  Progreso guardado.")
 
     elif ac == "ayuda":
@@ -2279,7 +1704,7 @@ async def handle_game_ws(ws, usuario: str):
     rt = asyncio.create_task(reader_task())
 
     try:
-        cargar_cuenta(player, usuario)
+        await cargar_cuenta_async(player, usuario)
         await player.send(
             f"\n  Bienvenido de vuelta, {player.nombre}!\n"
             f"  Nivel {player.nivel}  XP:{player.xp}/{XP_POR_NIVEL}  Monedas:{player.monedas}\n"
@@ -2306,7 +1731,7 @@ async def handle_game_ws(ws, usuario: str):
         print(f"[GAME] Error: {e}")
     finally:
         if player.usuario and player.personaje:
-            guardar_cuenta(player)
+            await guardar_cuenta_async(player)
             print(f"[SAVE] {player.usuario}")
         if player.grupo:
             asyncio.create_task(cmd_salirgrupo(player))
@@ -2461,11 +1886,11 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         if len(password) < 4:
             await ws.send_json({"type": "auth_fail", "msg": "Contrasena: minimo 4 caracteres."})
             return ws
-        if cuenta_existe(usuario):
+        if await cuenta_existe_async(usuario):
             await ws.send_json({"type": "auth_fail", "msg": "Ese usuario ya existe."})
             return ws
 
-        crear_cuenta_en_disco(usuario, password)
+        await crear_cuenta_async(usuario, password)
         tmp = Player(ws)
         tmp.usuario = usuario
         tmp.nombre  = nombre
@@ -2507,13 +1932,13 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             "nombre": nombre, "nombreClase": clase_elegida,
             "vidaActual": base["vidaMax"], "manaActual": base["manaMax"], **base,
         }
-        guardar_cuenta(tmp)
+        await guardar_cuenta_async(tmp)
         rt.cancel()
         await tmp.send(f"\nCuenta creada! {nombre} el {clase_elegida.capitalize()}")
         await handle_game_ws(ws, usuario)
 
     elif msg_type == "game_auth":
-        if not cuenta_existe(usuario) or not verificar_password(usuario, password):
+        if not await cuenta_existe_async(usuario) or not await verificar_password_async(usuario, password):
             await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
             return ws
         ya = any(p.usuario == usuario for p in jugadores_conectados)
@@ -2524,7 +1949,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         await handle_game_ws(ws, usuario)
 
     elif msg_type == "auth":
-        if not cuenta_existe(usuario) or not verificar_password(usuario, password):
+        if not await cuenta_existe_async(usuario) or not await verificar_password_async(usuario, password):
             await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
             return ws
         await handle_dashboard_ws(ws, usuario)
@@ -2561,7 +1986,656 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
+# ============================================================
+# HTML EMBEBIDO — se sirve directamente desde el servidor
+# ============================================================
 
+def get_html() -> str:
+    """Devuelve el HTML de la aplicación completa."""
+    return r"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MUD — The Return to Highdown</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0a0a0a;--bg2:#111;--bg3:#181818;--border:#252525;
+  --gold:#c9a84c;--gold2:#e8c55c;--green:#4caf50;--red:#e53935;
+  --red2:#ff1744;--blue:#42a5f5;--mana:#5c6bc0;--purple:#ab47bc;
+  --orange:#ff9800;--text:#ccc;--dim:#555;--dim2:#222;
+}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* LOGIN */
+#lo{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;justify-content:center;z-index:999;}
+#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;padding:32px 40px;text-align:center;min-width:320px;max-width:400px;width:90%;}
+#lb h1{color:var(--gold);font-size:20px;margin-bottom:4px;}
+#lb p{color:var(--dim);font-size:11px;margin-bottom:16px;}
+.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;font-family:monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:8px;transition:border-color .15s;}
+.li:focus{border-color:var(--gold);}
+.li::placeholder{color:var(--dim);}
+.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:10px;font-weight:bold;font-size:13px;cursor:pointer;border-radius:4px;font-family:monospace;transition:background .15s;}
+.abtn:hover{background:var(--gold2);}
+#lerr{color:var(--red);font-size:11px;margin-top:8px;min-height:15px;}
+.tabs{display:flex;gap:5px;margin-bottom:12px;}
+.tab{flex:1;padding:5px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;color:var(--dim);background:var(--bg3);transition:all .15s;}
+.tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
+#reg-p{display:none;}
+
+/* TOPBAR */
+#top{background:var(--bg2);border-bottom:1px solid var(--border);padding:5px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:11px;}
+#top-nav{display:flex;gap:4px;margin-left:auto;}
+.nav-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 9px;border-radius:3px;cursor:pointer;font-family:monospace;font-size:10px;transition:all .15s;}
+.nav-btn.active,.nav-btn:hover{color:var(--text);border-color:var(--gold);}
+#top-title{color:var(--gold);font-weight:bold;font-size:13px;}
+#top-player{color:var(--text);}#top-player span{color:var(--gold);}
+#cdot{width:7px;height:7px;border-radius:50%;background:var(--red);}
+#cdot.on{background:var(--green);}
+
+/* VIEWS */
+#views{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.view{flex:1;display:none;overflow:hidden;}
+.view.active{display:flex;}
+
+/* ── GAME VIEW ── */
+#game-view{flex-direction:row;}
+#sp{background:var(--bg2);width:190px;flex-shrink:0;padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;border-right:1px solid var(--border);}
+.sh{color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);padding-bottom:3px;}
+.pid{text-align:center;}
+.pid-n{font-size:13px;color:var(--gold);font-weight:bold;}
+.pid-c{font-size:10px;color:var(--dim);margin-top:1px;}
+.lvr{display:flex;align-items:center;justify-content:space-between;font-size:11px;}
+.lvb{background:var(--gold);color:#000;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;}
+.bl{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;}
+.bl-n{color:var(--dim);}
+.bw{width:100%;height:11px;background:var(--bg3);border-radius:5px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;}
+.bf{height:100%;border-radius:5px;transition:width .4s,background .4s;}
+.bf-hp{background:var(--red);}
+.bf-mp{background:var(--mana);}
+.xw{width:100%;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;border:1px solid var(--border);margin-top:2px;}
+.bf-xp{background:var(--purple);border-radius:0;}
+.sr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--dim2);font-size:10px;}
+.sr:last-child{border-bottom:none;}
+.sr-l{color:var(--dim);}
+.sr-v{color:var(--text);font-weight:bold;}
+.qbtns{display:flex;flex-wrap:wrap;gap:3px;}
+.qb{flex:1;min-width:36px;background:var(--bg3);border:1px solid var(--border);color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;border-radius:3px;font-family:monospace;text-align:center;transition:all .15s;}
+.qb:hover{color:var(--text);border-color:var(--dim);}
+.qb.c{border-color:#2d4a2d;color:#81c784;}
+.qb.c:hover{background:#0a1a0a;}
+.qb.m{border-color:#1a2a3a;color:#64b5f6;}
+.qb.m:hover{background:#0a1020;}
+#gp{display:flex;flex-direction:column;flex:1;overflow:hidden;}
+#glog{flex:1;overflow-y:auto;padding:9px 13px;font-size:13px;line-height:1.65;}
+#glog::-webkit-scrollbar{width:4px;}
+#glog::-webkit-scrollbar-thumb{background:var(--border);}
+.gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
+.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#ff8a65;}
+.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
+.gi{color:#80cbc4;}.gs{color:var(--dim);font-style:italic;}
+.gl{color:var(--gold);background:#1a1500;border:1px solid var(--gold);padding:3px 7px;border-radius:3px;display:inline-block;margin:3px 0;}
+.cm2{background:#0a1a0a;border:1px solid #2d4a2d;border-radius:4px;padding:4px 8px;margin:2px 0;color:#81c784;}
+#ginput{display:flex;gap:5px;padding:7px 11px;border-top:1px solid var(--border);flex-shrink:0;}
+#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-family:'Courier New',monospace;font-size:13px;border-radius:4px;outline:none;}
+#cmd:focus{border-color:var(--gold);}
+#cmd:disabled{opacity:.4;}
+#cmd::placeholder{color:var(--dim);}
+#sbtn{background:var(--gold);border:none;color:#000;padding:6px 13px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:12px;}
+#sbtn:disabled{opacity:.4;cursor:default;}
+
+/* ── DASHBOARD VIEW ── */
+#dash-view{flex-direction:row;}
+#dash-app{display:grid;grid-template-columns:200px 1fr 180px;flex:1;overflow:hidden;gap:1px;background:var(--border);}
+#dsp{background:var(--bg2);padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;}
+#dmp{background:var(--bg);display:flex;flex-direction:column;overflow:hidden;}
+#dmp-hdr{padding:6px 11px;border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px;flex-shrink:0;}
+#dmp-hdr span{color:var(--gold);font-size:11px;}
+.leg{display:flex;gap:6px;margin-left:auto;}
+.ld{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--dim);}
+.ldot{width:6px;height:6px;border-radius:2px;}
+#map-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:6px;}
+#msvg{max-width:100%;max-height:100%;}
+#plp{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
+#plp-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
+#pl-list{flex:1;overflow-y:auto;padding:6px;}
+.pi{padding:5px 6px;border-bottom:1px solid var(--border);font-size:10px;}
+.pi:last-child{border-bottom:none;}
+.pi-n{color:var(--gold);font-weight:bold;margin-bottom:1px;}
+.pi-i{color:var(--dim);}
+.pi-s{color:var(--text);font-size:9px;margin-top:1px;}
+.pi-d{color:var(--red);}
+
+/* ── CHAT PANEL (bottom of dash) ── */
+#dash-chat{background:var(--bg2);border-top:1px solid var(--border);height:180px;display:flex;flex-direction:column;flex-shrink:0;}
+#ch-top{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.ctab{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;transition:all .15s;}
+.ctab.as{background:#1a3a1a;color:var(--green);border-color:var(--green);}
+.ctab.ag{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
+#ch-log{flex:1;overflow-y:auto;padding:5px 11px;font-size:11px;line-height:1.5;}
+#ch-log::-webkit-scrollbar{width:3px;}
+#ch-log::-webkit-scrollbar-thumb{background:var(--border);}
+.cm3{display:flex;gap:6px;align-items:baseline;margin-bottom:2px;}
+.cm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
+.cm-b{font-size:9px;padding:1px 4px;border-radius:4px;flex-shrink:0;font-weight:bold;}
+.bs{background:#1a3a1a;color:var(--green);}.bg2c{background:#3a2a0a;color:var(--orange);}.bx{background:#1a1a3a;color:var(--blue);}
+.cm-nm{font-weight:bold;flex-shrink:0;}
+.ns{color:var(--green);}.ng{color:var(--orange);}.nx{color:var(--blue);}
+.cm-tx{color:var(--text);}
+#ch-in-row{display:flex;gap:5px;padding:5px 10px;border-top:1px solid var(--border);flex-shrink:0;}
+#ch-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 9px;font-family:monospace;font-size:11px;border-radius:4px;outline:none;}
+#ch-in:focus{border-color:var(--gold);}
+#ch-in:disabled{opacity:.4;}
+.sbtn2{background:var(--gold);border:none;color:#000;padding:5px 11px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:11px;}
+.sbtn2:disabled{opacity:.4;cursor:default;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="lo">
+  <div id="lb">
+    <h1>⚔ The Return to Highdown</h1>
+    <p>MUD Multiplayer — Juega desde el navegador</p>
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
+      <button class="tab" onclick="showTab('register')">Crear cuenta</button>
+    </div>
+    <div id="login-p">
+      <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
+      <input class="li" id="lp" type="password" placeholder="Contraseña">
+      <button class="abtn" onclick="doLogin()">ENTRAR</button>
+    </div>
+    <div id="reg-p">
+      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 caracteres)" autocomplete="off">
+      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 caracteres)">
+      <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
+      <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
+      <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
+    </div>
+    <div id="lerr"></div>
+  </div>
+</div>
+
+<!-- TOPBAR -->
+<div id="top">
+  <div id="top-title">⚔ MUD</div>
+  <div id="top-player">—</div>
+  <div id="cdot"></div>
+  <div id="top-nav">
+    <button class="nav-btn active" onclick="setView('game')">🎮 Juego</button>
+    <button class="nav-btn" onclick="setView('dash')">📊 Dashboard</button>
+  </div>
+</div>
+
+<!-- VIEWS -->
+<div id="views">
+
+  <!-- GAME -->
+  <div class="view active" id="game-view">
+    <div id="sp">
+      <div class="sh">Personaje</div>
+      <div class="pid">
+        <div class="pid-n" id="s-nm">—</div>
+        <div class="pid-c" id="s-cl">—</div>
+      </div>
+      <div>
+        <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="s-nv">1</span></div>
+        <div style="margin-top:3px">
+          <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
+          <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div class="sh">Vida &amp; Mana</div>
+      <div>
+        <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
+        <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
+        <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
+        <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
+      </div>
+      <div class="sh">Combate</div>
+      <div>
+        <div class="sr"><span class="sr-l">Daño base</span>      <span class="sr-v" id="s-dmg">—</span></div>
+        <div class="sr"><span class="sr-l">Ataques/turno</span>  <span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
+        <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
+        <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="s-mo" style="color:var(--gold)">—</span></div>
+      </div>
+      <div class="sh">Combate rápido</div>
+      <div class="qbtns">
+        <button class="qb c" onclick="send('1')">1 Atacar</button>
+        <button class="qb c" onclick="send('2')">2 Especial</button>
+        <button class="qb c" onclick="send('3')">3 Pasar</button>
+        <button class="qb c" onclick="send('4')">4 Objeto</button>
+      </div>
+      <div class="sh">Mover</div>
+      <div class="qbtns">
+        <button class="qb m" onclick="send('n')">↑N</button>
+        <button class="qb m" onclick="send('s')">↓S</button>
+        <button class="qb m" onclick="send('e')">→E</button>
+        <button class="qb m" onclick="send('o')">←O</button>
+      </div>
+      <div class="sh">Acciones</div>
+      <div class="qbtns">
+        <button class="qb" onclick="send('mirar')">👁 Mirar</button>
+        <button class="qb" onclick="send('atacar')">⚔ Atacar</button>
+        <button class="qb" onclick="send('stats')">📊 Stats</button>
+        <button class="qb" onclick="send('ayuda')">❓ Ayuda</button>
+        <button class="qb" onclick="send('tienda')">🏪 Tienda</button>
+        <button class="qb" onclick="send('hospital')">🏥 Hospital</button>
+        <button class="qb" onclick="send('grupo')">👥 Grupo</button>
+        <button class="qb" onclick="send('jugadores')">🌍 Jugadores</button>
+        <button class="qb" onclick="send('guardar')">💾 Guardar</button>
+      </div>
+    </div>
+    <div id="gp">
+      <div id="glog"></div>
+      <div id="ginput">
+        <input id="cmd" type="text" placeholder="Escribe un comando... (ayuda para ver todos)"
+               disabled autocomplete="off" spellcheck="false"
+               onkeydown="if(event.key==='Enter') doSend()">
+        <button id="sbtn" onclick="doSend()" disabled>Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="view" id="dash-view" style="flex-direction:column;">
+    <div id="dash-app">
+      <!-- Stats dashboard -->
+      <div id="dsp">
+        <div class="sh">Personaje</div>
+        <div class="pid"><div class="pid-n" id="ds-nm">—</div><div class="pid-c" id="ds-cl">—</div></div>
+        <div>
+          <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="ds-nv">1</span></div>
+          <div style="margin-top:3px">
+            <div class="bl"><span class="bl-n">XP</span><span id="ds-xp">0/150</span></div>
+            <div class="xw"><div class="bf bf-xp" id="db-xp" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="sh">Vida &amp; Mana</div>
+        <div>
+          <div class="bl"><span class="bl-n">❤ HP</span><span id="ds-hp">—</span></div>
+          <div class="bw"><div class="bf bf-hp" id="db-hp" style="width:100%"></div></div>
+          <div class="bl"><span class="bl-n">✦ Mana</span><span id="ds-mp">—</span></div>
+          <div class="bw"><div class="bf bf-mp" id="db-mp" style="width:100%"></div></div>
+        </div>
+        <div class="sh">Combate</div>
+        <div>
+          <div class="sr"><span class="sr-l">Daño</span>          <span class="sr-v" id="ds-dmg">—</span></div>
+          <div class="sr"><span class="sr-l">Ataques</span>        <span class="sr-v" id="ds-atq" style="color:var(--green)">—</span></div>
+          <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="ds-mc" style="color:var(--mana)">—</span></div>
+          <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="ds-mo" style="color:var(--gold)">—</span></div>
+          <div class="sr"><span class="sr-l">Sala</span>           <span class="sr-v" id="ds-sl">—</span></div>
+        </div>
+      </div>
+      <!-- Map -->
+      <div id="dmp">
+        <div id="dmp-hdr">
+          <span>🗺 MAPA</span>
+          <div class="leg">
+            <div class="ld"><div class="ldot" style="background:#8b6914"></div>Desierto</div>
+            <div class="ld"><div class="ldot" style="background:#1565c0"></div>Mar</div>
+            <div class="ld"><div class="ldot" style="background:#546e7a"></div>Nieve</div>
+            <div class="ld"><div class="ldot" style="background:#2e7d32"></div>Segura</div>
+            <div class="ld"><div class="ldot" style="background:#b71c1c"></div>Boss</div>
+            <div class="ld"><div class="ldot" style="background:#c9a84c;border-radius:50%"></div>Tú</div>
+          </div>
+        </div>
+        <div id="map-wrap">
+          <svg id="msvg" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
+            <defs><filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+            <rect x="10" y="10" width="500" height="205" rx="6" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
+            <text x="18" y="25" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
+            <rect x="10" y="222" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
+            <text x="18" y="236" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
+            <rect x="10" y="277" width="500" height="200" rx="6" fill="#060810" stroke="#10103a" stroke-width="1"/>
+            <text x="18" y="291" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
+            <rect x="10" y="484" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
+            <text x="18" y="498" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
+            <rect x="10" y="539" width="500" height="210" rx="6" fill="#100800" stroke="#302000" stroke-width="1"/>
+            <text x="18" y="553" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
+            <g id="conn-g"></g><g id="room-g"></g>
+          </svg>
+        </div>
+      </div>
+      <!-- Players -->
+      <div id="plp">
+        <div id="plp-hdr">👥 Jugadores</div>
+        <div id="pl-list"><div style="color:var(--dim);font-size:10px;padding:7px">Sin datos</div></div>
+      </div>
+    </div>
+    <!-- Chat -->
+    <div id="dash-chat">
+      <div id="ch-top">
+        <button class="ctab as" id="t-sala" onclick="setTab('sala')">📍 Sala</button>
+        <button class="ctab" id="t-global" onclick="setTab('global')">🌍 Global</button>
+      </div>
+      <div id="ch-log"></div>
+      <div id="ch-in-row">
+        <input id="ch-in" type="text" placeholder="Mensaje de chat..." disabled
+               onkeydown="if(event.key==='Enter') sendChat()">
+        <button class="sbtn2" id="ch-send" onclick="sendChat()" disabled>Enviar</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #views -->
+
+<script>
+/* ── MAP ── */
+const RPOS={
+  24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
+  21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
+  23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
+  20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
+  22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
+  15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
+  14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
+  11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
+  13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
+  10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
+  12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
+   6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
+   5:{x:260,y:578,n:"Trono Rey Demonio",boss:true,b:"desierto"},
+   2:{x:105,y:645,n:"Dunas del Norte",boss:false,b:"desierto"},
+   4:{x:415,y:645,n:"Templo Maldito",boss:false,b:"desierto"},
+   1:{x:105,y:722,n:"Entrada Desierto",boss:false,b:"desierto"},
+   3:{x:415,y:722,n:"Ruinas",boss:false,b:"desierto"},
+};
+const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[5,10],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
+const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
+const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra",21:"Bosque Hielo",22:"Fortaleza",23:"Trono Hielo",24:"Cumbre Alpha"};
+
+function buildMap(){
+  const ns="http://www.w3.org/2000/svg";
+  const cg=document.getElementById("conn-g"),rg=document.getElementById("room-g");
+  CONNS.forEach(([a,b])=>{
+    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
+    const l=document.createElementNS(ns,"line");
+    l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
+    l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
+    l.setAttribute("stroke","#2a2a2a");l.setAttribute("stroke-width","1.5");
+    cg.appendChild(l);
+  });
+  Object.entries(RPOS).forEach(([id,r])=>{
+    const g=document.createElementNS(ns,"g");
+    g.setAttribute("id","r"+id);g.setAttribute("cursor","pointer");g.setAttribute("data-id",id);
+    const W=r.boss?62:54,H=22;
+    const rect=document.createElementNS(ns,"rect");
+    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
+    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",3);
+    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
+    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
+    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
+    const txt=document.createElementNS(ns,"text");
+    txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
+    txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
+    txt.setAttribute("fill",r.boss?"#cc4444":(BC[r.b]||"#666"));
+    txt.setAttribute("font-size","8");txt.setAttribute("font-family","monospace");
+    txt.textContent=id;
+    g.appendChild(rect);g.appendChild(txt);
+    let tt=null;
+    g.addEventListener("mouseenter",e=>{
+      tt=document.createElement("div");
+      tt.style.cssText="position:fixed;background:#1c1c1c;border:1px solid #444;padding:4px 8px;border-radius:4px;font-size:10px;color:#ccc;pointer-events:none;z-index:200;white-space:nowrap;font-family:monospace";
+      tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
+    });
+    g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-6)+"px";}});
+    g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
+    rg.appendChild(g);
+  });
+}
+buildMap();
+
+function highlightRoom(id){
+  document.querySelectorAll("[data-id]").forEach(g=>{
+    const rid=parseInt(g.getAttribute("data-id")),r=RPOS[rid];
+    if(!r)return;const rect=g.querySelector("rect");if(!rect)return;
+    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
+    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
+    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
+    rect.removeAttribute("filter");
+  });
+  const g=document.getElementById("r"+id);
+  if(g){const rect=g.querySelector("rect");if(rect){
+    rect.setAttribute("fill","#2a1800");rect.setAttribute("stroke","#c9a84c");
+    rect.setAttribute("stroke-width","2");rect.setAttribute("filter","url(#glow)");
+  }}
+}
+
+/* ── STATE ── */
+let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,currentView="game";
+
+/* ── VIEWS ── */
+function setView(v){
+  currentView=v;
+  document.querySelectorAll(".view").forEach(el=>el.classList.remove("active"));
+  document.getElementById(v==="game"?"game-view":"dash-view").classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach((el,i)=>el.classList.toggle("active",(i===0&&v==="game")||(i===1&&v==="dash")));
+}
+
+/* ── LOGIN TABS ── */
+function showTab(t){
+  document.getElementById("login-p").style.display=t==="login"?"block":"none";
+  document.getElementById("reg-p").style.display=t==="register"?"block":"none";
+  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
+}
+showTab("login");
+
+/* ── CONEXIÓN ── */
+function getWsUrl(){
+  const loc=window.location;
+  const proto=loc.protocol==="https:"?"wss:":"ws:";
+  return proto+"//"+loc.host+"/ws";
+}
+
+function doLogin(){
+  const u=document.getElementById("lu").value.trim();
+  const p=document.getElementById("lp").value;
+  const err=document.getElementById("lerr");
+  if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
+  err.textContent="Conectando...";
+  connect({type:"game_auth",usuario:u,password:p});
+}
+
+function doRegister(){
+  const u=document.getElementById("ru").value.trim();
+  const p1=document.getElementById("rp1").value;
+  const p2=document.getElementById("rp2").value;
+  const nom=document.getElementById("rn").value.trim()||u;
+  const err=document.getElementById("lerr");
+  if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
+  if(u.length<3){err.textContent="Usuario: mínimo 3 caracteres.";return;}
+  if(p1.length<4){err.textContent="Contraseña: mínimo 4 caracteres.";return;}
+  if(p1!==p2){err.textContent="Las contraseñas no coinciden.";return;}
+  err.textContent="Creando cuenta...";
+  connect({type:"game_register",usuario:u,password:p1,nombre:nom});
+}
+
+function connect(authMsg){
+  ws=new WebSocket(getWsUrl());
+  ws.onopen=()=>ws.send(JSON.stringify(authMsg));
+  ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
+  ws.onclose=()=>{
+    setConn(false);
+    document.getElementById("cmd").disabled=true;
+    document.getElementById("sbtn").disabled=true;
+    document.getElementById("ch-in").disabled=true;
+    document.getElementById("ch-send").disabled=true;
+    appendLog("Conexión cerrada con el servidor.","gd");
+  };
+  ws.onerror=()=>{
+    document.getElementById("lerr").textContent="No se pudo conectar.";
+    ws=null;
+  };
+}
+
+["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
+["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
+
+/* ── MENSAJES ── */
+function handle(m){
+  if(m.type==="auth_ok"){
+    document.getElementById("lo").style.display="none";
+    setConn(true);
+    document.getElementById("cmd").disabled=false;
+    document.getElementById("sbtn").disabled=false;
+    document.getElementById("ch-in").disabled=false;
+    document.getElementById("ch-send").disabled=false;
+    document.getElementById("cmd").focus();
+  } else if(m.type==="auth_fail"){
+    document.getElementById("lerr").textContent=m.msg||"Error de autenticación";ws=null;
+  } else if(m.type==="game"){
+    appendLog(m.text,classify(m.text));
+  } else if(m.type==="prompt"){
+    appendLog(m.text,"gp2");
+  } else if(m.type==="combat_menu"){
+    appendLog(m.text,"cm2",true);
+  } else if(m.type==="levelup"){
+    appendLog(m.text,"gl");
+  } else if(m.type==="status"){
+    updateStats(m);
+  } else if(m.type==="chat"){
+    const tag=m.scope==="sala"?"[Sala]":"[Global]";
+    appendLog(tag+" "+m.nombre+": "+m.text,"gi");
+    appendChat(m.nombre,m.scope,m.text);
+  } else if(m.type==="players"){
+    updatePlayers(m.list);
+  } else if(m.type==="map"){
+    if(m.player_sala)highlightRoom(m.player_sala);
+  }
+}
+
+function classify(t){
+  const l=t.toLowerCase();
+  if(l.includes("victoria")||l.includes("🏆"))return "gv";
+  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto"))return "gd";
+  if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
+  if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
+  return "gg";
+}
+
+/* ── GAME LOG ── */
+function appendLog(text,cls,isBlock=false){
+  const log=document.getElementById("glog");
+  if(isBlock){
+    const d=document.createElement("div");d.className="gm "+cls;d.textContent=text;log.appendChild(d);
+  } else {
+    text.split("\n").forEach(line=>{
+      const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
+    });
+  }
+  log.scrollTop=log.scrollHeight;
+}
+
+/* ── STATS (game + dashboard) ── */
+function updateStats(s){
+  myStats=s;
+  // Game panel
+  set("s-nm",s.nombre||"—");set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  set("s-nv","Nv."+s.nivel);set("s-xp",s.xp+"/"+s.xpMax);
+  document.getElementById("top-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
+  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
+  document.getElementById("b-xp").style.width=xpPct+"%";
+  const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
+  const bh=document.getElementById("b-hp");
+  bh.style.width=hpPct+"%";bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
+  set("s-hp",s.hp+"/"+s.hpMax);
+  document.getElementById("b-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
+  set("s-mp",s.mana+"/"+s.manaMax);
+  const atqs=s.ataquesTurno;
+  set("s-dmg",s.danioBase||"—");
+  set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
+  set("s-mc",(s.costoEspecial||0)+" mana");set("s-mo",s.monedas+" 💰");
+  // Dashboard panel
+  set("ds-nm",s.nombre||"—");set("ds-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  set("ds-nv","Nv."+s.nivel);set("ds-xp",s.xp+"/"+s.xpMax);
+  document.getElementById("db-xp").style.width=xpPct+"%";
+  const dbh=document.getElementById("db-hp");
+  dbh.style.width=hpPct+"%";dbh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
+  set("ds-hp",s.hp+"/"+s.hpMax);
+  document.getElementById("db-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
+  set("ds-mp",s.mana+"/"+s.manaMax);
+  set("ds-dmg",s.danioBase||"—");
+  set("ds-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
+  set("ds-mc",(s.costoEspecial||0)+" mana");set("ds-mo",s.monedas+" 💰");
+  set("ds-sl","["+s.sala_id+"] "+(SNAMES[s.sala_id]||"?"));
+  highlightRoom(s.sala_id);
+}
+
+/* ── PLAYERS ── */
+function updatePlayers(list){
+  const div=document.getElementById("pl-list");
+  if(!list||!list.length){div.innerHTML='<div style="color:var(--dim);font-size:10px;padding:7px">Nadie conectado</div>';return;}
+  const grupos={};const sinGrupo=[];
+  list.forEach(p=>{
+    if(p.grupo_id){
+      if(!grupos[p.grupo_id])grupos[p.grupo_id]={lider:p.grupo_lider,miembros:[]};
+      grupos[p.grupo_id].miembros.push(p);
+    } else sinGrupo.push(p);
+  });
+  let html="";
+  Object.entries(grupos).forEach(([gid,g])=>{
+    html+=`<div style="margin-bottom:5px;border:1px solid #2a2a2a;border-radius:3px;overflow:hidden"><div style="background:#1a1a0a;padding:3px 6px;font-size:9px;color:var(--gold)">👥 Grupo #${gid} — ${esc(g.lider)}</div>`;
+    g.miembros.forEach(p=>{html+=`<div class="pi" style="padding-left:10px"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀":"📍 "+esc(p.sala_nombre)}</div></div>`;});
+    html+="</div>";
+  });
+  sinGrupo.forEach(p=>{html+=`<div class="pi"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀 Muerto":"📍 "+esc(p.sala_nombre)}</div></div>`;});
+  div.innerHTML=html;
+}
+
+/* ── CHAT ── */
+function setTab(t){
+  chatTab=t;
+  document.getElementById("t-sala").className="ctab"+(t==="sala"?" as":"");
+  document.getElementById("t-global").className="ctab"+(t==="global"?" ag":"");
+}
+function appendChat(nombre,scope,texto){
+  const log=document.getElementById("ch-log");
+  const now=new Date();
+  const time=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
+  const label=scope==="sala"?"SALA":scope==="global"?"GLOBAL":"SYS";
+  const bc=scope==="sala"?"bs":scope==="global"?"bg2c":"bx";
+  const nc=scope==="sala"?"ns":scope==="global"?"ng":"nx";
+  const div=document.createElement("div");div.className="cm3";
+  div.innerHTML=`<span class="cm-t">${time}</span><span class="cm-b ${bc}">${label}</span><span class="cm-nm ${nc}">${esc(nombre)}</span><span class="cm-tx">${esc(texto)}</span>`;
+  log.appendChild(div);log.scrollTop=log.scrollHeight;
+}
+function sendChat(){
+  const inp=document.getElementById("ch-in");
+  const msg=inp.value.trim();
+  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
+  const cmd=chatTab==="sala"?"decir "+msg:"g "+msg;
+  ws.send(cmd);
+  appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
+  inp.value="";
+}
+
+/* ── ENVÍO ── */
+function send(text){if(!ws||ws.readyState!==WebSocket.OPEN)return;ws.send(text);}
+function doSend(){
+  const inp=document.getElementById("cmd");
+  const cmd=inp.value.trim();
+  if(!cmd)return;
+  hist.unshift(cmd);if(hist.length>50)hist.pop();hidx=-1;
+  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
+}
+document.addEventListener("DOMContentLoaded",()=>{
+  document.getElementById("cmd").addEventListener("keydown",e=>{
+    if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
+    else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
+  });
+});
+
+/* ── UTILS ── */
+function setConn(on){document.getElementById("cdot").className=on?"on":"";}
+function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+</script>
+</body>
+</html>"""
 
 
 # ============================================================
@@ -2585,30 +2659,18 @@ async def process_request(connection, request):
 
 async def main():
     port = int(os.environ.get("PORT", 8080))
-    print(f"[START] Iniciando servidor - Puerto asignado por Render: {os.environ.get('PORT', 'no asignado')} (fallback: {port})")
-    print("[INFO] Bind a 0.0.0.0:" + str(port))
 
-    app = web.Application()
-
-    # Health check (Render lo necesita para considerar el servicio "vivo")
-    async def health(request: web.Request) -> web.Response:
-        return web.Response(text="OK", status=200)
-    app.router.add_get("/health", health)
-
-    # Tus rutas actuales
-    app.router.add_route("*", "/ws", ws_handler)
-    app.router.add_route("*", "/{tail:.*}", http_handler)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-
-    print(f"[HTTP+WS] Servidor escuchando en 0.0.0.0:{port}")
-    print(f"[URL] Abre https://tu-proyecto.onrender.com (o el dominio de Render) para el chat")
-    print("[SERVER] Listo y esperando conexiones...")
-
-    await asyncio.Future()  # Mantiene el servidor vivo forever
+    async with websockets.serve(
+        handle_connection,
+        "0.0.0.0",
+        port,
+        process_request=process_request,
+    ):
+        print(f"[SERVER] Puerto: {port}")
+        print(f"[SERVER] Abre http://localhost:{port} para jugar")
+        print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
+        print("[SERVER] Listo.\n")
+        await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
