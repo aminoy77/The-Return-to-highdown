@@ -1,3 +1,25 @@
+import os
+# ... resto de imports ...
+
+async def health(request):
+    return web.Response(text="OK", status=200)
+
+async def main():
+    port = int(os.environ.get("PORT", 8080))  # Render asigna PORT automáticamente
+    print(f"[START] Usando puerto {port} (asignado por Render)")
+
+    app = web.Application()
+    app.router.add_get("/health", health)          # ← Añade esto para health check
+    # ... añade tus otras rutas si las tienes separadas ...
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)   # ¡Importante: 0.0.0.0!
+    await site.start()
+
+    print(f"[HTTP+WS] Escuchando en 0.0.0.0:{port}")
+    print(f"[URL] Abre https://tu-proyecto.onrender.com para el chat")
+    await asyncio.Future()  # Mantiene vivo el servidor forever
 """
 server.py — MUD Multiplayer
 ============================
