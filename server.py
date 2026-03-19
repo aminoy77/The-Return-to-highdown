@@ -20,11 +20,8 @@ import os
 import random
 from copy import deepcopy
 from enum import Enum
-from websockets.server import serve
-from websockets.http11 import Request
-from websockets.datastructures import Headers
-
-import websockets
+from aiohttp import web
+import aiohttp
 
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
@@ -386,7 +383,7 @@ class Player:
     def __init__(self, ws):
         Player._id_counter += 1
         self.id          = Player._id_counter
-        self.ws          = ws
+        self.ws          = ws   # aiohttp WebSocketResponse
         self.nombre      = None
         self.personaje   = None
         self.sala_id     = 1
@@ -399,20 +396,19 @@ class Player:
         self.inventario  = {}
         self.usuario     = None
         self.input_queue = asyncio.Queue()
-        self.addr        = ws.remote_address
-        # Grupo
+        self.addr        = None
         self.grupo            = None
         self.invitacion_de    = None
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
-            await self.ws.send(json.dumps({"type": tipo, "text": texto}))
+            await self.ws.send_json({"type": tipo, "text": texto})
         except Exception:
             pass
 
     async def send_chat(self, texto: str, scope: str):
         try:
-            await self.ws.send(json.dumps({"type": "chat", "scope": scope, "text": texto}))
+            await self.ws.send_json({"type": "chat", "scope": scope, "text": texto})
         except Exception:
             pass
 
@@ -421,7 +417,7 @@ class Player:
             return
         p = self.personaje
         try:
-            await self.ws.send(json.dumps({
+            await self.ws.send_json({
                 "type":          "status",
                 "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
                 "mana":          p["manaActual"],  "manaMax": p["manaMax"],
@@ -432,7 +428,7 @@ class Player:
                 "danioBase":     p["danioBase"],
                 "ataquesTurno":  p.get("ataquesTurno", 1),
                 "costoEspecial": p.get("costoEspecial", 0),
-            }))
+            })
         except Exception:
             pass
 
@@ -472,40 +468,34 @@ async def broadcast_todos(texto):
 async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
     if not chat_ws_clients:
         return
-    payload = json.dumps({"type": "chat", "scope": scope, "nombre": nombre, "mensaje": mensaje})
+    payload = {"type": "chat", "scope": scope, "nombre": nombre, "mensaje": mensaje}
     muertos = set()
     for ws in chat_ws_clients:
         try:
-            await ws.send(payload)
+            await ws.send_json(payload)
         except Exception:
             muertos.add(ws)
     chat_ws_clients.difference_update(muertos)
 
 
 async def notify_web_session(player: "Player"):
-    """Empuja stats actualizadas al navegador del jugador si está conectado al dashboard."""
     ws = web_sessions.get(player.usuario)
     if not ws or not player.personaje:
         return
     p = player.personaje
     try:
-        await ws.send(json.dumps({
+        await ws.send_json({
             "type":          "stats",
-            "hp":            p["vidaActual"],
-            "hpMax":         p["vidaMax"],
-            "mana":          p["manaActual"],
-            "manaMax":       p["manaMax"],
-            "nivel":         player.nivel,
-            "xp":            player.xp,
-            "xpMax":         XP_POR_NIVEL,
-            "monedas":       player.monedas,
-            "clase":         p["nombreClase"],
-            "nombre":        player.nombre,
+            "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
+            "mana":          p["manaActual"],  "manaMax": p["manaMax"],
+            "nivel":         player.nivel,     "xp":      player.xp,
+            "xpMax":         XP_POR_NIVEL,     "monedas": player.monedas,
+            "clase":         p["nombreClase"], "nombre":  player.nombre,
             "sala_id":       player.sala_id,
             "danioBase":     p["danioBase"],
             "ataquesTurno":  p.get("ataquesTurno", 1),
             "costoEspecial": p.get("costoEspecial", 0),
-        }))
+        })
     except Exception:
         web_sessions.pop(player.usuario, None)
 
@@ -527,11 +517,11 @@ async def broadcast_players_to_web():
         }
         for p in jugadores_conectados if p.nombre and p.personaje
     ]
-    payload = json.dumps({"type": "players", "list": players_data})
+    payload = {"type": "players", "list": players_data}
     dead = []
     for usuario, ws in list(web_sessions.items()):
         try:
-            await ws.send(payload)
+            await ws.send_json(payload)
         except Exception:
             dead.append(usuario)
     for u in dead:
@@ -1622,25 +1612,26 @@ async def procesar_comando(player: Player, cmd: str):
 
 
 # ============================================================
-# HANDLE GAME WS — jugador jugando desde el navegador
+# HANDLE GAME WS
 # ============================================================
 
-async def handle_game_ws(websocket, usuario: str):
-    """Lógica del juego para un jugador conectado por WebSocket."""
-    player = Player(websocket)
+async def handle_game_ws(ws, usuario: str):
+    player = Player(ws)
     player.usuario = usuario
 
     if len(jugadores_conectados) >= MAX_JUGADORES:
-        await player.send("Servidor lleno (max 5 jugadores). Intentalo mas tarde.")
+        await player.send("Servidor lleno (max 5 jugadores).")
         return
 
     jugadores_conectados.append(player)
 
-    # Reader task: único lector del WebSocket — alimenta input_queue
     async def reader_task():
         try:
-            async for msg in websocket:
-                await player.input_queue.put(msg if msg else "")
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    await player.input_queue.put(msg.data)
+                elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+                    break
         except Exception:
             pass
         finally:
@@ -1649,7 +1640,6 @@ async def handle_game_ws(websocket, usuario: str):
     rt = asyncio.create_task(reader_task())
 
     try:
-        # Cargar datos del jugador
         cargar_cuenta(player, usuario)
         await player.send(
             f"\n  Bienvenido de vuelta, {player.nombre}!\n"
@@ -1666,17 +1656,15 @@ async def handle_game_ws(websocket, usuario: str):
             if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
                 await asyncio.sleep(0.05)
                 continue
-
             raw = await player.recv()
             if raw is None:
                 break
             if not raw.strip():
                 continue
-
             await procesar_comando(player, raw.strip())
 
     except Exception as e:
-        print(f"[GAME] Error {player.addr}: {e}")
+        print(f"[GAME] Error: {e}")
     finally:
         if player.usuario and player.personaje:
             guardar_cuenta(player)
@@ -1693,153 +1681,28 @@ async def handle_game_ws(websocket, usuario: str):
         if player.nombre:
             await broadcast_todos(f"\n  {player.nombre} abandono el dungeon.")
             await broadcast_players_to_web()
-        print(f"[GAME] Desconectado: {player.addr}")
-
-
-# ============================================================
-# HANDLE CONNECTION — enruta game vs dashboard
-# ============================================================
-
-async def handle_connection(websocket):
-    """
-    Punto de entrada único para todas las conexiones WebSocket.
-    El primer mensaje determina si es un jugador o un dashboard.
-      {"type": "game_auth",  "usuario": ..., "password": ...} → juego
-      {"type": "auth",       "usuario": ..., "password": ...} → dashboard
-    """
-    print(f"[WS] Conexion: {websocket.remote_address}")
-    try:
-        raw = await asyncio.wait_for(websocket.recv(), timeout=30)
-        data = json.loads(raw)
-    except (asyncio.TimeoutError, json.JSONDecodeError):
-        return
-
-    msg_type = data.get("type", "")
-    usuario  = data.get("usuario", "").strip().lower()
-    password = data.get("password", "").strip()
-
-    # ── Autenticación común ───────────────────────────────────
-    if not cuenta_existe(usuario) or not verificar_password(usuario, password):
-        try:
-            await websocket.send(json.dumps({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"}))
-        except Exception:
-            pass
-        return
-
-    if msg_type == "game_auth":
-        # Comprobar si ya está jugando
-        ya = any(p.usuario == usuario for p in jugadores_conectados)
-        if ya:
-            try:
-                await websocket.send(json.dumps({"type": "auth_fail", "msg": "Ya estas jugando en otra ventana."}))
-            except Exception:
-                pass
-            return
-        try:
-            await websocket.send(json.dumps({"type": "auth_ok"}))
-        except Exception:
-            return
-        await handle_game_ws(websocket, usuario)
-
-    elif msg_type == "game_register":
-        # Registro nuevo desde el navegador
-        nombre   = data.get("nombre", "").strip() or usuario
-        password = data.get("password", "").strip()
-        if len(usuario) < 3:
-            try:
-                await websocket.send(json.dumps({"type": "auth_fail", "msg": "Usuario: minimo 3 caracteres."}))
-            except Exception:
-                pass
-            return
-        if len(password) < 4:
-            try:
-                await websocket.send(json.dumps({"type": "auth_fail", "msg": "Contrasena: minimo 4 caracteres."}))
-            except Exception:
-                pass
-            return
-        if cuenta_existe(usuario):
-            try:
-                await websocket.send(json.dumps({"type": "auth_fail", "msg": "Ese usuario ya existe."}))
-            except Exception:
-                pass
-            return
-        # Crear cuenta vacía y mostrar selección de clase
-        crear_cuenta_en_disco(usuario, password)
-        # Crear personaje temporal para selección de clase
-        tmp = Player(websocket)
-        tmp.usuario = usuario
-        tmp.nombre  = nombre
-        # Alimentar input_queue desde websocket
-        async def reg_reader():
-            try:
-                async for msg in websocket:
-                    await tmp.input_queue.put(msg if msg else "")
-            except Exception:
-                pass
-            finally:
-                await tmp.input_queue.put(None)
-        rt = asyncio.create_task(reg_reader())
-        try:
-            await websocket.send(json.dumps({"type": "auth_ok"}))
-            # Mostrar clases
-            lineas = ["\nCLASES DISPONIBLES:"]
-            for i, (clase, s) in enumerate(CLASES.items(), 1):
-                atqs = s["ataquesTurno"]
-                atq_str = f"{atqs[0]}-{atqs[1]}" if isinstance(atqs, list) else str(atqs)
-                lineas.append(f"  {i:2}. {clase:<12}  HP:{s['vidaMax']:>3}  Dano:{s['danioBase']:>3}  Mana:{s['manaMax']:>3}  Atqs:{atq_str}")
-            await tmp.send("\n".join(lineas))
-            while True:
-                el = (await tmp.send_prompt("\nElige clase (nombre o numero): ")).strip().lower()
-                if el.isdigit() and 0 <= int(el)-1 < len(CLASES):
-                    clase_elegida = list(CLASES.keys())[int(el)-1]
-                    break
-                elif el in CLASES:
-                    clase_elegida = el
-                    break
-                await tmp.send("  Clase no encontrada.")
-            base = deepcopy(CLASES[clase_elegida])
-            tmp.personaje = {
-                "nombre": nombre, "nombreClase": clase_elegida,
-                "vidaActual": base["vidaMax"], "manaActual": base["manaMax"], **base,
-            }
-            guardar_cuenta(tmp)
-            await tmp.send(f"\nCuenta creada! {nombre} el {clase_elegida.capitalize()}")
-        finally:
-            rt.cancel()
-        # Ahora entrar al juego directamente
-        await handle_game_ws(websocket, usuario)
-
-    elif msg_type == "auth":
-        await handle_dashboard_ws(websocket, usuario)
-
-    else:
-        try:
-            await websocket.send(json.dumps({"type": "auth_fail", "msg": "Tipo de conexion desconocido"}))
-        except Exception:
-            pass
+        print(f"[GAME] Desconectado: {usuario}")
 
 
 # ============================================================
 # HANDLE DASHBOARD WS
 # ============================================================
 
-async def handle_dashboard_ws(websocket, usuario: str):
-    """Dashboard web: stats, mapa, jugadores, chat."""
-    chat_ws_clients.add(websocket)
-    web_sessions[usuario] = websocket
+async def handle_dashboard_ws(ws, usuario: str):
+    chat_ws_clients.add(ws)
+    web_sessions[usuario] = ws
     print(f"[DASH] {usuario} conectado")
 
     try:
-        # Cargar stats
         player_online = next((p for p in jugadores_conectados if p.usuario == usuario), None)
         if player_online and player_online.personaje:
             p = player_online.personaje
             stats = {
-                "hp": p["vidaActual"],       "hpMax":         p["vidaMax"],
-                "mana": p["manaActual"],     "manaMax":       p["manaMax"],
-                "nivel": player_online.nivel,"xp":            player_online.xp,
-                "xpMax": XP_POR_NIVEL,       "monedas":       player_online.monedas,
-                "clase": p["nombreClase"],   "nombre":        player_online.nombre,
+                "hp": p["vidaActual"],        "hpMax":         p["vidaMax"],
+                "mana": p["manaActual"],      "manaMax":       p["manaMax"],
+                "nivel": player_online.nivel, "xp":            player_online.xp,
+                "xpMax": XP_POR_NIVEL,        "monedas":       player_online.monedas,
+                "clase": p["nombreClase"],    "nombre":        player_online.nombre,
                 "sala_id": player_online.sala_id,
                 "danioBase": p["danioBase"],
                 "ataquesTurno": p.get("ataquesTurno", 1),
@@ -1866,9 +1729,8 @@ async def handle_dashboard_ws(websocket, usuario: str):
                 "online": False,
             }
 
-        await websocket.send(json.dumps({"type": "auth_ok", "stats": stats}))
+        await ws.send_json({"type": "auth_ok", "stats": stats})
 
-        # Mapa
         map_data = {}
         for s_id, s in SALAS.items():
             tiene_boss = any(
@@ -1876,40 +1738,189 @@ async def handle_dashboard_ws(websocket, usuario: str):
                 for tipo, _ in s.get("encuentros", [])
             )
             map_data[str(s_id)] = {
-                "nombre":   s["nombre"],   "bioma":    s.get("bioma"),
-                "tienda":   s.get("tienda", False),
+                "nombre": s["nombre"],    "bioma":    s.get("bioma"),
+                "tienda": s.get("tienda", False),
                 "hospital": s.get("hospital", False),
-                "boss":     tiene_boss,
-                "segura":   not ("bioma" in s or bool(s.get("encuentros"))),
+                "boss": tiene_boss,
+                "segura": not ("bioma" in s or bool(s.get("encuentros"))),
             }
-        await websocket.send(json.dumps({
-            "type": "map", "salas": map_data,
-            "player_sala": stats["sala_id"],
-        }))
+        await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
         await broadcast_players_to_web()
 
-        async for msg in websocket:
-            try:
-                d = json.loads(msg)
-                if d.get("type") == "chat":
-                    mensaje = d.get("mensaje", "").strip()
-                    scope   = d.get("scope", "global")
-                    nombre  = stats["nombre"]
-                    if not mensaje:
-                        continue
-                    await broadcast_chat_ws(scope, nombre, mensaje)
-                    tag = "[Global-Web]" if scope == "global" else "[Web-Sala]"
-                    await broadcast_todos(f"  {tag} {nombre}: {mensaje}")
-            except json.JSONDecodeError:
-                pass
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    d = json.loads(msg.data)
+                    if d.get("type") == "chat":
+                        mensaje = d.get("mensaje", "").strip()
+                        scope   = d.get("scope", "global")
+                        nombre  = stats["nombre"]
+                        if not mensaje:
+                            continue
+                        await broadcast_chat_ws(scope, nombre, mensaje)
+                        tag = "[Global-Web]" if scope == "global" else "[Web-Sala]"
+                        await broadcast_todos(f"  {tag} {nombre}: {mensaje}")
+                except json.JSONDecodeError:
+                    pass
+            elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+                break
 
     except Exception as e:
         print(f"[DASH] Error: {e}")
     finally:
-        chat_ws_clients.discard(websocket)
+        chat_ws_clients.discard(ws)
         web_sessions.pop(usuario, None)
         print(f"[DASH] {usuario} desconectado")
 
+
+# ============================================================
+# AIOHTTP HANDLERS
+# ============================================================
+
+async def http_handler(request: web.Request) -> web.Response:
+    """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
+    html = get_html().encode("utf-8")
+    return web.Response(
+        body=html,
+        content_type="text/html",
+        charset="utf-8",
+    )
+
+
+async def ws_handler(request: web.Request) -> web.WebSocketResponse:
+    """Maneja conexiones WebSocket."""
+    ws = web.WebSocketResponse(heartbeat=30)
+    await ws.prepare(request)
+
+    print(f"[WS] Conexion: {request.remote}")
+
+    try:
+        # Primer mensaje: auth
+        msg = await asyncio.wait_for(ws.__anext__(), timeout=30)
+    except (asyncio.TimeoutError, StopAsyncIteration):
+        return ws
+
+    if msg.type != aiohttp.WSMsgType.TEXT:
+        return ws
+
+    try:
+        data = json.loads(msg.data)
+    except json.JSONDecodeError:
+        return ws
+
+    msg_type = data.get("type", "")
+    usuario  = data.get("usuario", "").strip().lower()
+    password = data.get("password", "").strip()
+
+    # ── Auth ──────────────────────────────────────────────────
+    if msg_type == "game_register":
+        # Registro nuevo
+        nombre   = data.get("nombre", "").strip() or usuario
+        if len(usuario) < 3:
+            await ws.send_json({"type": "auth_fail", "msg": "Usuario: minimo 3 caracteres."})
+            return ws
+        if len(password) < 4:
+            await ws.send_json({"type": "auth_fail", "msg": "Contrasena: minimo 4 caracteres."})
+            return ws
+        if cuenta_existe(usuario):
+            await ws.send_json({"type": "auth_fail", "msg": "Ese usuario ya existe."})
+            return ws
+
+        crear_cuenta_en_disco(usuario, password)
+        tmp = Player(ws)
+        tmp.usuario = usuario
+        tmp.nombre  = nombre
+
+        async def reg_reader():
+            try:
+                async for m in ws:
+                    if m.type == aiohttp.WSMsgType.TEXT:
+                        await tmp.input_queue.put(m.data)
+                    elif m.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+                        break
+            except Exception:
+                pass
+            finally:
+                await tmp.input_queue.put(None)
+
+        rt = asyncio.create_task(reg_reader())
+        await ws.send_json({"type": "auth_ok"})
+        lineas = ["\nCLASES DISPONIBLES:"]
+        for i, (clase, s) in enumerate(CLASES.items(), 1):
+            atqs = s["ataquesTurno"]
+            atq_str = f"{atqs[0]}-{atqs[1]}" if isinstance(atqs, list) else str(atqs)
+            lineas.append(f"  {i:2}. {clase:<12}  HP:{s['vidaMax']:>3}  Dano:{s['danioBase']:>3}  Mana:{s['manaMax']:>3}  Atqs:{atq_str}")
+        await tmp.send("\n".join(lineas))
+
+        clase_elegida = None
+        while True:
+            el = (await tmp.send_prompt("\nElige clase (nombre o numero): ")).strip().lower()
+            if el.isdigit() and 0 <= int(el)-1 < len(CLASES):
+                clase_elegida = list(CLASES.keys())[int(el)-1]
+                break
+            elif el in CLASES:
+                clase_elegida = el
+                break
+            await tmp.send("  Clase no encontrada.")
+
+        base = deepcopy(CLASES[clase_elegida])
+        tmp.personaje = {
+            "nombre": nombre, "nombreClase": clase_elegida,
+            "vidaActual": base["vidaMax"], "manaActual": base["manaMax"], **base,
+        }
+        guardar_cuenta(tmp)
+        rt.cancel()
+        await tmp.send(f"\nCuenta creada! {nombre} el {clase_elegida.capitalize()}")
+        await handle_game_ws(ws, usuario)
+
+    elif msg_type == "game_auth":
+        if not cuenta_existe(usuario) or not verificar_password(usuario, password):
+            await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
+            return ws
+        ya = any(p.usuario == usuario for p in jugadores_conectados)
+        if ya:
+            await ws.send_json({"type": "auth_fail", "msg": "Ya estas jugando en otra ventana."})
+            return ws
+        await ws.send_json({"type": "auth_ok"})
+        await handle_game_ws(ws, usuario)
+
+    elif msg_type == "auth":
+        if not cuenta_existe(usuario) or not verificar_password(usuario, password):
+            await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
+            return ws
+        await handle_dashboard_ws(ws, usuario)
+
+    else:
+        await ws.send_json({"type": "auth_fail", "msg": "Tipo desconocido"})
+
+    return ws
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+async def main():
+    port = int(os.environ.get("PORT", 8080))
+
+    app = web.Application()
+    app.router.add_route("*", "/ws", ws_handler)
+    app.router.add_route("*", "/{tail:.*}", http_handler)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    print(f"[SERVER] Puerto: {port}")
+    print(f"[SERVER] Abre http://localhost:{port} para jugar")
+    print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
+    print("[SERVER] Listo.\n")
+
+    await asyncio.Future()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 # ============================================================
 # HTML EMBEBIDO — se sirve directamente desde el servidor
@@ -2353,7 +2364,7 @@ showTab("login");
 function getWsUrl(){
   const loc=window.location;
   const proto=loc.protocol==="https:"?"wss:":"ws:";
-  return proto+"//"+loc.host;
+  return proto+"//"+loc.host+"/ws";
 }
 
 function doLogin(){
