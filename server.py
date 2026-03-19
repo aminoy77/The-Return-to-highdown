@@ -881,7 +881,7 @@ BIOMAS = {
 # ============================================================
 SALAS = {
     # ── DESIERTO (salas 1-5) ──────────────────────────────────
-    1:  {"nombre": "Entrada del Desierto",
+    1:  {"nombre": "North Mass",
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
          "conexiones": {"norte": 2, "este": 3},
          "bioma": "desierto", "cantidad": 1},
