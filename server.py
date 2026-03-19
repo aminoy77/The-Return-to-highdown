@@ -901,13 +901,18 @@ SALAS = {
          "conexiones": {"sur": 3, "norte": 5},
          "encuentros": [("demonioInferior", 2)]},
 
-    5:  {"nombre": "Trono del Rey Demonio",
+    5:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+         "conexiones": {"sur": 4, "norte": 6},
+         "bioma": "desierto", "cantidad": 2},
+
+    6:  {"nombre": "Trono del Rey Demonio",
          "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
          "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
          "encuentros": [("reyDemonio", 1)]},
 
     # ── OASIS (sala segura de transicion) ─────────────────────
-    6:  {"nombre": "Oasis",
+    7:  {"nombre": "Oasis",
          "descripcion": "Agua fresca y palmeras. Un respiro antes del mar.",
          "conexiones": {"sur": 5, "norte": 10},
          "encuentros": [],
