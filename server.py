@@ -880,26 +880,30 @@ BIOMAS = {
 #   Si la sala no tiene ni "encuentros" ni "bioma" → sala segura (sin combate)
 # ============================================================
 SALAS = {
-    # ── DESIERTO (salas 1-5) ──────────────────────────────────
+    # ── DESIERTO (salas 1-32) ──────────────────────────────────
     1:  {"nombre": "North Mass",
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
-         "conexiones": {"norte": 2, "este": 3},
+         "conexiones": {"norte": 2, "este": 13, "sur": 6},
          "bioma": "desierto", "cantidad": 1},
 
     2:  {"nombre": "Dunas del Norte",
          "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
-         "conexiones": {"sur": 1, "norte": 5},
+         "conexiones": {"sur": 1, "norte": 3,},
          "bioma": "desierto", "cantidad": 2},
 
     3:  {"nombre": "Ruinas del Desierto",
          "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
-         "conexiones": {"oeste": 1, "norte": 4},
+         "conexiones": {"oeste": 4, "norte": 5, "este": 16},
          "bioma": "desierto", "cantidad": 2},
 
-    4:  {"nombre": "Templo Maldito",
-         "descripcion": "Un templo cubierto de jeroglificos de sangre.",
-         "conexiones": {"sur": 3, "norte": 5},
-         "encuentros": [("demonioInferior", 2)]},
+    4:  {"nombre": "Ciudad abrasada",
+         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas, donde las calles aún respiran calor y las sombras tiemblan como brasas vivas.",
+         "descripcion": "Sus torres, negras y agrietadas, susurran historias de un fuego que nunca se apaga,",
+         "descripcion": "mientras un cielo rojizo arde sin descanso sobre los últimos vestigios de vida.",
+         "descripcion": "Un demonio superior aguarda, tenéis que derrotarlo!",
+         "conexiones": {"este": 3},
+         "encuentros": [("demonioSuperior", 1)]},
+         "hospital": True},
 
     5:  {"nombre": "Valle muerto",
          "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
@@ -910,6 +914,137 @@ SALAS = {
          "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
          "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
          "encuentros": [("reyDemonio", 1)]},
+    7:  {"nombre": "North Mass",
+         "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
+         "conexiones": {"norte": 2, "este": 3},
+         "bioma": "desierto", "cantidad": 1},
+
+    8:  {"nombre": "Dunas del Norte",
+         "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
+         "conexiones": {"sur": 1, "norte": 5},
+         "bioma": "desierto", "cantidad": 2},
+
+    9:  {"nombre": "Ruinas del Desierto",
+         "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
+         "conexiones": {"oeste": 1, "norte": 4},
+         "bioma": "desierto", "cantidad": 2},
+
+    10:  {"nombre": "Templo Maldito",
+         "descripcion": "Un templo cubierto de jeroglificos de sangre.",
+         "conexiones": {"sur": 3, "norte": 5},
+         "encuentros": [("demonioInferior", 2)]},
+
+    11:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+         "conexiones": {"sur": 4, "norte": 6},
+         "bioma": "desierto", "cantidad": 2},
+
+    12:  {"nombre": "Trono del Rey Demonio",
+         "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
+         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
+         "encuentros": [("reyDemonio", 1)]},
+
+    13:  {"nombre": "North Mass",
+         "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
+         "conexiones": {"norte": 2, "este": 3},
+         "bioma": "desierto", "cantidad": 1},
+
+    14:  {"nombre": "Dunas del Norte",
+         "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
+         "conexiones": {"sur": 1, "norte": 5},
+         "bioma": "desierto", "cantidad": 2},
+
+    15:  {"nombre": "Ruinas del Desierto",
+         "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
+         "conexiones": {"oeste": 1, "norte": 4},
+         "bioma": "desierto", "cantidad": 2},
+
+    16:  {"nombre": "Templo Maldito",
+         "descripcion": "Un templo cubierto de jeroglificos de sangre.",
+         "conexiones": {"sur": 3, "norte": 5},
+         "encuentros": [("demonioInferior", 2)]},
+
+    17:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+         "conexiones": {"sur": 4, "norte": 6},
+         "bioma": "desierto", "cantidad": 2},
+
+    18:  {"nombre": "Trono del Rey Demonio",
+         "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
+         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
+         "encuentros": [("reyDemonio", 1)]},
+
+    19:  {"nombre": "North Mass",
+         "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
+         "conexiones": {"norte": 2, "este": 3},
+         "bioma": "desierto", "cantidad": 1},
+
+    20:  {"nombre": "Dunas del Norte",
+         "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
+         "conexiones": {"sur": 1, "norte": 5},
+         "bioma": "desierto", "cantidad": 2},
+
+    21:  {"nombre": "Ruinas del Desierto",
+         "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
+         "conexiones": {"oeste": 1, "norte": 4},
+         "bioma": "desierto", "cantidad": 2},
+
+    22:  {"nombre": "Templo Maldito",
+         "descripcion": "Un templo cubierto de jeroglificos de sangre.",
+         "conexiones": {"sur": 3, "norte": 5},
+         "encuentros": [("demonioInferior", 2)]},
+
+    23:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+         "conexiones": {"sur": 4, "norte": 6},
+         "bioma": "desierto", "cantidad": 2},
+
+    24:  {"nombre": "Trono del Rey Demonio",
+         "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
+         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
+         "encuentros": [("reyDemonio", 1)]},
+
+    25:  {"nombre": "North Mass",
+         "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
+         "conexiones": {"norte": 2, "este": 3},
+         "bioma": "desierto", "cantidad": 1},
+
+    26:  {"nombre": "Dunas del Norte",
+         "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
+         "conexiones": {"sur": 1, "norte": 5},
+         "bioma": "desierto", "cantidad": 2},
+
+    27:  {"nombre": "Ruinas del Desierto",
+         "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
+         "conexiones": {"oeste": 1, "norte": 4},
+         "bioma": "desierto", "cantidad": 2},
+
+    28:  {"nombre": "Templo Maldito",
+         "descripcion": "Un templo cubierto de jeroglificos de sangre.",
+         "conexiones": {"sur": 3, "norte": 5},
+         "encuentros": [("demonioInferior", 2)]},
+
+    29:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+         "conexiones": {"sur": 4, "norte": 6},
+         "bioma": "desierto", "cantidad": 2},
+
+    30:  {"nombre": "Trono del Rey Demonio",
+         "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
+         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
+         "encuentros": [("reyDemonio", 1)]},
+
+    31:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+         "conexiones": {"sur": 4, "norte": 6},
+         "bioma": "desierto", "cantidad": 2},
+
+    32:  {"nombre": "Trono del Rey Demonio",
+         "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
+         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
+         "encuentros": [("reyDemonio", 1)]},
+
+
 
     # ── OASIS (sala segura de transicion) ─────────────────────
     7:  {"nombre": "Oasis",
