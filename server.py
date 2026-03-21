@@ -1,14 +1,16 @@
 """
 server.py — MUD Multiplayer
 ============================
-- TCP puerto 4000 → terminal (client.py)
-- WS puerto 4001 → chat en navegador
-- HTTP puerto 8080 → sirve chat.html
+- TCP  puerto 4000  → terminal (client.py)
+- WS   puerto 4001  → chat en navegador
+- HTTP puerto 8080  → sirve chat.html
+
 Uso:
-  pip install websockets aiohttp
+  pip install websockets
   python3 server.py
-Jugar: python3 client.py <IP>
-Chat UI: http://<IP>:8080/
+
+Jugar:   python3 client.py <IP>
+Chat UI: http://<IP>:8080/chat.html
 """
 
 import asyncio
@@ -21,664 +23,10 @@ from enum import Enum
 from aiohttp import web
 import aiohttp
 
-# ────────────────────────────────────────────────────────────────
-#  HTML DE LA INTERFAZ WEB — debe estar ANTES de cualquier uso
-# ────────────────────────────────────────────────────────────────
-
-def get_html() -> str:
-    """Devuelve el HTML de la aplicación completa."""
-    return r"""<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MUD — The Return to Highdown</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-:root{
-  --bg:#0a0a0a;--bg2:#111;--bg3:#181818;--border:#252525;
-  --gold:#c9a84c;--gold2:#e8c55c;--green:#4caf50;--red:#e53935;
-  --red2:#ff1744;--blue:#42a5f5;--mana:#5c6bc0;--purple:#ab47bc;
-  --orange:#ff9800;--text:#ccc;--dim:#555;--dim2:#222;
-}
-body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
-
-/* LOGIN */
-#lo{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;justify-content:center;z-index:999;}
-#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;padding:32px 40px;text-align:center;min-width:320px;max-width:400px;width:90%;}
-#lb h1{color:var(--gold);font-size:20px;margin-bottom:4px;}
-#lb p{color:var(--dim);font-size:11px;margin-bottom:16px;}
-.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;font-family:monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:8px;transition:border-color .15s;}
-.li:focus{border-color:var(--gold);}
-.li::placeholder{color:var(--dim);}
-.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:10px;font-weight:bold;font-size:13px;cursor:pointer;border-radius:4px;font-family:monospace;transition:background .15s;}
-.abtn:hover{background:var(--gold2);}
-#lerr{color:var(--red);font-size:11px;margin-top:8px;min-height:15px;}
-.tabs{display:flex;gap:5px;margin-bottom:12px;}
-.tab{flex:1;padding:5px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;color:var(--dim);background:var(--bg3);transition:all .15s;}
-.tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
-#reg-p{display:none;}
-
-/* TOPBAR */
-#top{background:var(--bg2);border-bottom:1px solid var(--border);padding:5px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:11px;}
-#top-nav{display:flex;gap:4px;margin-left:auto;}
-.nav-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 9px;border-radius:3px;cursor:pointer;font-family:monospace;font-size:10px;transition:all .15s;}
-.nav-btn.active,.nav-btn:hover{color:var(--text);border-color:var(--gold);}
-#top-title{color:var(--gold);font-weight:bold;font-size:13px;}
-#top-player{color:var(--text);}#top-player span{color:var(--gold);}
-#cdot{width:7px;height:7px;border-radius:50%;background:var(--red);}
-#cdot.on{background:var(--green);}
-
-/* VIEWS */
-#views{flex:1;overflow:hidden;display:flex;flex-direction:column;}
-.view{flex:1;display:none;overflow:hidden;}
-.view.active{display:flex;}
-
-/* ── GAME VIEW ── */
-#game-view{flex-direction:row;}
-#sp{background:var(--bg2);width:190px;flex-shrink:0;padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;border-right:1px solid var(--border);}
-.sh{color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);padding-bottom:3px;}
-.pid{text-align:center;}
-.pid-n{font-size:13px;color:var(--gold);font-weight:bold;}
-.pid-c{font-size:10px;color:var(--dim);margin-top:1px;}
-.lvr{display:flex;align-items:center;justify-content:space-between;font-size:11px;}
-.lvb{background:var(--gold);color:#000;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;}
-.bl{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;}
-.bl-n{color:var(--dim);}
-.bw{width:100%;height:11px;background:var(--bg3);border-radius:5px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;}
-.bf{height:100%;border-radius:5px;transition:width .4s,background .4s;}
-.bf-hp{background:var(--red);}
-.bf-mp{background:var(--mana);}
-.xw{width:100%;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;border:1px solid var(--border);margin-top:2px;}
-.bf-xp{background:var(--purple);border-radius:0;}
-.sr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--dim2);font-size:10px;}
-.sr:last-child{border-bottom:none;}
-.sr-l{color:var(--dim);}
-.sr-v{color:var(--text);font-weight:bold;}
-.qbtns{display:flex;flex-wrap:wrap;gap:3px;}
-.qb{flex:1;min-width:36px;background:var(--bg3);border:1px solid var(--border);color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;border-radius:3px;font-family:monospace;text-align:center;transition:all .15s;}
-.qb:hover{color:var(--text);border-color:var(--dim);}
-.qb.c{border-color:#2d4a2d;color:#81c784;}
-.qb.c:hover{background:#0a1a0a;}
-.qb.m{border-color:#1a2a3a;color:#64b5f6;}
-.qb.m:hover{background:#0a1020;}
-#gp{display:flex;flex-direction:column;flex:1;overflow:hidden;}
-#glog{flex:1;overflow-y:auto;padding:9px 13px;font-size:13px;line-height:1.65;}
-#glog::-webkit-scrollbar{width:4px;}
-#glog::-webkit-scrollbar-thumb{background:var(--border);}
-.gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
-.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#ff8a65;}
-.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
-.gi{color:#80cbc4;}.gs{color:var(--dim);font-style:italic;}
-.gl{color:var(--gold);background:#1a1500;border:1px solid var(--gold);padding:3px 7px;border-radius:3px;display:inline-block;margin:3px 0;}
-.cm2{background:#0a1a0a;border:1px solid #2d4a2d;border-radius:4px;padding:4px 8px;margin:2px 0;color:#81c784;}
-#ginput{display:flex;gap:5px;padding:7px 11px;border-top:1px solid var(--border);flex-shrink:0;}
-#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-family:'Courier New',monospace;font-size:13px;border-radius:4px;outline:none;}
-#cmd:focus{border-color:var(--gold);}
-#cmd:disabled{opacity:.4;}
-#cmd::placeholder{color:var(--dim);}
-#sbtn{background:var(--gold);border:none;color:#000;padding:6px 13px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:12px;}
-#sbtn:disabled{opacity:.4;cursor:default;}
-
-/* ── DASHBOARD VIEW ── */
-#dash-view{flex-direction:row;}
-#dash-app{display:grid;grid-template-columns:200px 1fr 180px;flex:1;overflow:hidden;gap:1px;background:var(--border);}
-#dsp{background:var(--bg2);padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;}
-#dmp{background:var(--bg);display:flex;flex-direction:column;overflow:hidden;}
-#dmp-hdr{padding:6px 11px;border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px;flex-shrink:0;}
-#dmp-hdr span{color:var(--gold);font-size:11px;}
-.leg{display:flex;gap:6px;margin-left:auto;}
-.ld{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--dim);}
-.ldot{width:6px;height:6px;border-radius:2px;}
-#map-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:6px;}
-#msvg{max-width:100%;max-height:100%;}
-#plp{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
-#plp-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
-#pl-list{flex:1;overflow-y:auto;padding:6px;}
-.pi{padding:5px 6px;border-bottom:1px solid var(--border);font-size:10px;}
-.pi:last-child{border-bottom:none;}
-.pi-n{color:var(--gold);font-weight:bold;margin-bottom:1px;}
-.pi-i{color:var(--dim);}
-.pi-s{color:var(--text);font-size:9px;margin-top:1px;}
-.pi-d{color:var(--red);}
-
-/* ── CHAT PANEL (bottom of dash) ── */
-#dash-chat{background:var(--bg2);border-top:1px solid var(--border);height:180px;display:flex;flex-direction:column;flex-shrink:0;}
-#ch-top{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.ctab{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;transition:all .15s;}
-.ctab.as{background:#1a3a1a;color:var(--green);border-color:var(--green);}
-.ctab.ag{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
-#ch-log{flex:1;overflow-y:auto;padding:5px 11px;font-size:11px;line-height:1.5;}
-#ch-log::-webkit-scrollbar{width:3px;}
-#ch-log::-webkit-scrollbar-thumb{background:var(--border);}
-.cm3{display:flex;gap:6px;align-items:baseline;margin-bottom:2px;}
-.cm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
-.cm-b{font-size:9px;padding:1px 4px;border-radius:4px;flex-shrink:0;font-weight:bold;}
-.bs{background:#1a3a1a;color:var(--green);}.bg2c{background:#3a2a0a;color:var(--orange);}.bx{background:#1a1a3a;color:var(--blue);}
-.cm-nm{font-weight:bold;flex-shrink:0;}
-.ns{color:var(--green);}.ng{color:var(--orange);}.nx{color:var(--blue);}
-.cm-tx{color:var(--text);}
-#ch-in-row{display:flex;gap:5px;padding:5px 10px;border-top:1px solid var(--border);flex-shrink:0;}
-#ch-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 9px;font-family:monospace;font-size:11px;border-radius:4px;outline:none;}
-#ch-in:focus{border-color:var(--gold);}
-#ch-in:disabled{opacity:.4;}
-.sbtn2{background:var(--gold);border:none;color:#000;padding:5px 11px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:11px;}
-.sbtn2:disabled{opacity:.4;cursor:default;}
-</style>
-</head>
-<body>
-
-<!-- LOGIN -->
-<div id="lo">
-  <div id="lb">
-    <h1>⚔ The Return to Highdown</h1>
-    <p>MUD Multiplayer — Juega desde el navegador</p>
-    <div class="tabs">
-      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
-      <button class="tab" onclick="showTab('register')">Crear cuenta</button>
-    </div>
-    <div id="login-p">
-      <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
-      <input class="li" id="lp" type="password" placeholder="Contraseña">
-      <button class="abtn" onclick="doLogin()">ENTRAR</button>
-    </div>
-    <div id="reg-p">
-      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 caracteres)" autocomplete="off">
-      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 caracteres)">
-      <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
-      <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
-      <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
-    </div>
-    <div id="lerr"></div>
-  </div>
-</div>
-
-<!-- TOPBAR -->
-<div id="top">
-  <div id="top-title">⚔ MUD</div>
-  <div id="top-player">—</div>
-  <div id="cdot"></div>
-  <div id="top-nav">
-    <button class="nav-btn active" onclick="setView('game')">🎮 Juego</button>
-    <button class="nav-btn" onclick="setView('dash')">📊 Dashboard</button>
-  </div>
-</div>
-
-<!-- VIEWS -->
-<div id="views">
-
-  <!-- GAME -->
-  <div class="view active" id="game-view">
-    <div id="sp">
-      <div class="sh">Personaje</div>
-      <div class="pid">
-        <div class="pid-n" id="s-nm">—</div>
-        <div class="pid-c" id="s-cl">—</div>
-      </div>
-      <div>
-        <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="s-nv">1</span></div>
-        <div style="margin-top:3px">
-          <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
-          <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
-        </div>
-      </div>
-      <div class="sh">Vida &amp; Mana</div>
-      <div>
-        <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
-        <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
-        <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
-        <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
-      </div>
-      <div class="sh">Combate</div>
-      <div>
-        <div class="sr"><span class="sr-l">Daño base</span>      <span class="sr-v" id="s-dmg">—</span></div>
-        <div class="sr"><span class="sr-l">Ataques/turno</span>  <span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
-        <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
-        <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="s-mo" style="color:var(--gold)">—</span></div>
-      </div>
-      <div class="sh">Combate rápido</div>
-      <div class="qbtns">
-        <button class="qb c" onclick="send('1')">1 Atacar</button>
-        <button class="qb c" onclick="send('2')">2 Especial</button>
-        <button class="qb c" onclick="send('3')">3 Pasar</button>
-        <button class="qb c" onclick="send('4')">4 Objeto</button>
-      </div>
-      <div class="sh">Mover</div>
-      <div class="qbtns">
-        <button class="qb m" onclick="send('n')">↑N</button>
-        <button class="qb m" onclick="send('s')">↓S</button>
-        <button class="qb m" onclick="send('e')">→E</button>
-        <button class="qb m" onclick="send('o')">←O</button>
-      </div>
-      <div class="sh">Acciones</div>
-      <div class="qbtns">
-        <button class="qb" onclick="send('mirar')">👁 Mirar</button>
-        <button class="qb" onclick="send('atacar')">⚔ Atacar</button>
-        <button class="qb" onclick="send('stats')">📊 Stats</button>
-        <button class="qb" onclick="send('ayuda')">❓ Ayuda</button>
-        <button class="qb" onclick="send('tienda')">🏪 Tienda</button>
-        <button class="qb" onclick="send('hospital')">🏥 Hospital</button>
-        <button class="qb" onclick="send('grupo')">👥 Grupo</button>
-        <button class="qb" onclick="send('jugadores')">🌍 Jugadores</button>
-        <button class="qb" onclick="send('guardar')">💾 Guardar</button>
-      </div>
-    </div>
-    <div id="gp">
-      <div id="glog"></div>
-      <div id="ginput">
-        <input id="cmd" type="text" placeholder="Escribe un comando... (ayuda para ver todos)"
-               disabled autocomplete="off" spellcheck="false"
-               onkeydown="if(event.key==='Enter') doSend()">
-        <button id="sbtn" onclick="doSend()" disabled>Enviar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- DASHBOARD -->
-  <div class="view" id="dash-view" style="flex-direction:column;">
-    <div id="dash-app">
-      <!-- Stats dashboard -->
-      <div id="dsp">
-        <div class="sh">Personaje</div>
-        <div class="pid"><div class="pid-n" id="ds-nm">—</div><div class="pid-c" id="ds-cl">—</div></div>
-        <div>
-          <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="ds-nv">1</span></div>
-          <div style="margin-top:3px">
-            <div class="bl"><span class="bl-n">XP</span><span id="ds-xp">0/150</span></div>
-            <div class="xw"><div class="bf bf-xp" id="db-xp" style="width:0%"></div></div>
-          </div>
-        </div>
-        <div class="sh">Vida &amp; Mana</div>
-        <div>
-          <div class="bl"><span class="bl-n">❤ HP</span><span id="ds-hp">—</span></div>
-          <div class="bw"><div class="bf bf-hp" id="db-hp" style="width:100%"></div></div>
-          <div class="bl"><span class="bl-n">✦ Mana</span><span id="ds-mp">—</span></div>
-          <div class="bw"><div class="bf bf-mp" id="db-mp" style="width:100%"></div></div>
-        </div>
-        <div class="sh">Combate</div>
-        <div>
-          <div class="sr"><span class="sr-l">Daño</span>          <span class="sr-v" id="ds-dmg">—</span></div>
-          <div class="sr"><span class="sr-l">Ataques</span>        <span class="sr-v" id="ds-atq" style="color:var(--green)">—</span></div>
-          <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="ds-mc" style="color:var(--mana)">—</span></div>
-          <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="ds-mo" style="color:var(--gold)">—</span></div>
-          <div class="sr"><span class="sr-l">Sala</span>           <span class="sr-v" id="ds-sl">—</span></div>
-        </div>
-      </div>
-      <!-- Map -->
-      <div id="dmp">
-        <div id="dmp-hdr">
-          <span>🗺 MAPA</span>
-          <div class="leg">
-            <div class="ld"><div class="ldot" style="background:#8b6914"></div>Desierto</div>
-            <div class="ld"><div class="ldot" style="background:#1565c0"></div>Mar</div>
-            <div class="ld"><div class="ldot" style="background:#546e7a"></div>Nieve</div>
-            <div class="ld"><div class="ldot" style="background:#2e7d32"></div>Segura</div>
-            <div class="ld"><div class="ldot" style="background:#b71c1c"></div>Boss</div>
-            <div class="ld"><div class="ldot" style="background:#c9a84c;border-radius:50%"></div>Tú</div>
-          </div>
-        </div>
-        <div id="map-wrap">
-          <svg id="msvg" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
-            <defs><filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/>
-              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-            <rect x="10" y="10" width="500" height="205" rx="6" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
-            <text x="18" y="25" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
-            <rect x="10" y="222" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-            <text x="18" y="236" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
-            <rect x="10" y="277" width="500" height="200" rx="6" fill="#060810" stroke="#10103a" stroke-width="1"/>
-            <text x="18" y="291" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
-            <rect x="10" y="484" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-            <text x="18" y="498" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
-            <rect x="10" y="539" width="500" height="210" rx="6" fill="#100800" stroke="#302000" stroke-width="1"/>
-            <text x="18" y="553" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
-            <g id="conn-g"></g><g id="room-g"></g>
-          </svg>
-        </div>
-      </div>
-      <!-- Players -->
-      <div id="plp">
-        <div id="plp-hdr">👥 Jugadores</div>
-        <div id="pl-list"><div style="color:var(--dim);font-size:10px;padding:7px">Sin datos</div></div>
-      </div>
-    </div>
-    <!-- Chat -->
-    <div id="dash-chat">
-      <div id="ch-top">
-        <button class="ctab as" id="t-sala" onclick="setTab('sala')">📍 Sala</button>
-        <button class="ctab" id="t-global" onclick="setTab('global')">🌍 Global</button>
-      </div>
-      <div id="ch-log"></div>
-      <div id="ch-in-row">
-        <input id="ch-in" type="text" placeholder="Mensaje de chat..." disabled
-               onkeydown="if(event.key==='Enter') sendChat()">
-        <button class="sbtn2" id="ch-send" onclick="sendChat()" disabled>Enviar</button>
-      </div>
-    </div>
-  </div>
-
-</div><!-- #views -->
-
-<script>
-/* ── MAP ── */
-const RPOS={
-  24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
-  21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
-  23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
-  20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
-  22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
-  15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
-  14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
-  11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
-  13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
-  10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
-  12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
-   6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
-   5:{x:260,y:578,n:"Trono Rey Demonio",boss:true,b:"desierto"},
-   2:{x:105,y:645,n:"Dunas del Norte",boss:false,b:"desierto"},
-   4:{x:415,y:645,n:"Templo Maldito",boss:false,b:"desierto"},
-   1:{x:105,y:722,n:"Entrada Desierto",boss:false,b:"desierto"},
-   3:{x:415,y:722,n:"Ruinas",boss:false,b:"desierto"},
-};
-const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[5,10],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
-const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
-const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra",21:"Bosque Hielo",22:"Fortaleza",23:"Trono Hielo",24:"Cumbre Alpha"};
-
-function buildMap(){
-  const ns="http://www.w3.org/2000/svg";
-  const cg=document.getElementById("conn-g"),rg=document.getElementById("room-g");
-  CONNS.forEach(([a,b])=>{
-    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
-    const l=document.createElementNS(ns,"line");
-    l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
-    l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
-    l.setAttribute("stroke","#2a2a2a");l.setAttribute("stroke-width","1.5");
-    cg.appendChild(l);
-  });
-  Object.entries(RPOS).forEach(([id,r])=>{
-    const g=document.createElementNS(ns,"g");
-    g.setAttribute("id","r"+id);g.setAttribute("cursor","pointer");g.setAttribute("data-id",id);
-    const W=r.boss?62:54,H=22;
-    const rect=document.createElementNS(ns,"rect");
-    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
-    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",3);
-    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
-    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
-    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
-    const txt=document.createElementNS(ns,"text");
-    txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
-    txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
-    txt.setAttribute("fill",r.boss?"#cc4444":(BC[r.b]||"#666"));
-    txt.setAttribute("font-size","8");txt.setAttribute("font-family","monospace");
-    txt.textContent=id;
-    g.appendChild(rect);g.appendChild(txt);
-    let tt=null;
-    g.addEventListener("mouseenter",e=>{
-      tt=document.createElement("div");
-      tt.style.cssText="position:fixed;background:#1c1c1c;border:1px solid #444;padding:4px 8px;border-radius:4px;font-size:10px;color:#ccc;pointer-events:none;z-index:200;white-space:nowrap;font-family:monospace";
-      tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
-    });
-    g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-6)+"px";}});
-    g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
-    rg.appendChild(g);
-  });
-}
-buildMap();
-
-function highlightRoom(id){
-  document.querySelectorAll("[data-id]").forEach(g=>{
-    const rid=parseInt(g.getAttribute("data-id")),r=RPOS[rid];
-    if(!r)return;const rect=g.querySelector("rect");if(!rect)return;
-    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
-    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
-    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
-    rect.removeAttribute("filter");
-  });
-  const g=document.getElementById("r"+id);
-  if(g){const rect=g.querySelector("rect");if(rect){
-    rect.setAttribute("fill","#2a1800");rect.setAttribute("stroke","#c9a84c");
-    rect.setAttribute("stroke-width","2");rect.setAttribute("filter","url(#glow)");
-  }}
-}
-
-/* ── STATE ── */
-let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,currentView="game";
-
-/* ── VIEWS ── */
-function setView(v){
-  currentView=v;
-  document.querySelectorAll(".view").forEach(el=>el.classList.remove("active"));
-  document.getElementById(v==="game"?"game-view":"dash-view").classList.add("active");
-  document.querySelectorAll(".nav-btn").forEach((el,i)=>el.classList.toggle("active",(i===0&&v==="game")||(i===1&&v==="dash")));
-}
-
-/* ── LOGIN TABS ── */
-function showTab(t){
-  document.getElementById("login-p").style.display=t==="login"?"block":"none";
-  document.getElementById("reg-p").style.display=t==="register"?"block":"none";
-  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
-}
-showTab("login");
-
-/* ── CONEXIÓN ── */
-function getWsUrl(){
-  const loc=window.location;
-  const proto=loc.protocol==="https:"?"wss:":"ws:";
-  return proto+"//"+loc.host+"/ws";
-}
-
-function doLogin(){
-  const u=document.getElementById("lu").value.trim();
-  const p=document.getElementById("lp").value;
-  const err=document.getElementById("lerr");
-  if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
-  err.textContent="Conectando...";
-  connect({type:"game_auth",usuario:u,password:p});
-}
-
-function doRegister(){
-  const u=document.getElementById("ru").value.trim();
-  const p1=document.getElementById("rp1").value;
-  const p2=document.getElementById("rp2").value;
-  const nom=document.getElementById("rn").value.trim()||u;
-  const err=document.getElementById("lerr");
-  if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
-  if(u.length<3){err.textContent="Usuario: mínimo 3 caracteres.";return;}
-  if(p1.length<4){err.textContent="Contraseña: mínimo 4 caracteres.";return;}
-  if(p1!==p2){err.textContent="Las contraseñas no coinciden.";return;}
-  err.textContent="Creando cuenta...";
-  connect({type:"game_register",usuario:u,password:p1,nombre:nom});
-}
-
-function connect(authMsg){
-  ws=new WebSocket(getWsUrl());
-  ws.onopen=()=>ws.send(JSON.stringify(authMsg));
-  ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
-  ws.onclose=()=>{
-    setConn(false);
-    document.getElementById("cmd").disabled=true;
-    document.getElementById("sbtn").disabled=true;
-    document.getElementById("ch-in").disabled=true;
-    document.getElementById("ch-send").disabled=true;
-    appendLog("Conexión cerrada con el servidor.","gd");
-  };
-  ws.onerror=()=>{
-    document.getElementById("lerr").textContent="No se pudo conectar.";
-    ws=null;
-  };
-}
-
-["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
-["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
-
-/* ── MENSAJES ── */
-function handle(m){
-  if(m.type==="auth_ok"){
-    document.getElementById("lo").style.display="none";
-    setConn(true);
-    document.getElementById("cmd").disabled=false;
-    document.getElementById("sbtn").disabled=false;
-    document.getElementById("ch-in").disabled=false;
-    document.getElementById("ch-send").disabled=false;
-    document.getElementById("cmd").focus();
-  } else if(m.type==="auth_fail"){
-    document.getElementById("lerr").textContent=m.msg||"Error de autenticación";ws=null;
-  } else if(m.type==="game"){
-    appendLog(m.text,classify(m.text));
-  } else if(m.type==="prompt"){
-    appendLog(m.text,"gp2");
-  } else if(m.type==="combat_menu"){
-    appendLog(m.text,"cm2",true);
-  } else if(m.type==="levelup"){
-    appendLog(m.text,"gl");
-  } else if(m.type==="status"){
-    updateStats(m);
-  } else if(m.type==="chat"){
-    const tag=m.scope==="sala"?"[Sala]":"[Global]";
-    appendLog(tag+" "+m.nombre+": "+m.text,"gi");
-    appendChat(m.nombre,m.scope,m.text);
-  } else if(m.type==="players"){
-    updatePlayers(m.list);
-  } else if(m.type==="map"){
-    if(m.player_sala)highlightRoom(m.player_sala);
-  }
-}
-
-function classify(t){
-  const l=t.toLowerCase();
-  if(l.includes("victoria")||l.includes("🏆"))return "gv";
-  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto"))return "gd";
-  if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
-  if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
-  return "gg";
-}
-
-/* ── GAME LOG ── */
-function appendLog(text,cls,isBlock=false){
-  const log=document.getElementById("glog");
-  if(isBlock){
-    const d=document.createElement("div");d.className="gm "+cls;d.textContent=text;log.appendChild(d);
-  } else {
-    text.split("\n").forEach(line=>{
-      const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
-    });
-  }
-  log.scrollTop=log.scrollHeight;
-}
-
-/* ── STATS (game + dashboard) ── */
-function updateStats(s){
-  myStats=s;
-  // Game panel
-  set("s-nm",s.nombre||"—");set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  set("s-nv","Nv."+s.nivel);set("s-xp",s.xp+"/"+s.xpMax);
-  document.getElementById("top-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
-  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
-  document.getElementById("b-xp").style.width=xpPct+"%";
-  const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
-  const bh=document.getElementById("b-hp");
-  bh.style.width=hpPct+"%";bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
-  set("s-hp",s.hp+"/"+s.hpMax);
-  document.getElementById("b-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
-  set("s-mp",s.mana+"/"+s.manaMax);
-  const atqs=s.ataquesTurno;
-  set("s-dmg",s.danioBase||"—");
-  set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("s-mc",(s.costoEspecial||0)+" mana");set("s-mo",s.monedas+" 💰");
-  // Dashboard panel
-  set("ds-nm",s.nombre||"—");set("ds-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  set("ds-nv","Nv."+s.nivel);set("ds-xp",s.xp+"/"+s.xpMax);
-  document.getElementById("db-xp").style.width=xpPct+"%";
-  const dbh=document.getElementById("db-hp");
-  dbh.style.width=hpPct+"%";dbh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
-  set("ds-hp",s.hp+"/"+s.hpMax);
-  document.getElementById("db-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
-  set("ds-mp",s.mana+"/"+s.manaMax);
-  set("ds-dmg",s.danioBase||"—");
-  set("ds-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("ds-mc",(s.costoEspecial||0)+" mana");set("ds-mo",s.monedas+" 💰");
-  set("ds-sl","["+s.sala_id+"] "+(SNAMES[s.sala_id]||"?"));
-  highlightRoom(s.sala_id);
-}
-
-/* ── PLAYERS ── */
-function updatePlayers(list){
-  const div=document.getElementById("pl-list");
-  if(!list||!list.length){div.innerHTML='<div style="color:var(--dim);font-size:10px;padding:7px">Nadie conectado</div>';return;}
-  const grupos={};const sinGrupo=[];
-  list.forEach(p=>{
-    if(p.grupo_id){
-      if(!grupos[p.grupo_id])grupos[p.grupo_id]={lider:p.grupo_lider,miembros:[]};
-      grupos[p.grupo_id].miembros.push(p);
-    } else sinGrupo.push(p);
-  });
-  let html="";
-  Object.entries(grupos).forEach(([gid,g])=>{
-    html+=`<div style="margin-bottom:5px;border:1px solid #2a2a2a;border-radius:3px;overflow:hidden"><div style="background:#1a1a0a;padding:3px 6px;font-size:9px;color:var(--gold)">👥 Grupo #${gid} — ${esc(g.lider)}</div>`;
-    g.miembros.forEach(p=>{html+=`<div class="pi" style="padding-left:10px"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀":"📍 "+esc(p.sala_nombre)}</div></div>`;});
-    html+="</div>";
-  });
-  sinGrupo.forEach(p=>{html+=`<div class="pi"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀 Muerto":"📍 "+esc(p.sala_nombre)}</div></div>`;});
-  div.innerHTML=html;
-}
-
-/* ── CHAT ── */
-function setTab(t){
-  chatTab=t;
-  document.getElementById("t-sala").className="ctab"+(t==="sala"?" as":"");
-  document.getElementById("t-global").className="ctab"+(t==="global"?" ag":"");
-}
-function appendChat(nombre,scope,texto){
-  const log=document.getElementById("ch-log");
-  const now=new Date();
-  const time=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
-  const label=scope==="sala"?"SALA":scope==="global"?"GLOBAL":"SYS";
-  const bc=scope==="sala"?"bs":scope==="global"?"bg2c":"bx";
-  const nc=scope==="sala"?"ns":scope==="global"?"ng":"nx";
-  const div=document.createElement("div");div.className="cm3";
-  div.innerHTML=`<span class="cm-t">${time}</span><span class="cm-b ${bc}">${label}</span><span class="cm-nm ${nc}">${esc(nombre)}</span><span class="cm-tx">${esc(texto)}</span>`;
-  log.appendChild(div);log.scrollTop=log.scrollHeight;
-}
-function sendChat(){
-  const inp=document.getElementById("ch-in");
-  const msg=inp.value.trim();
-  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
-  const cmd=chatTab==="sala"?"decir "+msg:"g "+msg;
-  ws.send(cmd);
-  appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
-  inp.value="";
-}
-
-/* ── ENVÍO ── */
-function send(text){if(!ws||ws.readyState!==WebSocket.OPEN)return;ws.send(text);}
-function doSend(){
-  const inp=document.getElementById("cmd");
-  const cmd=inp.value.trim();
-  if(!cmd)return;
-  hist.unshift(cmd);if(hist.length>50)hist.pop();hidx=-1;
-  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
-}
-document.addEventListener("DOMContentLoaded",()=>{
-  document.getElementById("cmd").addEventListener("keydown",e=>{
-    if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
-    else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
-  });
-});
-
-/* ── UTILS ── */
-function setConn(on){document.getElementById("cdot").className=on?"on":"";}
-function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-</script>
-</body>
-</html>"""
-
-# ────────────────────────────────────────────────────────────────
-#  CONFIGURACIÓN GENERAL
-# ────────────────────────────────────────────────────────────────
-
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
 
+# ── Supabase config (se activa si hay variables de entorno) ──
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 USAR_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
@@ -686,16 +34,14 @@ TABLA = "mud_saves"
 
 def _sb_headers():
     return {
-        "apikey": SUPABASE_KEY,
+        "apikey":        SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
+        "Content-Type":  "application/json",
+        "Prefer":        "return=representation",
     }
 
 async def _sb_get(usuario: str) -> dict | None:
     """Lee una fila de Supabase. Devuelve el dict o None si no existe."""
-    if not USAR_SUPABASE:
-        return None
     url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
     async with aiohttp.ClientSession() as s:
         async with s.get(url, headers=_sb_headers()) as r:
@@ -706,15 +52,13 @@ async def _sb_get(usuario: str) -> dict | None:
 
 async def _sb_upsert(row: dict):
     """Inserta o actualiza una fila en Supabase."""
-    if not USAR_SUPABASE:
-        return
     url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
     headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
     async with aiohttp.ClientSession() as s:
         await s.post(url, headers=headers, json=row)
 
 # ============================================================
-# CLASES
+# DATOS — CLASES COMPLETAS
 # ============================================================
 CLASES = {
     "guerrero": {
@@ -770,8 +114,7 @@ CLASES = {
 }
 
 # ============================================================
-# ENEMIGOS
-# ============================================================
+# ENEMIGOS COMPLETOS
 # ============================================================
 ENEMIGOS = {
     # ── Tier Base ──
@@ -813,7 +156,7 @@ XP_POR_TIER = {
 }
 XP_POR_NIVEL   = 150
 MONEDAS_SUBIDA = 20
-SALA_RESPAWN   = 1
+SALA_RESPAWN   = 33   # Oasis — sala segura, no hay enemigos
 TIEMPO_RESPAWN = 5
 MAX_JUGADORES  = 5
 
@@ -880,261 +223,98 @@ BIOMAS = {
 #   Si la sala no tiene ni "encuentros" ni "bioma" → sala segura (sin combate)
 # ============================================================
 SALAS = {
-  
-    # ── DESIERTO (salas 1-32) ──────────────────────────────────
-    1:  {"nombre": "North Mass",
+    # ── DESIERTO (salas 1-5) ──────────────────────────────────
+    1:  {"nombre": "Entrada del Desierto",
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
-         "conexiones": {"norte": 2, "este": 13, "sur": 6},
+         "conexiones": {"norte": 2, "este": 3},
          "bioma": "desierto", "cantidad": 1},
 
     2:  {"nombre": "Dunas del Norte",
          "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
-         "conexiones": {"sur": 1, "norte": 3},
+         "conexiones": {"sur": 1, "norte": 5},
          "bioma": "desierto", "cantidad": 2},
 
     3:  {"nombre": "Ruinas del Desierto",
          "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
-         "conexiones": {"oeste": 4, "norte": 5, "este": 16},
-         "bioma": "desierto", "cantidad": 2},
-
-    4:  {"nombre": "Ciudad abrasada",
-         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas, donde las calles aún respiran calor y las sombras tiemblan como brasas vivas.",
-         "descripcion": "Sus torres, negras y agrietadas, susurran historias de un fuego que nunca se apaga,",
-         "descripcion": "mientras un cielo rojizo arde sin descanso sobre los últimos vestigios de vida.",
-         "descripcion": "Un demonio superior aguarda, tenéis que derrotarlo!",
-         "conexiones": {"este": 3},
-         "encuentros": [("demonioSuperior", 1)],
-         "hospital": True},
-
-    5:  {"nombre": "Valle muerto",
-         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
-         "conexiones": {"sur": 4, "norte": 6},
-         "bioma": "desierto", "cantidad": 2},
-
-    6:  {"nombre": "Sala del Viento Susurrante",
-         "descripcion": "Columnas de arena giran lentamente y traen voces del pasado.",
-         "conexiones": {"sur": 10, "oeste": 7, "norte": 1},
-         "encuentros": [("reyDemonio", 1)]},
-
-    7:  {"nombre": "Cámara del Oasis Oculto",
-         "descripcion": "Un pequeño lago mágico que concede visiones o recuerdos.",
-         "conexiones": {"oeste": 8, "este": 6, "sur": 9},
-         "bioma": "desierto", "cantidad": 1},
-
-    8:  {"nombre": "Salón del Sol Eterno",
-         "descripcion": "Un techo abierto donde un sol artificial quema sin piedad.",
-         "conexiones": {"sur": 1, "norte": 5},
-         "bioma": "desierto", "cantidad": 2},
-
-    9:  {"nombre": "Cripta de las Dunas Vivas",
-         "descripcion": "Personas enterradas que se mueven bajo la arena.",
          "conexiones": {"oeste": 1, "norte": 4},
          "bioma": "desierto", "cantidad": 2},
 
-    10: {"nombre": "Caravana fantasma",
-         "descripcion": "Viajeros espectrales repiten eternamente su última travesía.",
+    4:  {"nombre": "Templo Maldito",
+         "descripcion": "Un templo cubierto de jeroglificos de sangre.",
          "conexiones": {"sur": 3, "norte": 5},
          "encuentros": [("demonioInferior", 2)]},
 
-    11: {"nombre": "Fosa de Titanes",
-         "descripcion": "Restos colosales emergen de la arena, como si antiguos gigantes hubieran caído aquí.",
-         "conexiones": {"sur": 4, "norte": 6},
-         "bioma": "desierto", "cantidad": 2},
-
-    12: {"nombre": "Altar del Soberano Abisal",
-         "descripcion": "Un trono oscuro tallado en huesos ennegrecidos irradia una presencia opresiva.",
+    5:  {"nombre": "Trono del Rey Demonio",
+         "descripcion": "El trono de huesos del Rey Demonio domina la sala.",
          "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
          "encuentros": [("reyDemonio", 1)]},
 
-    13: {"nombre": "Extensión de Azhar",
-         "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla por el calor.",
-         "conexiones": {"norte": 2, "este": 3},
-         "bioma": "desierto", "cantidad": 1},
-
-    14: {"nombre": "Mar de Dunas Susurrantes",
-         "descripcion": "Las dunas se extienden sin fin, emitiendo murmullos cuando el viento las roza.",
-         "conexiones": {"sur": 1, "norte": 5},
-         "bioma": "desierto", "cantidad": 2},
-
-    15: {"nombre": "Vestigios Enterrados",
-         "descripcion": "Ruinas antiguas asoman entre la arena, como recuerdos que se niegan a desaparecer.",
-         "conexiones": {"oeste": 1, "norte": 4},
-         "bioma": "desierto", "cantidad": 2},
-
-    16: {"nombre": "Santuario Carmesí",
-         "descripcion": "Muros cubiertos de símbolos sangrientos laten con una energía inquietante.",
-         "conexiones": {"sur": 3, "norte": 5},
-         "encuentros": [("demonioInferior", 2)]},
-
-    17: {"nombre": "Sepulcro de Colosos",
-         "descripcion": "Huesos gigantescos yacen dispersos, devorados lentamente por el desierto.",
-         "conexiones": {"sur": 4, "norte": 6},
-         "bioma": "desierto", "cantidad": 2},
-
-    18: {"nombre": "Trono del Abismo",
-         "descripcion": "Una estructura de hueso y sombra domina el lugar, como si aún esperara a su dueño.",
-         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
-         "encuentros": [("reyDemonio", 1)]},
-
-    19: {"nombre": "Llanura de Fuego Blanco",
-         "descripcion": "La luz del sol es tan intensa que todo parece arder en un resplandor pálido.",
-         "conexiones": {"norte": 2, "este": 3},
-         "bioma": "desierto", "cantidad": 1},
-
-    20: {"nombre": "Dunas del Murmullo Eterno",
-         "descripcion": "Algo invisible se desliza bajo la arena, siguiendo cada paso que das.",
-         "conexiones": {"sur": 1, "norte": 5},
-         "bioma": "desierto", "cantidad": 2},
-
-    21: {"nombre": "Columnas del Olvido",
-         "descripcion": "Pilares erosionados se alzan torcidos, marcando un lugar que el tiempo quiso borrar.",
-         "conexiones": {"oeste": 1, "norte": 4},
-         "bioma": "desierto", "cantidad": 2},
-
-    22: {"nombre": "Templo de la Sangre Antigua",
-         "descripcion": "Inscripciones vivas recorren las paredes, como si observaran a los intrusos.",
-         "conexiones": {"sur": 3, "norte": 5},
-         "encuentros": [("demonioInferior", 2)]},
-
-    23: {"nombre": "Abismo de los Caídos",
-         "descripcion": "Un campo de restos antiguos donde incluso el viento parece evitar pasar.",
-         "conexiones": {"sur": 4, "norte": 6},
-         "bioma": "desierto", "cantidad": 2},
-
-    24: {"nombre": "Trono del Devastador",
-         "descripcion": "Un asiento de poder olvidado, rodeado de una oscuridad que respira.",
-         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
-         "encuentros": [("reyDemonio", 1)]},
-
-    25: {"nombre": "Horizonte Quebrado",
-         "descripcion": "El aire distorsiona la vista, haciendo que la distancia pierda todo sentido.",
-         "conexiones": {"norte": 2, "este": 3},
-         "bioma": "desierto", "cantidad": 1},
-
-    26: {"nombre": "Dunas del Hambre",
-         "descripcion": "La arena se mueve de forma antinatural, como si buscara devorar a los vivos.",
-         "conexiones": {"sur": 1, "norte": 5},
-         "bioma": "desierto", "cantidad": 2},
-
-    27: {"nombre": "Ruinas del Eco Silente",
-         "descripcion": "Cada paso resuena demasiado fuerte, como si algo escuchara desde abajo.",
-         "conexiones": {"oeste": 1, "norte": 4},
-         "bioma": "desierto", "cantidad": 2},
-
-    28: {"nombre": "Santuario de la Marca Roja",
-         "descripcion": "Antiguos rituales dejaron su huella, aún palpable en el aire seco.",
-         "conexiones": {"sur": 3, "norte": 5},
-         "encuentros": [("demonioInferior", 2)]},
-
-    29: {"nombre": "Campos de Huesos Errantes",
-         "descripcion": "Restos que cambian de lugar con el tiempo, formando patrones desconocidos.",
-         "conexiones": {"sur": 4, "norte": 6},
-         "bioma": "desierto", "cantidad": 2},
-
-    30: {"nombre": "Trono del Último Señor",
-         "descripcion": "Un lugar de dominio absoluto, ahora envuelto en un silencio antinatural.",
-         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
-         "encuentros": [("reyDemonio", 1)]},
-
-    31: {"nombre": "Falla de los Antiguos",
-         "descripcion": "Una grieta llena de restos y reliquias de una civilización olvidada.",
-         "conexiones": {"sur": 4, "norte": 6},
-         "bioma": "desierto", "cantidad": 2},
-
-    32: {"nombre": "Trono de Ceniza Viva",
-         "descripcion": "El asiento aún desprende calor, como si su antiguo rey no se hubiera ido del todo.",
-         "conexiones": {"sur": 2, "oeste": 4, "norte": 10},
-         "encuentros": [("reyDemonio", 1)]},
-
-
-    # ── OASIS (sala segura de transición) ─────────────────────
-    33: {"nombre": "Oasis",
+    # ── OASIS (sala segura de transicion) ─────────────────────
+    6:  {"nombre": "Oasis",
          "descripcion": "Agua fresca y palmeras. Un respiro antes del mar.",
          "conexiones": {"sur": 5, "norte": 10},
          "encuentros": [],
          "tienda": True, "hospital": True},
 
-
     # ── MAR (salas 10-14) ────────────────────────────────────
-    34: {"nombre": "Costa Tormentosa",
+    10: {"nombre": "Costa Tormentosa",
          "descripcion": "Olas furiosas rompen contra las rocas.",
-         "bioma": "mar", "cantidad": 1,
-         "conexiones": {"sur": 6, "norte": 11, "este": 12}},
+         "conexiones": {"sur": 6, "norte": 11, "este": 12},
+         "bioma": "mar", "cantidad": 1},
 
-    35: {"nombre": "Aguas Profundas",
+    11: {"nombre": "Aguas Profundas",
          "descripcion": "El mar se vuelve oscuro e insondable.",
-         "conexiones": {"sur": 34, "norte": 38},
+         "conexiones": {"sur": 10, "norte": 14},
          "bioma": "mar", "cantidad": 2},
 
-    36: {"nombre": "Cueva Submarina",
+    12: {"nombre": "Cueva Submarina",
          "descripcion": "Una gruta bajo el mar. Bioluminiscencia en las paredes.",
-         "conexiones": {"oeste": 34, "norte": 37},
+         "conexiones": {"oeste": 10, "norte": 13},
          "bioma": "mar", "cantidad": 2},
 
-    37: {"nombre": "Naufragio del Leviatán",
+    13: {"nombre": "Naufragio del Leviatán",
          "descripcion": "Restos de un barco gigante. Algo enorme se mueve.",
-         "conexiones": {"sur": 36, "norte": 38},
+         "conexiones": {"sur": 12, "norte": 14},
          "encuentros": [("vampiro", 1), ("tiburon", 2)]},
 
-    38: {"nombre": "Abismo del Kraken",
+    14: {"nombre": "Abismo del Kraken",
          "descripcion": "El Kraken emerge de las profundidades. Todo tiembla.",
-         "conexiones": {"sur": 35, "oeste": 37, "norte": 45},
+         "conexiones": {"sur": 11, "oeste": 13, "norte": 20},
          "encuentros": [("kraken", 1)]},
 
-
-    # ── PUERTO (sala segura de transición) ───────────────────
-    39: {"nombre": "Puerto Abandonado",
+    # ── PUERTO (sala segura de transicion) ───────────────────
+    15: {"nombre": "Puerto Abandonado",
          "descripcion": "Barcos viejos y redes podridas. Camino a las nieves.",
-         "conexiones": {"sur": 38, "norte": 45},
+         "conexiones": {"sur": 14, "norte": 20},
          "encuentros": [],
          "tienda": True, "hospital": True},
 
-
     # ── NIEVE (salas 20-24) ──────────────────────────────────
-    40: {"nombre": "Tundra Helada",
+    20: {"nombre": "Tundra Helada",
          "descripcion": "Nieve hasta las rodillas. El viento aulla sin parar.",
-         "conexiones": {"sur": 39, "norte": 41, "este": 42},
+         "conexiones": {"sur": 15, "norte": 21, "este": 22},
          "bioma": "nieve", "cantidad": 1},
 
-    41: {"nombre": "Bosque de Hielo",
+    21: {"nombre": "Bosque de Hielo",
          "descripcion": "Arboles congelados como estatuas. Todo cruje.",
-         "conexiones": {"sur": 40, "norte": 44},
+         "conexiones": {"sur": 20, "norte": 24},
          "bioma": "nieve", "cantidad": 2},
 
-    42: {"nombre": "Fortaleza de Cristal",
+    22: {"nombre": "Fortaleza de Cristal",
          "descripcion": "Una fortaleza construida enteramente de hielo negro.",
-         "conexiones": {"oeste": 40, "norte": 43},
+         "conexiones": {"oeste": 20, "norte": 23},
          "bioma": "nieve", "cantidad": 2},
 
-    43: {"nombre": "Sala del Trono de Hielo",
-         "descripcion": "El trono vacío de un rey muerto. Guardianes aun vigilan.",
-         "conexiones": {"sur": 42, "norte": 44},
+    23: {"nombre": "Sala del Trono de Hielo",
+         "descripcion": "El trono vacio de un rey muerto. Guardianes aun vigilan.",
+         "conexiones": {"sur": 22, "norte": 24},
          "encuentros": [("elfoOscuro", 1), ("golem", 1)]},
 
-    44: {"nombre": "Cumbre del Alpha",
-         "descripcion": "La cima del mundo. Alpha aguarda. No hay vuelta atrás.",
-         "conexiones": {"sur": 41, "oeste": 43},
+    24: {"nombre": "Cumbre del Alpha",
+         "descripcion": "La cima del mundo. Alpha aguarda. No hay vuelta atras.",
+         "conexiones": {"sur": 21, "oeste": 23},
          "encuentros": [("alpha", 1)]},
 }
-
-#me lo ha dicho grok
-async def http_handler(request: web.Request) -> web.Response:
-    """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
-    html = get_html().encode("utf-8")
-    return web.Response(
-        body=html,
-        content_type="text/html",
-        charset="utf-8",
-    )
-
-# ============================================================
-# ESTADO GLOBAL
-# ============================================================
-jugadores_conectados = []
-combates_activos = {}
-chat_ws_clients = set()
-web_sessions = {}  # usuario → websocket (navegadores autenticados)
-grupos = {}  # grupo_id → Grupo
 
 # ============================================================
 # ESTADO GLOBAL
@@ -1250,6 +430,8 @@ class Player:
         self.addr        = None
         self.grupo            = None
         self.invitacion_de    = None
+        self.salas_limpias    = set()   # salas donde el jugador ya derrotó a los enemigos
+        self.duelo_pendiente  = None    # {"retador": Player, "monedas": int} — duelo recibido pendiente
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
@@ -1915,6 +1097,17 @@ async def mover_jugador(player: Player, direccion: str):
     sala_actual = SALAS.get(player.sala_id)
     if not sala_actual:
         return
+
+    # ── Bloqueo por monstruos ────────────────────────────────
+    tiene_enemigos = "bioma" in sala_actual or bool(sala_actual.get("encuentros"))
+    if tiene_enemigos and player.sala_id not in player.salas_limpias:
+        await player.send(
+            "  ¡Hay enemigos bloqueando el paso!\n"
+            "  Derrota a todos los monstruos de esta sala para poder avanzar.\n"
+            "  Escribe 'atacar' para iniciar el combate."
+        )
+        return
+
     nueva = sala_actual["conexiones"].get(direccion)
     if nueva is None:
         await player.send(f"  No puedes ir al {direccion}.")
@@ -2050,7 +1243,9 @@ async def loop_combate(combate: Combate):
         for p in combate.jugadores_vivos():
             await dar_xp(p, xp)
             p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
+            p.salas_limpias.add(sala_id)   # sala despejada → pueden moverse
         await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
+        await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
 
     # Limpiar buffs
     for p in combate.jugadores:
@@ -2369,6 +1564,207 @@ async def _disolver_grupo(grupo: Grupo):
         await m.send("  El grupo se ha disuelto.")
     grupos.pop(grupo.id, None)
 
+# ============================================================
+# SISTEMA DE DUELOS (PvP)
+# ============================================================
+
+async def cmd_duelo(player: Player, args: str):
+    """duelo <nombre> [monedas] — Reta a otro jugador."""
+    partes = args.split()
+    if not partes:
+        await player.send("  Uso: duelo <nombre> [monedas a apostar]")
+        return
+
+    nombre_obj = partes[0]
+    monedas_apuesta = 0
+    if len(partes) >= 2:
+        if not partes[1].isdigit():
+            await player.send("  Las monedas deben ser un número.")
+            return
+        monedas_apuesta = int(partes[1])
+
+    objetivo = next(
+        (p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nombre_obj.lower()),
+        None
+    )
+    if not objetivo:
+        await player.send(f"  Jugador '{nombre_obj}' no encontrado.")
+        return
+    if objetivo == player:
+        await player.send("  No puedes retarte a ti mismo.")
+        return
+    if objetivo.duelo_pendiente:
+        await player.send(f"  {objetivo.nombre} ya tiene un duelo pendiente.")
+        return
+    if player.combate:
+        await player.send("  No puedes retar a duelo durante un combate.")
+        return
+    if monedas_apuesta > player.monedas:
+        await player.send(f"  No tienes suficientes monedas (tienes {player.monedas}).")
+        return
+
+    objetivo.duelo_pendiente = {"retador": player, "monedas": monedas_apuesta}
+
+    apuesta_txt = f" — Apuesta: {monedas_apuesta} 💰" if monedas_apuesta else ""
+    await player.send(f"  Reto enviado a {objetivo.nombre}{apuesta_txt}. Esperando respuesta...")
+    await objetivo.send(
+        f"\n  ⚔ {player.nombre} te reta a duelo{apuesta_txt}.\n"
+        f"  Escribe 'aceptar_duelo' o 'rechazar_duelo'."
+    )
+
+
+async def cmd_aceptar_duelo(player: Player):
+    if not player.duelo_pendiente:
+        await player.send("  No tienes ningún duelo pendiente.")
+        return
+
+    retador   = player.duelo_pendiente["retador"]
+    monedas   = player.duelo_pendiente["monedas"]
+    player.duelo_pendiente = None
+
+    if retador not in jugadores_conectados:
+        await player.send("  El retador ya no está conectado.")
+        return
+    if player.combate or retador.combate:
+        await player.send("  Uno de los jugadores está en combate.")
+        return
+    if monedas > player.monedas:
+        await player.send(f"  No tienes suficientes monedas para la apuesta ({monedas} necesarias).")
+        await retador.send(f"  {player.nombre} no tiene monedas suficientes. Duelo cancelado.")
+        return
+    if monedas > retador.monedas:
+        await player.send(f"  {retador.nombre} ya no tiene monedas suficientes. Duelo cancelado.")
+        return
+
+    await player.send(f"  ¡Duelo aceptado!")
+    await retador.send(f"  {player.nombre} aceptó el duelo. ¡Prepárate!")
+    asyncio.create_task(loop_duelo(retador, player, monedas))
+
+
+async def cmd_rechazar_duelo(player: Player):
+    if not player.duelo_pendiente:
+        await player.send("  No tienes ningún duelo pendiente.")
+        return
+    retador = player.duelo_pendiente["retador"]
+    player.duelo_pendiente = None
+    await player.send(f"  Rechazaste el duelo de {retador.nombre}.")
+    await retador.send(f"  {player.nombre} rechazó tu duelo.")
+
+
+async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
+    """Combate PvP 1v1 entre dos jugadores."""
+    p1.combate = True   # marcador temporal para bloquear otros combates
+    p2.combate = True
+
+    await p1.send(f"\n{'='*52}\n  ⚔ DUELO: {p1.nombre} vs {p2.nombre}\n{'='*52}")
+    await p2.send(f"\n{'='*52}\n  ⚔ DUELO: {p1.nombre} vs {p2.nombre}\n{'='*52}")
+    if monedas_apuesta:
+        await p1.send(f"  Apuesta: {monedas_apuesta} 💰 por jugador")
+        await p2.send(f"  Apuesta: {monedas_apuesta} 💰 por jugador")
+
+    # Copias de stats para el duelo (no modificamos el personaje original durante el combate)
+    hp1 = p1.personaje["vidaActual"]
+    hp2 = p2.personaje["vidaActual"]
+    turno = 0
+    ganador = None
+    perdedor = None
+
+    while hp1 > 0 and hp2 > 0:
+        turno += 1
+        await p1.send(f"\n  --- TURNO {turno} ---  TÚ: {hp1} HP  |  {p2.nombre}: {hp2} HP")
+        await p2.send(f"\n  --- TURNO {turno} ---  TÚ: {hp2} HP  |  {p1.nombre}: {hp1} HP")
+
+        # Regen mana
+        p1.personaje["manaActual"] = min(p1.personaje["manaActual"] + p1.personaje.get("manaTurno", 0), p1.personaje["manaMax"])
+        p2.personaje["manaActual"] = min(p2.personaje["manaActual"] + p2.personaje.get("manaTurno", 0), p2.personaje["manaMax"])
+
+        await p1.send("  1-Atacar  2-Especial  3-Pasar")
+        await p2.send("  1-Atacar  2-Especial  3-Pasar")
+
+        # Ambos eligen en paralelo
+        acc1, acc2 = "3", "3"
+        async def elegir(p):
+            while True:
+                r = await p.recv()
+                if r is None:
+                    return "3"
+                r = r.strip()
+                if r in ("1", "2", "3"):
+                    return r
+                await p.send("  Elige 1, 2 o 3.")
+        acc1, acc2 = await asyncio.gather(elegir(p1), elegir(p2))
+
+        # Resolver acción de p1 sobre p2
+        async def aplicar(atacante, defensor, accion, hp_def):
+            p = atacante.personaje
+            if accion == "1":
+                num = ataques_por_turno(p.get("ataquesTurno", 1))
+                for _ in range(num):
+                    d = calcular_danio(p["danioBase"])
+                    hp_def = max(0, hp_def - d)
+                    await atacante.send(f"  Atacas a {defensor.nombre} -{d} HP  ({hp_def} HP restante)")
+                    await defensor.send(f"  {atacante.nombre} te ataca -{d} HP  ({hp_def} HP restante)")
+            elif accion == "2":
+                costo = p.get("costoEspecial", 0)
+                if p["manaActual"] >= costo:
+                    p["manaActual"] -= costo
+                    d = calcular_danio(p.get("danioEspecial", p["danioBase"]))
+                    hp_def = max(0, hp_def - d)
+                    await atacante.send(f"  Usas especial en {defensor.nombre} -{d} HP  ({hp_def} HP restante)")
+                    await defensor.send(f"  {atacante.nombre} usa especial -{d} HP  ({hp_def} HP restante)")
+                else:
+                    await atacante.send("  Sin mana. Pasas el turno.")
+            elif accion == "3":
+                await atacante.send("  Pasas el turno.")
+            return hp_def
+
+        hp2 = await aplicar(p1, p2, acc1, hp2)
+        if hp2 > 0:
+            hp1 = await aplicar(p2, p1, acc2, hp1)
+
+    # Determinar ganador
+    if hp1 <= 0 and hp2 <= 0:
+        await p1.send("  ¡Empate!")
+        await p2.send("  ¡Empate!")
+    elif hp2 <= 0:
+        ganador, perdedor = p1, p2
+    else:
+        ganador, perdedor = p2, p1
+
+    if ganador:
+        # Pérdida de XP: 15% del XP actual
+        xp_perdido = max(10, int(perdedor.xp * 0.15))
+        perdedor.xp = max(0, perdedor.xp - xp_perdido)
+
+        # Transferir monedas apostadas
+        if monedas_apuesta:
+            monedas_reales = min(monedas_apuesta, perdedor.monedas)
+            perdedor.monedas  -= monedas_reales
+            ganador.monedas   += monedas_reales
+
+        await ganador.send(
+            f"\n  🏆 ¡VICTORIA!\n"
+            f"  Derrotaste a {perdedor.nombre}."
+            + (f"\n  +{monedas_apuesta} 💰 ganadas." if monedas_apuesta else "")
+        )
+        await perdedor.send(
+            f"\n  💀 DERROTA — {ganador.nombre} te venció.\n"
+            f"  -{xp_perdido} XP  (te quedan {perdedor.xp})"
+            + (f"\n  -{monedas_apuesta} 💰 perdidas." if monedas_apuesta else "")
+        )
+        await broadcast_todos(f"  ⚔ {ganador.nombre} derrotó a {perdedor.nombre} en duelo.")
+
+        # Actualizar HP real
+        ganador.personaje["vidaActual"]  = max(1, hp1 if ganador == p1 else hp2)
+        perdedor.personaje["vidaActual"] = 1
+
+    # Liberar marcador de combate
+    p1.combate = None
+    p2.combate = None
+    await notify_web_session(p1)
+    await notify_web_session(p2)
+
+
 async def procesar_comando(player: Player, cmd: str):
     partes = cmd.lower().strip().split()
     if not partes:
@@ -2420,6 +1816,15 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac in ("gc", "gchat"):
         await cmd_gchat(player, cmd[len(ac):].strip())
+
+    elif ac == "duelo":
+        await cmd_duelo(player, cmd[len(ac):].strip())
+
+    elif ac == "aceptar_duelo":
+        await cmd_aceptar_duelo(player)
+
+    elif ac == "rechazar_duelo":
+        await cmd_rechazar_duelo(player)
 
     elif ac == "atacar":
         if player.muerto:
@@ -2480,6 +1885,7 @@ async def procesar_comando(player: Player, cmd: str):
     elif ac == "ayuda":
         await player.send(
             "\n  MOVER:    n s e o  (norte sur este oeste)\n"
+            "           ⚠ Derrota los monstruos de la sala para avanzar\n"
             "  ACCION:   mirar | atacar\n"
             "  TIENDA:   tienda | mochila | usar <objeto>\n"
             "  HOSPITAL: hospital  (solo en salas con 🏥)\n"
@@ -2487,8 +1893,8 @@ async def procesar_comando(player: Player, cmd: str):
             "  CUENTA:   guardar\n"
             "  GRUPO:    invitar <nombre> | aceptar | rechazar\n"
             "            grupo | salirgrupo | gc <msg>\n"
-            "  CHAT:     decir <msg> (sala) | g <msg> (global)\n"
-            "  CHAT WEB: http://localhost:8080/chat.html"
+            "  PvP:      duelo <nombre> [monedas] | aceptar_duelo | rechazar_duelo\n"
+            "  CHAT:     decir <msg> (sala) | g <msg> (global)"
         )
 
     else:
@@ -2657,12 +2063,18 @@ async def handle_dashboard_ws(ws, usuario: str):
         print(f"[DASH] {usuario} desconectado")
 
 
-
 # ============================================================
 # AIOHTTP HANDLERS
 # ============================================================
 
-
+async def http_handler(request: web.Request) -> web.Response:
+    """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
+    html = get_html().encode("utf-8")
+    return web.Response(
+        body=html,
+        content_type="text/html",
+        charset="utf-8",
+    )
 
 
 async def ws_handler(request: web.Request) -> web.WebSocketResponse:
@@ -2690,7 +2102,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     usuario  = data.get("usuario", "").strip().lower()
     password = data.get("password", "").strip()
 
-# ── Auth ──────────────────────────────────────────────────
+    # ── Auth ──────────────────────────────────────────────────
     if msg_type == "game_register":
         # Registro nuevo
         nombre   = data.get("nombre", "").strip() or usuario
@@ -2796,6 +2208,777 @@ async def main():
     print("[SERVER] Listo.\n")
 
     await asyncio.Future()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+# ============================================================
+# HTML EMBEBIDO — se sirve directamente desde el servidor
+# ============================================================
+
+def get_html() -> str:
+    """Devuelve el HTML de la aplicación completa."""
+    return r"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MUD — The Return to Highdown</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0a0a0a;--bg2:#111;--bg3:#181818;--border:#252525;
+  --gold:#c9a84c;--gold2:#e8c55c;--green:#4caf50;--red:#e53935;
+  --red2:#ff1744;--blue:#42a5f5;--mana:#5c6bc0;--purple:#ab47bc;
+  --orange:#ff9800;--text:#ccc;--dim:#555;--dim2:#222;
+}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* LOGIN */
+#lo{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;justify-content:center;z-index:999;}
+#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;padding:32px 40px;text-align:center;min-width:320px;max-width:400px;width:90%;}
+#lb h1{color:var(--gold);font-size:20px;margin-bottom:4px;}
+#lb p{color:var(--dim);font-size:11px;margin-bottom:16px;}
+.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;font-family:monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:8px;transition:border-color .15s;}
+.li:focus{border-color:var(--gold);}
+.li::placeholder{color:var(--dim);}
+.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:10px;font-weight:bold;font-size:13px;cursor:pointer;border-radius:4px;font-family:monospace;transition:background .15s;}
+.abtn:hover{background:var(--gold2);}
+#lerr{color:var(--red);font-size:11px;margin-top:8px;min-height:15px;}
+.tabs{display:flex;gap:5px;margin-bottom:12px;}
+.tab{flex:1;padding:5px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;color:var(--dim);background:var(--bg3);transition:all .15s;}
+.tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
+#reg-p{display:none;}
+
+/* TOPBAR */
+#top{background:var(--bg2);border-bottom:1px solid var(--border);padding:5px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:11px;}
+#top-nav{display:flex;gap:4px;margin-left:auto;}
+.nav-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 9px;border-radius:3px;cursor:pointer;font-family:monospace;font-size:10px;transition:all .15s;}
+.nav-btn.active,.nav-btn:hover{color:var(--text);border-color:var(--gold);}
+#top-title{color:var(--gold);font-weight:bold;font-size:13px;}
+#top-player{color:var(--text);}#top-player span{color:var(--gold);}
+#cdot{width:7px;height:7px;border-radius:50%;background:var(--red);}
+#cdot.on{background:var(--green);}
+
+/* VIEWS */
+#views{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.view{flex:1;display:none;overflow:hidden;}
+.view.active{display:flex;}
+
+/* ── GAME VIEW ── */
+#game-view{flex-direction:row;}
+#sp{background:var(--bg2);width:190px;flex-shrink:0;padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;border-right:1px solid var(--border);}
+/* ── CHAT LATERAL DE JUEGO ── */
+#game-chat{background:var(--bg2);width:210px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+#gc-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
+#gc-tabs{display:flex;gap:4px;padding:5px 8px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.gctab{flex:1;background:none;border:1px solid var(--border);color:var(--dim);padding:2px 6px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;}
+.gctab.gcs{background:#1a3a1a;color:var(--green);border-color:var(--green);}
+.gctab.gcg{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
+.gctab.gcgr{background:#1a1a3a;color:var(--mana);border-color:var(--mana);}
+#gc-log{flex:1;overflow-y:auto;padding:6px 9px;font-size:11px;line-height:1.5;}
+#gc-log::-webkit-scrollbar{width:3px;}
+#gc-log::-webkit-scrollbar-thumb{background:var(--border);}
+.gcm{display:flex;gap:5px;align-items:baseline;margin-bottom:2px;flex-wrap:wrap;}
+.gcm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
+.gcm-n{font-weight:bold;font-size:10px;flex-shrink:0;}
+.gcm-tx{color:var(--text);font-size:11px;}
+.n-sala{color:var(--green);}.n-global{color:var(--orange);}.n-grupo{color:var(--mana);}
+#gc-in-row{display:flex;gap:4px;padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0;}
+#gc-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;font-family:monospace;font-size:11px;border-radius:3px;outline:none;}
+#gc-in:focus{border-color:var(--gold);}
+#gc-in:disabled{opacity:.4;}
+#gc-send{background:var(--gold);border:none;color:#000;padding:4px 8px;font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:10px;}
+#gc-send:disabled{opacity:.4;cursor:default;}
+.sh{color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);padding-bottom:3px;}
+.pid{text-align:center;}
+.pid-n{font-size:13px;color:var(--gold);font-weight:bold;}
+.pid-c{font-size:10px;color:var(--dim);margin-top:1px;}
+.lvr{display:flex;align-items:center;justify-content:space-between;font-size:11px;}
+.lvb{background:var(--gold);color:#000;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;}
+.bl{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;}
+.bl-n{color:var(--dim);}
+.bw{width:100%;height:11px;background:var(--bg3);border-radius:5px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;}
+.bf{height:100%;border-radius:5px;transition:width .4s,background .4s;}
+.bf-hp{background:var(--red);}
+.bf-mp{background:var(--mana);}
+.xw{width:100%;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;border:1px solid var(--border);margin-top:2px;}
+.bf-xp{background:var(--purple);border-radius:0;}
+.sr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--dim2);font-size:10px;}
+.sr:last-child{border-bottom:none;}
+.sr-l{color:var(--dim);}
+.sr-v{color:var(--text);font-weight:bold;}
+.qbtns{display:flex;flex-wrap:wrap;gap:3px;}
+.qb{flex:1;min-width:36px;background:var(--bg3);border:1px solid var(--border);color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;border-radius:3px;font-family:monospace;text-align:center;transition:all .15s;}
+.qb:hover{color:var(--text);border-color:var(--dim);}
+.qb.c{border-color:#2d4a2d;color:#81c784;}
+.qb.c:hover{background:#0a1a0a;}
+.qb.m{border-color:#1a2a3a;color:#64b5f6;}
+.qb.m:hover{background:#0a1020;}
+#gp{display:flex;flex-direction:column;flex:1;overflow:hidden;}
+#glog{flex:1;overflow-y:auto;padding:9px 13px;font-size:13px;line-height:1.65;}
+#glog::-webkit-scrollbar{width:4px;}
+#glog::-webkit-scrollbar-thumb{background:var(--border);}
+.gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
+.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#ff8a65;}
+.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
+.gi{color:#80cbc4;}.gs{color:var(--dim);font-style:italic;}
+.gl{color:var(--gold);background:#1a1500;border:1px solid var(--gold);padding:3px 7px;border-radius:3px;display:inline-block;margin:3px 0;}
+.cm2{background:#0a1a0a;border:1px solid #2d4a2d;border-radius:4px;padding:4px 8px;margin:2px 0;color:#81c784;}
+#ginput{display:flex;gap:5px;padding:7px 11px;border-top:1px solid var(--border);flex-shrink:0;}
+#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-family:'Courier New',monospace;font-size:13px;border-radius:4px;outline:none;}
+#cmd:focus{border-color:var(--gold);}
+#cmd:disabled{opacity:.4;}
+#cmd::placeholder{color:var(--dim);}
+#sbtn{background:var(--gold);border:none;color:#000;padding:6px 13px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:12px;}
+#sbtn:disabled{opacity:.4;cursor:default;}
+
+/* ── DASHBOARD VIEW ── */
+#dash-view{flex-direction:row;}
+#dash-app{display:grid;grid-template-columns:200px 1fr 180px;flex:1;overflow:hidden;gap:1px;background:var(--border);}
+#dsp{background:var(--bg2);padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;}
+#dmp{background:var(--bg);display:flex;flex-direction:column;overflow:hidden;}
+#dmp-hdr{padding:6px 11px;border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px;flex-shrink:0;}
+#dmp-hdr span{color:var(--gold);font-size:11px;}
+.leg{display:flex;gap:6px;margin-left:auto;}
+.ld{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--dim);}
+.ldot{width:6px;height:6px;border-radius:2px;}
+#map-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:6px;}
+#msvg{max-width:100%;max-height:100%;}
+#plp{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
+#plp-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
+#pl-list{flex:1;overflow-y:auto;padding:6px;}
+.pi{padding:5px 6px;border-bottom:1px solid var(--border);font-size:10px;}
+.pi:last-child{border-bottom:none;}
+.pi-n{color:var(--gold);font-weight:bold;margin-bottom:1px;}
+.pi-i{color:var(--dim);}
+.pi-s{color:var(--text);font-size:9px;margin-top:1px;}
+.pi-d{color:var(--red);}
+
+/* ── CHAT PANEL (bottom of dash) ── */
+#dash-chat{background:var(--bg2);border-top:1px solid var(--border);height:180px;display:flex;flex-direction:column;flex-shrink:0;}
+#ch-top{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.ctab{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;transition:all .15s;}
+.ctab.as{background:#1a3a1a;color:var(--green);border-color:var(--green);}
+.ctab.ag{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
+#ch-log{flex:1;overflow-y:auto;padding:5px 11px;font-size:11px;line-height:1.5;}
+#ch-log::-webkit-scrollbar{width:3px;}
+#ch-log::-webkit-scrollbar-thumb{background:var(--border);}
+.cm3{display:flex;gap:6px;align-items:baseline;margin-bottom:2px;}
+.cm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
+.cm-b{font-size:9px;padding:1px 4px;border-radius:4px;flex-shrink:0;font-weight:bold;}
+.bs{background:#1a3a1a;color:var(--green);}.bg2c{background:#3a2a0a;color:var(--orange);}.bx{background:#1a1a3a;color:var(--blue);}
+.cm-nm{font-weight:bold;flex-shrink:0;}
+.ns{color:var(--green);}.ng{color:var(--orange);}.nx{color:var(--blue);}
+.cm-tx{color:var(--text);}
+#ch-in-row{display:flex;gap:5px;padding:5px 10px;border-top:1px solid var(--border);flex-shrink:0;}
+#ch-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 9px;font-family:monospace;font-size:11px;border-radius:4px;outline:none;}
+#ch-in:focus{border-color:var(--gold);}
+#ch-in:disabled{opacity:.4;}
+.sbtn2{background:var(--gold);border:none;color:#000;padding:5px 11px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:11px;}
+.sbtn2:disabled{opacity:.4;cursor:default;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="lo">
+  <div id="lb">
+    <h1>⚔ The Return to Highdown</h1>
+    <p>MUD Multiplayer — Juega desde el navegador</p>
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
+      <button class="tab" onclick="showTab('register')">Crear cuenta</button>
+    </div>
+    <div id="login-p">
+      <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
+      <input class="li" id="lp" type="password" placeholder="Contraseña">
+      <button class="abtn" onclick="doLogin()">ENTRAR</button>
+    </div>
+    <div id="reg-p">
+      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 caracteres)" autocomplete="off">
+      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 caracteres)">
+      <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
+      <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
+      <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
+    </div>
+    <div id="lerr"></div>
+  </div>
+</div>
+
+<!-- TOPBAR -->
+<div id="top">
+  <div id="top-title">⚔ MUD</div>
+  <div id="top-player">—</div>
+  <div id="cdot"></div>
+  <div id="top-nav">
+    <button class="nav-btn active" onclick="setView('game')">🎮 Juego</button>
+    <button class="nav-btn" onclick="setView('dash')">📊 Dashboard</button>
+  </div>
+</div>
+
+<!-- VIEWS -->
+<div id="views">
+
+  <!-- GAME -->
+  <div class="view active" id="game-view">
+    <div id="sp">
+      <div class="sh">Personaje</div>
+      <div class="pid">
+        <div class="pid-n" id="s-nm">—</div>
+        <div class="pid-c" id="s-cl">—</div>
+      </div>
+      <div>
+        <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="s-nv">1</span></div>
+        <div style="margin-top:3px">
+          <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
+          <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div class="sh">Vida &amp; Mana</div>
+      <div>
+        <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
+        <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
+        <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
+        <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
+      </div>
+      <div class="sh">Combate</div>
+      <div>
+        <div class="sr"><span class="sr-l">Daño base</span>      <span class="sr-v" id="s-dmg">—</span></div>
+        <div class="sr"><span class="sr-l">Ataques/turno</span>  <span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
+        <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
+        <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="s-mo" style="color:var(--gold)">—</span></div>
+      </div>
+      <div class="sh">Combate rápido</div>
+      <div class="qbtns">
+        <button class="qb c" onclick="send('1')">1 Atacar</button>
+        <button class="qb c" onclick="send('2')">2 Especial</button>
+        <button class="qb c" onclick="send('3')">3 Pasar</button>
+        <button class="qb c" onclick="send('4')">4 Objeto</button>
+      </div>
+      <div class="sh">Mover</div>
+      <div class="qbtns">
+        <button class="qb m" onclick="send('n')">↑N</button>
+        <button class="qb m" onclick="send('s')">↓S</button>
+        <button class="qb m" onclick="send('e')">→E</button>
+        <button class="qb m" onclick="send('o')">←O</button>
+      </div>
+      <div class="sh">Acciones</div>
+      <div class="qbtns">
+        <button class="qb" onclick="send('mirar')">👁 Mirar</button>
+        <button class="qb" onclick="send('atacar')">⚔ Atacar</button>
+        <button class="qb" onclick="send('stats')">📊 Stats</button>
+        <button class="qb" onclick="send('ayuda')">❓ Ayuda</button>
+        <button class="qb" onclick="send('tienda')">🏪 Tienda</button>
+        <button class="qb" onclick="send('hospital')">🏥 Hospital</button>
+        <button class="qb" onclick="send('grupo')">👥 Grupo</button>
+        <button class="qb" onclick="send('jugadores')">🌍 Jugadores</button>
+        <button class="qb" onclick="send('guardar')">💾 Guardar</button>
+      </div>
+    </div>
+    <div id="gp">
+      <div id="glog"></div>
+      <div id="ginput">
+        <input id="cmd" type="text" placeholder="Escribe un comando... (ayuda para ver todos)"
+               disabled autocomplete="off" spellcheck="false"
+               onkeydown="if(event.key==='Enter') doSend()">
+        <button id="sbtn" onclick="doSend()" disabled>Enviar</button>
+      </div>
+    </div>
+    <!-- CHAT LATERAL -->
+    <div id="game-chat">
+      <div id="gc-hdr">💬 Chat</div>
+      <div id="gc-tabs">
+        <button class="gctab gcs" id="gct-sala"   onclick="setGcTab('sala')">Sala</button>
+        <button class="gctab"     id="gct-global" onclick="setGcTab('global')">Global</button>
+        <button class="gctab"     id="gct-grupo"  onclick="setGcTab('grupo')">Grupo</button>
+      </div>
+      <div id="gc-log"></div>
+      <div id="gc-in-row">
+        <input id="gc-in" type="text" placeholder="Mensaje..." disabled
+               onkeydown="if(event.key==='Enter') sendGcChat()">
+        <button id="gc-send" onclick="sendGcChat()" disabled>↵</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="view" id="dash-view" style="flex-direction:column;">
+    <div id="dash-app">
+      <!-- Stats dashboard -->
+      <div id="dsp">
+        <div class="sh">Personaje</div>
+        <div class="pid"><div class="pid-n" id="ds-nm">—</div><div class="pid-c" id="ds-cl">—</div></div>
+        <div>
+          <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="ds-nv">1</span></div>
+          <div style="margin-top:3px">
+            <div class="bl"><span class="bl-n">XP</span><span id="ds-xp">0/150</span></div>
+            <div class="xw"><div class="bf bf-xp" id="db-xp" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="sh">Vida &amp; Mana</div>
+        <div>
+          <div class="bl"><span class="bl-n">❤ HP</span><span id="ds-hp">—</span></div>
+          <div class="bw"><div class="bf bf-hp" id="db-hp" style="width:100%"></div></div>
+          <div class="bl"><span class="bl-n">✦ Mana</span><span id="ds-mp">—</span></div>
+          <div class="bw"><div class="bf bf-mp" id="db-mp" style="width:100%"></div></div>
+        </div>
+        <div class="sh">Combate</div>
+        <div>
+          <div class="sr"><span class="sr-l">Daño</span>          <span class="sr-v" id="ds-dmg">—</span></div>
+          <div class="sr"><span class="sr-l">Ataques</span>        <span class="sr-v" id="ds-atq" style="color:var(--green)">—</span></div>
+          <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="ds-mc" style="color:var(--mana)">—</span></div>
+          <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="ds-mo" style="color:var(--gold)">—</span></div>
+          <div class="sr"><span class="sr-l">Sala</span>           <span class="sr-v" id="ds-sl">—</span></div>
+        </div>
+      </div>
+      <!-- Map -->
+      <div id="dmp">
+        <div id="dmp-hdr">
+          <span>🗺 MAPA</span>
+          <div class="leg">
+            <div class="ld"><div class="ldot" style="background:#8b6914"></div>Desierto</div>
+            <div class="ld"><div class="ldot" style="background:#1565c0"></div>Mar</div>
+            <div class="ld"><div class="ldot" style="background:#546e7a"></div>Nieve</div>
+            <div class="ld"><div class="ldot" style="background:#2e7d32"></div>Segura</div>
+            <div class="ld"><div class="ldot" style="background:#b71c1c"></div>Boss</div>
+            <div class="ld"><div class="ldot" style="background:#c9a84c;border-radius:50%"></div>Tú</div>
+          </div>
+        </div>
+        <div id="map-wrap">
+          <svg id="msvg" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
+            <defs><filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+            <rect x="10" y="10" width="500" height="205" rx="6" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
+            <text x="18" y="25" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
+            <rect x="10" y="222" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
+            <text x="18" y="236" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
+            <rect x="10" y="277" width="500" height="200" rx="6" fill="#060810" stroke="#10103a" stroke-width="1"/>
+            <text x="18" y="291" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
+            <rect x="10" y="484" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
+            <text x="18" y="498" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
+            <rect x="10" y="539" width="500" height="210" rx="6" fill="#100800" stroke="#302000" stroke-width="1"/>
+            <text x="18" y="553" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
+            <g id="conn-g"></g><g id="room-g"></g>
+          </svg>
+        </div>
+      </div>
+      <!-- Players -->
+      <div id="plp">
+        <div id="plp-hdr">👥 Jugadores</div>
+        <div id="pl-list"><div style="color:var(--dim);font-size:10px;padding:7px">Sin datos</div></div>
+      </div>
+    </div>
+    <!-- Chat -->
+    <div id="dash-chat">
+      <div id="ch-top">
+        <button class="ctab as" id="t-sala" onclick="setTab('sala')">📍 Sala</button>
+        <button class="ctab" id="t-global" onclick="setTab('global')">🌍 Global</button>
+      </div>
+      <div id="ch-log"></div>
+      <div id="ch-in-row">
+        <input id="ch-in" type="text" placeholder="Mensaje de chat..." disabled
+               onkeydown="if(event.key==='Enter') sendChat()">
+        <button class="sbtn2" id="ch-send" onclick="sendChat()" disabled>Enviar</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #views -->
+
+<script>
+/* ── MAP ── */
+const RPOS={
+  24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
+  21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
+  23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
+  20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
+  22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
+  15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
+  14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
+  11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
+  13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
+  10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
+  12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
+   6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
+   5:{x:260,y:578,n:"Trono Rey Demonio",boss:true,b:"desierto"},
+   2:{x:105,y:645,n:"Dunas del Norte",boss:false,b:"desierto"},
+   4:{x:415,y:645,n:"Templo Maldito",boss:false,b:"desierto"},
+   1:{x:105,y:722,n:"Entrada Desierto",boss:false,b:"desierto"},
+   3:{x:415,y:722,n:"Ruinas",boss:false,b:"desierto"},
+};
+const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[5,10],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
+const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
+const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra",21:"Bosque Hielo",22:"Fortaleza",23:"Trono Hielo",24:"Cumbre Alpha"};
+
+function buildMap(){
+  const ns="http://www.w3.org/2000/svg";
+  const cg=document.getElementById("conn-g"),rg=document.getElementById("room-g");
+  CONNS.forEach(([a,b])=>{
+    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
+    const l=document.createElementNS(ns,"line");
+    l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
+    l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
+    l.setAttribute("stroke","#2a2a2a");l.setAttribute("stroke-width","1.5");
+    cg.appendChild(l);
+  });
+  Object.entries(RPOS).forEach(([id,r])=>{
+    const g=document.createElementNS(ns,"g");
+    g.setAttribute("id","r"+id);g.setAttribute("cursor","pointer");g.setAttribute("data-id",id);
+    const W=r.boss?62:54,H=22;
+    const rect=document.createElementNS(ns,"rect");
+    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
+    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",3);
+    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
+    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
+    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
+    const txt=document.createElementNS(ns,"text");
+    txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
+    txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
+    txt.setAttribute("fill",r.boss?"#cc4444":(BC[r.b]||"#666"));
+    txt.setAttribute("font-size","8");txt.setAttribute("font-family","monospace");
+    txt.textContent=id;
+    g.appendChild(rect);g.appendChild(txt);
+    let tt=null;
+    g.addEventListener("mouseenter",e=>{
+      tt=document.createElement("div");
+      tt.style.cssText="position:fixed;background:#1c1c1c;border:1px solid #444;padding:4px 8px;border-radius:4px;font-size:10px;color:#ccc;pointer-events:none;z-index:200;white-space:nowrap;font-family:monospace";
+      tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
+    });
+    g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-6)+"px";}});
+    g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
+    rg.appendChild(g);
+  });
+}
+buildMap();
+
+function highlightRoom(id){
+  document.querySelectorAll("[data-id]").forEach(g=>{
+    const rid=parseInt(g.getAttribute("data-id")),r=RPOS[rid];
+    if(!r)return;const rect=g.querySelector("rect");if(!rect)return;
+    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
+    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
+    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
+    rect.removeAttribute("filter");
+  });
+  const g=document.getElementById("r"+id);
+  if(g){const rect=g.querySelector("rect");if(rect){
+    rect.setAttribute("fill","#2a1800");rect.setAttribute("stroke","#c9a84c");
+    rect.setAttribute("stroke-width","2");rect.setAttribute("filter","url(#glow)");
+  }}
+}
+
+/* ── STATE ── */
+let ws=null,hist=[],hidx=-1,chatTab="sala",gcTab="sala",myStats=null,currentView="game";
+
+/* ── VIEWS ── */
+function setView(v){
+  currentView=v;
+  document.querySelectorAll(".view").forEach(el=>el.classList.remove("active"));
+  document.getElementById(v==="game"?"game-view":"dash-view").classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach((el,i)=>el.classList.toggle("active",(i===0&&v==="game")||(i===1&&v==="dash")));
+}
+
+/* ── LOGIN TABS ── */
+function showTab(t){
+  document.getElementById("login-p").style.display=t==="login"?"block":"none";
+  document.getElementById("reg-p").style.display=t==="register"?"block":"none";
+  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
+}
+showTab("login");
+
+/* ── CONEXIÓN ── */
+function getWsUrl(){
+  const loc=window.location;
+  const proto=loc.protocol==="https:"?"wss:":"ws:";
+  return proto+"//"+loc.host+"/ws";
+}
+
+function doLogin(){
+  const u=document.getElementById("lu").value.trim();
+  const p=document.getElementById("lp").value;
+  const err=document.getElementById("lerr");
+  if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
+  err.textContent="Conectando...";
+  connect({type:"game_auth",usuario:u,password:p});
+}
+
+function doRegister(){
+  const u=document.getElementById("ru").value.trim();
+  const p1=document.getElementById("rp1").value;
+  const p2=document.getElementById("rp2").value;
+  const nom=document.getElementById("rn").value.trim()||u;
+  const err=document.getElementById("lerr");
+  if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
+  if(u.length<3){err.textContent="Usuario: mínimo 3 caracteres.";return;}
+  if(p1.length<4){err.textContent="Contraseña: mínimo 4 caracteres.";return;}
+  if(p1!==p2){err.textContent="Las contraseñas no coinciden.";return;}
+  err.textContent="Creando cuenta...";
+  connect({type:"game_register",usuario:u,password:p1,nombre:nom});
+}
+
+function connect(authMsg){
+  ws=new WebSocket(getWsUrl());
+  ws.onopen=()=>ws.send(JSON.stringify(authMsg));
+  ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
+  ws.onclose=()=>{
+    setConn(false);
+    document.getElementById("cmd").disabled=true;
+    document.getElementById("sbtn").disabled=true;
+    document.getElementById("ch-in").disabled=true;
+    document.getElementById("ch-send").disabled=true;
+    appendLog("Conexión cerrada con el servidor.","gd");
+  };
+  ws.onerror=()=>{
+    document.getElementById("lerr").textContent="No se pudo conectar.";
+    ws=null;
+  };
+}
+
+["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
+["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
+
+/* ── MENSAJES ── */
+function handle(m){
+  if(m.type==="auth_ok"){
+    document.getElementById("lo").style.display="none";
+    setConn(true);
+    document.getElementById("cmd").disabled=false;
+    document.getElementById("sbtn").disabled=false;
+    document.getElementById("ch-in").disabled=false;
+    document.getElementById("ch-send").disabled=false;
+    document.getElementById("gc-in").disabled=false;
+    document.getElementById("gc-send").disabled=false;
+    document.getElementById("cmd").focus();
+  } else if(m.type==="auth_fail"){
+    document.getElementById("lerr").textContent=m.msg||"Error de autenticación";ws=null;
+  } else if(m.type==="game"){
+    appendLog(m.text,classify(m.text));
+  } else if(m.type==="prompt"){
+    appendLog(m.text,"gp2");
+  } else if(m.type==="combat_menu"){
+    appendLog(m.text,"cm2",true);
+  } else if(m.type==="levelup"){
+    appendLog(m.text,"gl");
+  } else if(m.type==="status"){
+    updateStats(m);
+  } else if(m.type==="chat"){
+    const tag=m.scope==="sala"?"[Sala]":"[Global]";
+    appendLog(tag+" "+(m.nombre||"")+(m.nombre?": ":"")+m.text,"gi");
+    appendChat(m.nombre,m.scope,m.text);
+    appendGcMsg(m.nombre,m.scope,m.text);
+  } else if(m.type==="players"){
+    updatePlayers(m.list);
+  } else if(m.type==="map"){
+    if(m.player_sala)highlightRoom(m.player_sala);
+  }
+}
+
+function classify(t){
+  const l=t.toLowerCase();
+  if(l.includes("victoria")||l.includes("🏆"))return "gv";
+  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto"))return "gd";
+  if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
+  if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
+  return "gg";
+}
+
+/* ── GAME LOG ── */
+function appendLog(text,cls,isBlock=false){
+  const log=document.getElementById("glog");
+  if(isBlock){
+    const d=document.createElement("div");d.className="gm "+cls;d.textContent=text;log.appendChild(d);
+  } else {
+    text.split("\n").forEach(line=>{
+      const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
+    });
+  }
+  log.scrollTop=log.scrollHeight;
+}
+
+/* ── STATS (game + dashboard) ── */
+function updateStats(s){
+  myStats=s;
+  // Game panel
+  set("s-nm",s.nombre||"—");set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  set("s-nv","Nv."+s.nivel);set("s-xp",s.xp+"/"+s.xpMax);
+  document.getElementById("top-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
+  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
+  document.getElementById("b-xp").style.width=xpPct+"%";
+  const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
+  const bh=document.getElementById("b-hp");
+  bh.style.width=hpPct+"%";bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
+  set("s-hp",s.hp+"/"+s.hpMax);
+  document.getElementById("b-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
+  set("s-mp",s.mana+"/"+s.manaMax);
+  const atqs=s.ataquesTurno;
+  set("s-dmg",s.danioBase||"—");
+  set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
+  set("s-mc",(s.costoEspecial||0)+" mana");set("s-mo",s.monedas+" 💰");
+  // Dashboard panel
+  set("ds-nm",s.nombre||"—");set("ds-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  set("ds-nv","Nv."+s.nivel);set("ds-xp",s.xp+"/"+s.xpMax);
+  document.getElementById("db-xp").style.width=xpPct+"%";
+  const dbh=document.getElementById("db-hp");
+  dbh.style.width=hpPct+"%";dbh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
+  set("ds-hp",s.hp+"/"+s.hpMax);
+  document.getElementById("db-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
+  set("ds-mp",s.mana+"/"+s.manaMax);
+  set("ds-dmg",s.danioBase||"—");
+  set("ds-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
+  set("ds-mc",(s.costoEspecial||0)+" mana");set("ds-mo",s.monedas+" 💰");
+  set("ds-sl","["+s.sala_id+"] "+(SNAMES[s.sala_id]||"?"));
+  highlightRoom(s.sala_id);
+}
+
+/* ── PLAYERS ── */
+function updatePlayers(list){
+  const div=document.getElementById("pl-list");
+  if(!list||!list.length){div.innerHTML='<div style="color:var(--dim);font-size:10px;padding:7px">Nadie conectado</div>';return;}
+  const grupos={};const sinGrupo=[];
+  list.forEach(p=>{
+    if(p.grupo_id){
+      if(!grupos[p.grupo_id])grupos[p.grupo_id]={lider:p.grupo_lider,miembros:[]};
+      grupos[p.grupo_id].miembros.push(p);
+    } else sinGrupo.push(p);
+  });
+  let html="";
+  Object.entries(grupos).forEach(([gid,g])=>{
+    html+=`<div style="margin-bottom:5px;border:1px solid #2a2a2a;border-radius:3px;overflow:hidden"><div style="background:#1a1a0a;padding:3px 6px;font-size:9px;color:var(--gold)">👥 Grupo #${gid} — ${esc(g.lider)}</div>`;
+    g.miembros.forEach(p=>{html+=`<div class="pi" style="padding-left:10px"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀":"📍 "+esc(p.sala_nombre)}</div></div>`;});
+    html+="</div>";
+  });
+  sinGrupo.forEach(p=>{html+=`<div class="pi"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀 Muerto":"📍 "+esc(p.sala_nombre)}</div></div>`;});
+  div.innerHTML=html;
+}
+
+/* ── CHAT ── */
+function setTab(t){
+  chatTab=t;
+  document.getElementById("t-sala").className="ctab"+(t==="sala"?" as":"");
+  document.getElementById("t-global").className="ctab"+(t==="global"?" ag":"");
+}
+
+/* ── CHAT LATERAL DE JUEGO ── */
+function setGcTab(t){
+  gcTab=t;
+  document.getElementById("gct-sala").className  ="gctab"+(t==="sala"  ?" gcs":"");
+  document.getElementById("gct-global").className="gctab"+(t==="global"?" gcg":"");
+  document.getElementById("gct-grupo").className ="gctab"+(t==="grupo" ?" gcgr":"");
+}
+
+function appendGcMsg(nombre,scope,texto){
+  const log=document.getElementById("gc-log");
+  if(!log)return;
+  const now=new Date();
+  const t=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
+  const nc=scope==="sala"?"n-sala":scope==="global"?"n-global":"n-grupo";
+  const div=document.createElement("div");
+  div.className="gcm";
+  div.innerHTML=`<span class="gcm-t">${t}</span><span class="gcm-n ${nc}">${esc(nombre)}</span><span class="gcm-tx">${esc(texto)}</span>`;
+  log.appendChild(div);
+  log.scrollTop=log.scrollHeight;
+  // Notificar tab inactivo
+  if(scope!==gcTab){
+    const el=document.getElementById("gct-"+scope);
+    if(el)el.style.boxShadow="0 0 0 1px var(--gold)";
+  }
+}
+
+function sendGcChat(){
+  const inp=document.getElementById("gc-in");
+  const msg=inp.value.trim();
+  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
+  let cmd;
+  if(gcTab==="sala")   cmd="decir "+msg;
+  else if(gcTab==="global") cmd="g "+msg;
+  else                      cmd="gc "+msg;
+  ws.send(cmd);
+  appendGcMsg(myStats?myStats.nombre:"Tú",gcTab,msg);
+  inp.value="";
+  // Quitar notificación del tab activo
+  const el=document.getElementById("gct-"+gcTab);
+  if(el)el.style.boxShadow="";
+}
+function appendChat(nombre,scope,texto){
+  const log=document.getElementById("ch-log");
+  const now=new Date();
+  const time=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
+  const label=scope==="sala"?"SALA":scope==="global"?"GLOBAL":"SYS";
+  const bc=scope==="sala"?"bs":scope==="global"?"bg2c":"bx";
+  const nc=scope==="sala"?"ns":scope==="global"?"ng":"nx";
+  const div=document.createElement("div");div.className="cm3";
+  div.innerHTML=`<span class="cm-t">${time}</span><span class="cm-b ${bc}">${label}</span><span class="cm-nm ${nc}">${esc(nombre)}</span><span class="cm-tx">${esc(texto)}</span>`;
+  log.appendChild(div);log.scrollTop=log.scrollHeight;
+}
+function sendChat(){
+  const inp=document.getElementById("ch-in");
+  const msg=inp.value.trim();
+  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
+  const cmd=chatTab==="sala"?"decir "+msg:"g "+msg;
+  ws.send(cmd);
+  appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
+  inp.value="";
+}
+
+/* ── ENVÍO ── */
+function send(text){if(!ws||ws.readyState!==WebSocket.OPEN)return;ws.send(text);}
+function doSend(){
+  const inp=document.getElementById("cmd");
+  const cmd=inp.value.trim();
+  if(!cmd)return;
+  hist.unshift(cmd);if(hist.length>50)hist.pop();hidx=-1;
+  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
+}
+document.addEventListener("DOMContentLoaded",()=>{
+  document.getElementById("cmd").addEventListener("keydown",e=>{
+    if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
+    else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
+  });
+});
+
+/* ── UTILS ── */
+function setConn(on){document.getElementById("cdot").className=on?"on":"";}
+function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+</script>
+</body>
+</html>"""
+
+
+# ============================================================
+# MAIN — HTTP + WebSocket en el mismo puerto
+# ============================================================
+
+async def process_request(connection, request):
+    """
+    Intercepta peticiones HTTP antes de que websockets las procese.
+    Si es una petición HTTP normal → sirve el HTML.
+    Si tiene cabecera Upgrade: websocket → deja pasar al handler WS.
+    """
+    if request.headers.get("Upgrade", "").lower() != "websocket":
+        html = get_html().encode("utf-8")
+        headers = [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Length", str(len(html))),
+        ]
+        return connection.respond(200, "OK", headers, html)
+
+
+async def main():
+    port = int(os.environ.get("PORT", 8080))
+
+    async with websockets.serve(
+        handle_connection,
+        "0.0.0.0",
+        port,
+        process_request=process_request,
+    ):
+        print(f"[SERVER] Puerto: {port}")
+        print(f"[SERVER] Abre http://localhost:{port} para jugar")
+        print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
+        print("[SERVER] Listo.\n")
+        await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
