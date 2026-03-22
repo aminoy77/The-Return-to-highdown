@@ -2073,166 +2073,254 @@ async def handle_dashboard_ws(ws, usuario: str):
 # ============================================================
 
 def get_html() -> str:
-    """Devuelve el HTML de la aplicación completa."""
     return r"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MUD — The Return to Highdown</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>The Return to Highdown</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
-  --bg:#0a0a0a;--bg2:#111;--bg3:#181818;--border:#252525;
-  --gold:#c9a84c;--gold2:#e8c55c;--green:#4caf50;--red:#e53935;
-  --red2:#ff1744;--blue:#42a5f5;--mana:#5c6bc0;--purple:#ab47bc;
-  --orange:#ff9800;--text:#ccc;--dim:#555;--dim2:#222;
+  --bg:#0d0d0d;--bg2:#121212;--bg3:#1a1a1a;--bg4:#1f1f1f;
+  --border:#242424;--border2:#2e2e2e;
+  --gold:#c9a84c;--gold2:#e8c55c;
+  --green:#43a047;--red:#e53935;--red2:#ff1744;
+  --blue:#42a5f5;--mana:#5c6bc0;--purple:#8e44ad;
+  --orange:#f39c12;--teal:#00bcd4;--pink:#e91e63;
+  --text:#d0d0d0;--dim:#505050;--dim2:#2a2a2a;
 }
-body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
+     height:100vh;overflow:hidden;display:flex;flex-direction:column;}
 
-/* LOGIN */
-#lo{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;justify-content:center;z-index:999;}
-#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;padding:32px 40px;text-align:center;min-width:320px;max-width:400px;width:90%;}
-#lb h1{color:var(--gold);font-size:20px;margin-bottom:4px;}
-#lb p{color:var(--dim);font-size:11px;margin-bottom:16px;}
-.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;font-family:monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:8px;transition:border-color .15s;}
+/* ═══════ LOGIN ═══════ */
+#lo{position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;
+    align-items:center;justify-content:center;z-index:999;}
+#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;
+    padding:30px 38px;text-align:center;min-width:300px;max-width:380px;width:90%;}
+#lb h1{color:var(--gold);font-size:18px;margin-bottom:3px;}
+#lb p{color:var(--dim);font-size:10px;margin-bottom:14px;}
+.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);
+    padding:7px 10px;font-family:monospace;font-size:12px;border-radius:3px;
+    outline:none;margin-bottom:7px;transition:border-color .15s;}
 .li:focus{border-color:var(--gold);}
 .li::placeholder{color:var(--dim);}
-.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:10px;font-weight:bold;font-size:13px;cursor:pointer;border-radius:4px;font-family:monospace;transition:background .15s;}
+.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:9px;
+      font-weight:bold;font-size:13px;cursor:pointer;border-radius:3px;
+      font-family:monospace;transition:background .15s;}
 .abtn:hover{background:var(--gold2);}
-#lerr{color:var(--red);font-size:11px;margin-top:8px;min-height:15px;}
-.tabs{display:flex;gap:5px;margin-bottom:12px;}
-.tab{flex:1;padding:5px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:monospace;font-size:11px;color:var(--dim);background:var(--bg3);transition:all .15s;}
+#lerr{color:var(--red);font-size:10px;margin-top:7px;min-height:14px;}
+.tabs{display:flex;gap:4px;margin-bottom:11px;}
+.tab{flex:1;padding:4px;border:1px solid var(--border);border-radius:3px;
+     cursor:pointer;font-family:monospace;font-size:10px;color:var(--dim);
+     background:var(--bg3);transition:all .15s;}
 .tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
 #reg-p{display:none;}
 
-/* TOPBAR */
-#top{background:var(--bg2);border-bottom:1px solid var(--border);padding:5px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:11px;}
-#top-nav{display:flex;gap:4px;margin-left:auto;}
-.nav-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 9px;border-radius:3px;cursor:pointer;font-family:monospace;font-size:10px;transition:all .15s;}
-.nav-btn.active,.nav-btn:hover{color:var(--text);border-color:var(--gold);}
-#top-title{color:var(--gold);font-weight:bold;font-size:13px;}
-#top-player{color:var(--text);}#top-player span{color:var(--gold);}
-#cdot{width:7px;height:7px;border-radius:50%;background:var(--red);}
+/* ═══════ TOPBAR ═══════ */
+#topbar{background:var(--bg2);border-bottom:1px solid var(--border);
+        padding:4px 10px;display:flex;align-items:center;gap:8px;
+        flex-shrink:0;font-size:10px;height:30px;}
+#tb-title{color:var(--gold);font-weight:bold;font-size:12px;}
+#tb-player{color:var(--text);}
+#tb-player span{color:var(--gold);}
+#cdot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--red);}
 #cdot.on{background:var(--green);}
 
-/* VIEWS */
-#views{flex:1;overflow:hidden;display:flex;flex-direction:column;}
-.view{flex:1;display:none;overflow:hidden;}
-.view.active{display:flex;}
+/* ═══════ MAIN GRID ═══════ */
+#app{flex:1;display:grid;overflow:hidden;
+     grid-template-columns:160px 1fr 200px;
+     grid-template-rows:1fr 42px;
+     gap:1px;background:var(--border);}
 
-/* ── GAME VIEW ── */
-#game-view{flex-direction:row;}
-#sp{background:var(--bg2);width:190px;flex-shrink:0;padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;border-right:1px solid var(--border);}
-/* ── CHAT LATERAL DE JUEGO ── */
-#game-chat{background:var(--bg2);width:210px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
-#gc-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
-#gc-tabs{display:flex;gap:4px;padding:5px 8px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.gctab{flex:1;background:none;border:1px solid var(--border);color:var(--dim);padding:2px 6px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;}
-.gctab.gcs{background:#1a3a1a;color:var(--green);border-color:var(--green);}
-.gctab.gcg{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
-.gctab.gcgr{background:#1a1a3a;color:var(--mana);border-color:var(--mana);}
-#gc-log{flex:1;overflow-y:auto;padding:6px 9px;font-size:11px;line-height:1.5;}
-#gc-log::-webkit-scrollbar{width:3px;}
-#gc-log::-webkit-scrollbar-thumb{background:var(--border);}
-.gcm{display:flex;gap:5px;align-items:baseline;margin-bottom:2px;flex-wrap:wrap;}
-.gcm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
-.gcm-n{font-weight:bold;font-size:10px;flex-shrink:0;}
-.gcm-tx{color:var(--text);font-size:11px;}
-.n-sala{color:var(--green);}.n-global{color:var(--orange);}.n-grupo{color:var(--mana);}
-#gc-in-row{display:flex;gap:4px;padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0;}
-#gc-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;font-family:monospace;font-size:11px;border-radius:3px;outline:none;}
-#gc-in:focus{border-color:var(--gold);}
-#gc-in:disabled{opacity:.4;}
-#gc-send{background:var(--gold);border:none;color:#000;padding:4px 8px;font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:10px;}
-#gc-send:disabled{opacity:.4;cursor:default;}
-.sh{color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);padding-bottom:3px;}
-.pid{text-align:center;}
-.pid-n{font-size:13px;color:var(--gold);font-weight:bold;}
-.pid-c{font-size:10px;color:var(--dim);margin-top:1px;}
-.lvr{display:flex;align-items:center;justify-content:space-between;font-size:11px;}
-.lvb{background:var(--gold);color:#000;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;}
-.bl{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;}
+/* ═══════ LEFT PANEL ═══════ */
+#left{background:var(--bg2);grid-column:1;grid-row:1;
+      display:flex;flex-direction:column;overflow:hidden;}
+
+/* Stats */
+#stats-pane{padding:8px;overflow-y:auto;flex:1;}
+.sp-name{font-size:13px;color:var(--gold);font-weight:bold;text-align:center;}
+.sp-cls{font-size:10px;color:var(--dim);text-align:center;margin-bottom:6px;}
+.sh{color:var(--gold);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;
+    border-bottom:1px solid var(--border);padding-bottom:2px;margin:6px 0 4px;}
+.lvr{display:flex;justify-content:space-between;align-items:center;font-size:10px;margin-bottom:4px;}
+.lvb{background:var(--gold);color:#000;padding:1px 5px;border-radius:6px;
+     font-weight:bold;font-size:10px;}
+.bl{display:flex;justify-content:space-between;font-size:9px;margin-bottom:1px;}
 .bl-n{color:var(--dim);}
-.bw{width:100%;height:11px;background:var(--bg3);border-radius:5px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;}
-.bf{height:100%;border-radius:5px;transition:width .4s,background .4s;}
+.bw{width:100%;height:9px;background:var(--bg3);border-radius:4px;
+    overflow:hidden;border:1px solid var(--border);margin-bottom:5px;}
+.bf{height:100%;border-radius:4px;transition:width .4s,background .4s;}
 .bf-hp{background:var(--red);}
 .bf-mp{background:var(--mana);}
-.xw{width:100%;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;border:1px solid var(--border);margin-top:2px;}
+.xw{width:100%;height:3px;background:var(--bg3);border-radius:2px;
+    overflow:hidden;border:1px solid var(--border);margin-bottom:5px;}
 .bf-xp{background:var(--purple);border-radius:0;}
-.sr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--dim2);font-size:10px;}
+.sr{display:flex;justify-content:space-between;padding:2px 0;
+    border-bottom:1px solid var(--dim2);font-size:9px;}
 .sr:last-child{border-bottom:none;}
 .sr-l{color:var(--dim);}
 .sr-v{color:var(--text);font-weight:bold;}
-.qbtns{display:flex;flex-wrap:wrap;gap:3px;}
-.qb{flex:1;min-width:36px;background:var(--bg3);border:1px solid var(--border);color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;border-radius:3px;font-family:monospace;text-align:center;transition:all .15s;}
-.qb:hover{color:var(--text);border-color:var(--dim);}
-.qb.c{border-color:#2d4a2d;color:#81c784;}
-.qb.c:hover{background:#0a1a0a;}
-.qb.m{border-color:#1a2a3a;color:#64b5f6;}
-.qb.m:hover{background:#0a1020;}
-#gp{display:flex;flex-direction:column;flex:1;overflow:hidden;}
-#glog{flex:1;overflow-y:auto;padding:9px 13px;font-size:13px;line-height:1.65;}
+
+/* Mochila */
+#bag-pane{padding:6px 8px;border-top:1px solid var(--border);flex-shrink:0;}
+.bag-title{color:var(--gold);font-size:9px;text-transform:uppercase;
+           letter-spacing:1px;margin-bottom:4px;}
+.bag-coins{font-size:11px;color:var(--gold);margin-bottom:4px;}
+.bag-item{font-size:9px;color:var(--text);padding:1px 0;}
+.bag-empty{font-size:9px;color:var(--dim);}
+
+/* Hospital / Tienda */
+#services-pane{padding:5px 8px;border-top:1px solid var(--border);
+               flex-shrink:0;display:flex;gap:4px;}
+.svc-btn{flex:1;background:var(--bg3);border:1px solid var(--border);
+         color:var(--dim);padding:4px 3px;font-size:9px;cursor:pointer;
+         border-radius:3px;font-family:monospace;text-align:center;
+         transition:all .15s;display:none;}
+.svc-btn.visible{display:block;}
+.svc-btn.hosp{border-color:#1a4a1a;color:var(--green);}
+.svc-btn.shop{border-color:#4a3a0a;color:var(--orange);}
+.svc-btn:hover{opacity:.8;}
+
+/* ═══════ CENTER ═══════ */
+#center{background:var(--bg);grid-column:2;grid-row:1;
+        display:flex;flex-direction:column;overflow:hidden;position:relative;}
+
+/* Mini mapa (esquina superior derecha del centro) */
+#minimap-btn{position:absolute;top:6px;right:6px;width:90px;height:65px;
+             background:var(--bg2);border:1px solid var(--orange);
+             border-radius:4px;cursor:pointer;z-index:10;overflow:hidden;
+             transition:border-color .2s;}
+#minimap-btn:hover{border-color:var(--gold2);}
+#minimap-btn svg{width:100%;height:100%;}
+#minimap-label{position:absolute;bottom:2px;left:0;right:0;text-align:center;
+               font-size:8px;color:var(--orange);pointer-events:none;}
+
+/* Output log */
+#glog{flex:1;overflow-y:auto;padding:8px 10px 8px 10px;font-size:12px;
+      line-height:1.6;padding-right:100px;}
 #glog::-webkit-scrollbar{width:4px;}
 #glog::-webkit-scrollbar-thumb{background:var(--border);}
 .gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
-.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#ff8a65;}
-.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
-.gi{color:#80cbc4;}.gs{color:var(--dim);font-style:italic;}
-.gl{color:var(--gold);background:#1a1500;border:1px solid var(--gold);padding:3px 7px;border-radius:3px;display:inline-block;margin:3px 0;}
-.cm2{background:#0a1a0a;border:1px solid #2d4a2d;border-radius:4px;padding:4px 8px;margin:2px 0;color:#81c784;}
-#ginput{display:flex;gap:5px;padding:7px 11px;border-top:1px solid var(--border);flex-shrink:0;}
-#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-family:'Courier New',monospace;font-size:13px;border-radius:4px;outline:none;}
+.gg{color:var(--text);}
+.gp2{color:var(--blue);}
+.gc{color:#e67e22;}
+.gv{color:var(--gold);font-weight:bold;}
+.gd{color:var(--red);}
+.gi{color:var(--teal);}
+.gs{color:var(--dim);font-style:italic;}
+.gl{color:var(--gold);background:#1a1300;border:1px solid var(--gold);
+    padding:2px 6px;border-radius:3px;display:inline-block;margin:2px 0;}
+.gcombat{background:#0a1200;border:1px solid #2d4a1a;border-radius:3px;
+         padding:3px 7px;margin:1px 0;color:#81c784;display:block;}
+
+/* ═══════ RIGHT PANEL ═══════ */
+#right{background:var(--bg2);grid-column:3;grid-row:1;
+       display:flex;flex-direction:column;overflow:hidden;}
+
+/* Leaderboard */
+#lb-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;
+         border-bottom:1px solid var(--border);}
+#lb-hdr{padding:5px 9px;font-size:9px;color:var(--gold);
+        text-transform:uppercase;letter-spacing:1px;flex-shrink:0;
+        border-bottom:1px solid var(--border);}
+#lb-list{flex:1;overflow-y:auto;padding:4px;}
+.pli{padding:4px 5px;border-bottom:1px solid var(--border);font-size:9px;}
+.pli:last-child{border-bottom:none;}
+.pli-n{color:var(--gold);font-weight:bold;}
+.pli-i{color:var(--dim);}
+.pli-s{color:var(--text);font-size:8px;}
+.pli-d{color:var(--red);}
+.grp-hdr{background:#1a1500;padding:2px 5px;font-size:8px;
+         color:var(--gold);border-radius:2px;margin-bottom:1px;}
+
+/* Chat */
+#chat-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+#chat-tabs{display:flex;padding:4px 6px;gap:3px;border-bottom:1px solid var(--border);
+           flex-shrink:0;}
+.ctab{flex:1;background:none;border:1px solid var(--border);color:var(--dim);
+      padding:2px 4px;border-radius:3px;cursor:pointer;font-size:9px;
+      font-family:monospace;transition:all .15s;}
+.ctab.cs{background:#0d1f0d;color:var(--green);border-color:var(--green);}
+.ctab.cg{background:#1f1500;color:var(--orange);border-color:var(--orange);}
+.ctab.cgr{background:#0d0d1f;color:var(--mana);border-color:var(--mana);}
+#chat-log{flex:1;overflow-y:auto;padding:4px 7px;font-size:10px;line-height:1.5;}
+#chat-log::-webkit-scrollbar{width:3px;}
+#chat-log::-webkit-scrollbar-thumb{background:var(--border);}
+.cm{display:flex;gap:4px;align-items:baseline;margin-bottom:2px;flex-wrap:wrap;}
+.cm-t{color:var(--dim);font-size:8px;flex-shrink:0;}
+.cm-n{font-weight:bold;font-size:9px;flex-shrink:0;}
+.cm-tx{color:var(--text);font-size:10px;}
+.cn-s{color:var(--green);}
+.cn-g{color:var(--orange);}
+.cn-gr{color:var(--mana);}
+#chat-in-row{display:flex;gap:3px;padding:4px 6px;
+             border-top:1px solid var(--border);flex-shrink:0;}
+#chat-in{flex:1;background:var(--bg3);border:1px solid var(--border);
+         color:var(--text);padding:4px 7px;font-family:monospace;
+         font-size:10px;border-radius:3px;outline:none;}
+#chat-in:focus{border-color:var(--gold);}
+#chat-in:disabled{opacity:.4;}
+#chat-send{background:var(--gold);border:none;color:#000;padding:4px 7px;
+           font-weight:bold;cursor:pointer;border-radius:3px;
+           font-family:monospace;font-size:10px;}
+#chat-send:disabled{opacity:.4;cursor:default;}
+
+/* ═══════ BOTTOM CONTROLS BAR ═══════ */
+#controls{background:var(--bg2);grid-column:1/4;grid-row:2;
+          display:flex;align-items:center;gap:3px;padding:0 8px;
+          border-top:1px solid var(--border);overflow:hidden;}
+.cb{background:var(--bg3);border:1px solid var(--border);color:var(--dim);
+    padding:3px 6px;font-size:9px;cursor:pointer;border-radius:3px;
+    font-family:monospace;white-space:nowrap;transition:all .15s;flex-shrink:0;}
+.cb:hover{color:var(--text);border-color:var(--gold);}
+.cb:disabled{opacity:.35;cursor:default;}
+.cb.dir{border-color:#1a2a3a;color:var(--blue);font-weight:bold;}
+.cb.dir:hover{background:#080f1a;}
+.cb.combat{border-color:#1a3a1a;color:var(--green);}
+.cb.combat:hover{background:#081208;}
+.cb.pvp{border-color:#3a1a1a;color:var(--red);}
+.cb.pvp:hover{background:#180808;}
+.cb.gold-btn{background:var(--gold);color:#000;border-color:var(--gold);font-weight:bold;}
+.cb.gold-btn:hover{background:var(--gold2);}
+.cb-sep{width:1px;height:18px;background:var(--border);flex-shrink:0;margin:0 2px;}
+#help-btn{margin-left:auto;}
+#input-bar{display:flex;gap:3px;flex:1;max-width:260px;}
+#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);
+     color:var(--text);padding:4px 7px;font-family:"Courier New",monospace;
+     font-size:11px;border-radius:3px;outline:none;min-width:0;}
 #cmd:focus{border-color:var(--gold);}
 #cmd:disabled{opacity:.4;}
 #cmd::placeholder{color:var(--dim);}
-#sbtn{background:var(--gold);border:none;color:#000;padding:6px 13px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:12px;}
+#sbtn{background:var(--gold);border:none;color:#000;padding:4px 8px;
+      font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;
+      font-size:11px;white-space:nowrap;}
 #sbtn:disabled{opacity:.4;cursor:default;}
 
-/* ── DASHBOARD VIEW ── */
-#dash-view{flex-direction:row;}
-#dash-app{display:grid;grid-template-columns:200px 1fr 180px;flex:1;overflow:hidden;gap:1px;background:var(--border);}
-#dsp{background:var(--bg2);padding:10px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;}
-#dmp{background:var(--bg);display:flex;flex-direction:column;overflow:hidden;}
-#dmp-hdr{padding:6px 11px;border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px;flex-shrink:0;}
-#dmp-hdr span{color:var(--gold);font-size:11px;}
-.leg{display:flex;gap:6px;margin-left:auto;}
-.ld{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--dim);}
-.ldot{width:6px;height:6px;border-radius:2px;}
-#map-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:6px;}
-#msvg{max-width:100%;max-height:100%;}
-#plp{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
-#plp-hdr{padding:6px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex-shrink:0;}
-#pl-list{flex:1;overflow-y:auto;padding:6px;}
-.pi{padding:5px 6px;border-bottom:1px solid var(--border);font-size:10px;}
-.pi:last-child{border-bottom:none;}
-.pi-n{color:var(--gold);font-weight:bold;margin-bottom:1px;}
-.pi-i{color:var(--dim);}
-.pi-s{color:var(--text);font-size:9px;margin-top:1px;}
-.pi-d{color:var(--red);}
+/* ═══════ MAP MODAL ═══════ */
+#map-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
+           z-index:500;align-items:center;justify-content:center;}
+#map-modal.open{display:flex;}
+#map-inner{background:var(--bg2);border:1px solid var(--gold);border-radius:6px;
+           padding:10px;max-width:90vw;max-height:90vh;position:relative;}
+#map-close{position:absolute;top:6px;right:8px;background:none;border:none;
+           color:var(--dim);font-size:16px;cursor:pointer;font-family:monospace;}
+#map-close:hover{color:var(--text);}
+#map-svg-full{display:block;}
 
-/* ── CHAT PANEL (bottom of dash) ── */
-#dash-chat{background:var(--bg2);border-top:1px solid var(--border);height:180px;display:flex;flex-direction:column;flex-shrink:0;}
-#ch-top{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.ctab{background:none;border:1px solid var(--border);color:var(--dim);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px;font-family:monospace;transition:all .15s;}
-.ctab.as{background:#1a3a1a;color:var(--green);border-color:var(--green);}
-.ctab.ag{background:#3a2a0a;color:var(--orange);border-color:var(--orange);}
-#ch-log{flex:1;overflow-y:auto;padding:5px 11px;font-size:11px;line-height:1.5;}
-#ch-log::-webkit-scrollbar{width:3px;}
-#ch-log::-webkit-scrollbar-thumb{background:var(--border);}
-.cm3{display:flex;gap:6px;align-items:baseline;margin-bottom:2px;}
-.cm-t{color:var(--dim);font-size:9px;flex-shrink:0;}
-.cm-b{font-size:9px;padding:1px 4px;border-radius:4px;flex-shrink:0;font-weight:bold;}
-.bs{background:#1a3a1a;color:var(--green);}.bg2c{background:#3a2a0a;color:var(--orange);}.bx{background:#1a1a3a;color:var(--blue);}
-.cm-nm{font-weight:bold;flex-shrink:0;}
-.ns{color:var(--green);}.ng{color:var(--orange);}.nx{color:var(--blue);}
-.cm-tx{color:var(--text);}
-#ch-in-row{display:flex;gap:5px;padding:5px 10px;border-top:1px solid var(--border);flex-shrink:0;}
-#ch-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 9px;font-family:monospace;font-size:11px;border-radius:4px;outline:none;}
-#ch-in:focus{border-color:var(--gold);}
-#ch-in:disabled{opacity:.4;}
-.sbtn2{background:var(--gold);border:none;color:#000;padding:5px 11px;font-weight:bold;cursor:pointer;border-radius:4px;font-family:monospace;font-size:11px;}
-.sbtn2:disabled{opacity:.4;cursor:default;}
+/* ═══════ HELP MODAL ═══════ */
+#help-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
+            z-index:500;align-items:center;justify-content:center;}
+#help-modal.open{display:flex;}
+#help-inner{background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+            padding:16px 20px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;}
+#help-inner h2{color:var(--gold);font-size:13px;margin-bottom:10px;}
+.help-row{display:flex;gap:10px;margin-bottom:5px;font-size:11px;}
+.help-key{color:var(--gold);width:160px;flex-shrink:0;}
+.help-val{color:var(--text);}
+.help-close{margin-top:12px;background:var(--bg3);border:1px solid var(--border);
+            color:var(--dim);padding:5px 12px;cursor:pointer;border-radius:3px;
+            font-family:monospace;font-size:11px;}
 </style>
 </head>
 <body>
@@ -2241,7 +2329,7 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 <div id="lo">
   <div id="lb">
     <h1>⚔ The Return to Highdown</h1>
-    <p>MUD Multiplayer — Juega desde el navegador</p>
+    <p>MUD Multiplayer</p>
     <div class="tabs">
       <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
       <button class="tab" onclick="showTab('register')">Crear cuenta</button>
@@ -2252,8 +2340,8 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
       <button class="abtn" onclick="doLogin()">ENTRAR</button>
     </div>
     <div id="reg-p">
-      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 caracteres)" autocomplete="off">
-      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 caracteres)">
+      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 chars)" autocomplete="off">
+      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 chars)">
       <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
       <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
       <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
@@ -2262,34 +2350,72 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
   </div>
 </div>
 
-<!-- TOPBAR -->
-<div id="top">
-  <div id="top-title">⚔ MUD</div>
-  <div id="top-player">—</div>
-  <div id="cdot"></div>
-  <div id="top-nav">
-    <button class="nav-btn active" onclick="setView('game')">🎮 Juego</button>
-    <button class="nav-btn" onclick="setView('dash')">📊 Dashboard</button>
+<!-- MAP MODAL -->
+<div id="map-modal" onclick="closeMap(event)">
+  <div id="map-inner">
+    <button id="map-close" onclick="closeMapBtn()">✕</button>
+    <svg id="map-svg-full" viewBox="0 0 520 760" width="480" height="660" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="glowf"><feGaussianBlur stdDeviation="4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <rect x="10" y="10" width="500" height="205" rx="5" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
+      <text x="16" y="24" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
+      <rect x="10" y="222" width="500" height="48" rx="4" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
+      <text x="16" y="235" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
+      <rect x="10" y="277" width="500" height="200" rx="5" fill="#060810" stroke="#10103a" stroke-width="1"/>
+      <text x="16" y="291" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
+      <rect x="10" y="484" width="500" height="48" rx="4" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
+      <text x="16" y="498" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
+      <rect x="10" y="539" width="500" height="210" rx="5" fill="#100800" stroke="#302000" stroke-width="1"/>
+      <text x="16" y="553" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
+      <g id="map-conn-full"></g>
+      <g id="map-rooms-full"></g>
+    </svg>
   </div>
 </div>
 
-<!-- VIEWS -->
-<div id="views">
+<!-- HELP MODAL -->
+<div id="help-modal" onclick="closeHelp(event)">
+  <div id="help-inner">
+    <h2>❓ Comandos</h2>
+    <div class="help-row"><span class="help-key">n / s / e / o</span><span class="help-val">Moverse (Norte/Sur/Este/Oeste)</span></div>
+    <div class="help-row"><span class="help-key">atacar</span><span class="help-val">Iniciar combate en la sala</span></div>
+    <div class="help-row"><span class="help-key">1 / 2 / 3 / 4</span><span class="help-val">En combate: Atacar / Especial / Pasar / Objeto</span></div>
+    <div class="help-row"><span class="help-key">mirar</span><span class="help-val">Describir la sala actual</span></div>
+    <div class="help-row"><span class="help-key">stats</span><span class="help-val">Ver estadísticas</span></div>
+    <div class="help-row"><span class="help-key">tienda</span><span class="help-val">Abrir tienda (si disponible)</span></div>
+    <div class="help-row"><span class="help-key">hospital</span><span class="help-val">Curarse (si disponible)</span></div>
+    <div class="help-row"><span class="help-key">mochila</span><span class="help-val">Ver inventario</span></div>
+    <div class="help-row"><span class="help-key">usar vida/dano/gema</span><span class="help-val">Usar objeto del inventario</span></div>
+    <div class="help-row"><span class="help-key">invitar &lt;nombre&gt;</span><span class="help-val">Invitar a grupo</span></div>
+    <div class="help-row"><span class="help-key">aceptar / rechazar</span><span class="help-val">Responder invitación de grupo</span></div>
+    <div class="help-row"><span class="help-key">grupo / salirgrupo</span><span class="help-val">Ver grupo / Abandonar</span></div>
+    <div class="help-row"><span class="help-key">duelo &lt;nombre&gt; [monedas]</span><span class="help-val">Retar a PvP</span></div>
+    <div class="help-row"><span class="help-key">aceptar_duelo / rechazar_duelo</span><span class="help-val">Responder reto PvP</span></div>
+    <div class="help-row"><span class="help-key">guardar</span><span class="help-val">Guardar progreso</span></div>
+    <button class="help-close" onclick="closeHelpBtn()">Cerrar</button>
+  </div>
+</div>
 
-  <!-- GAME -->
-  <div class="view active" id="game-view">
-    <div id="sp">
-      <div class="sh">Personaje</div>
-      <div class="pid">
-        <div class="pid-n" id="s-nm">—</div>
-        <div class="pid-c" id="s-cl">—</div>
-      </div>
+<!-- TOPBAR -->
+<div id="topbar">
+  <div id="tb-title">⚔ MUD</div>
+  <div id="tb-player">—</div>
+  <div id="cdot"></div>
+</div>
+
+<!-- APP GRID -->
+<div id="app">
+
+  <!-- ── LEFT: STATS + MOCHILA + SERVICIOS ── -->
+  <div id="left">
+    <div id="stats-pane">
+      <div class="sp-name" id="s-nm">—</div>
+      <div class="sp-cls"  id="s-cl">—</div>
       <div>
-        <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="s-nv">1</span></div>
-        <div style="margin-top:3px">
-          <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
-          <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
-        </div>
+        <div class="lvr"><span style="color:var(--dim);font-size:9px">Nivel</span>
+          <span class="lvb" id="s-nv">1</span></div>
+        <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
+        <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
       </div>
       <div class="sh">Vida &amp; Mana</div>
       <div>
@@ -2300,242 +2426,193 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
       </div>
       <div class="sh">Combate</div>
       <div>
-        <div class="sr"><span class="sr-l">Daño base</span>      <span class="sr-v" id="s-dmg">—</span></div>
-        <div class="sr"><span class="sr-l">Ataques/turno</span>  <span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
-        <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
-        <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="s-mo" style="color:var(--gold)">—</span></div>
-      </div>
-      <div class="sh">Combate rápido</div>
-      <div class="qbtns">
-        <button class="qb c" onclick="send('1')">1 Atacar</button>
-        <button class="qb c" onclick="send('2')">2 Especial</button>
-        <button class="qb c" onclick="send('3')">3 Pasar</button>
-        <button class="qb c" onclick="send('4')">4 Objeto</button>
-      </div>
-      <div class="sh">Mover</div>
-      <div class="qbtns">
-        <button class="qb m" onclick="send('n')">↑N</button>
-        <button class="qb m" onclick="send('s')">↓S</button>
-        <button class="qb m" onclick="send('e')">→E</button>
-        <button class="qb m" onclick="send('o')">←O</button>
-      </div>
-      <div class="sh">Acciones</div>
-      <div class="qbtns">
-        <button class="qb" onclick="send('mirar')">👁 Mirar</button>
-        <button class="qb" onclick="send('atacar')">⚔ Atacar</button>
-        <button class="qb" onclick="send('stats')">📊 Stats</button>
-        <button class="qb" onclick="send('ayuda')">❓ Ayuda</button>
-        <button class="qb" onclick="send('tienda')">🏪 Tienda</button>
-        <button class="qb" onclick="send('hospital')">🏥 Hospital</button>
-        <button class="qb" onclick="send('grupo')">👥 Grupo</button>
-        <button class="qb" onclick="send('jugadores')">🌍 Jugadores</button>
-        <button class="qb" onclick="send('guardar')">💾 Guardar</button>
+        <div class="sr"><span class="sr-l">Daño</span>     <span class="sr-v" id="s-dmg">—</span></div>
+        <div class="sr"><span class="sr-l">Ataques</span>  <span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
+        <div class="sr"><span class="sr-l">Especial</span> <span class="sr-v" id="s-mc"  style="color:var(--mana)">—</span></div>
       </div>
     </div>
-    <div id="gp">
-      <div id="glog"></div>
-      <div id="ginput">
-        <input id="cmd" type="text" placeholder="Escribe un comando... (ayuda para ver todos)"
-               disabled autocomplete="off" spellcheck="false"
-               onkeydown="if(event.key==='Enter') doSend()">
-        <button id="sbtn" onclick="doSend()" disabled>Enviar</button>
-      </div>
+    <div id="bag-pane">
+      <div class="bag-title">🎒 Mochila</div>
+      <div class="bag-coins" id="bag-coins">0 💰</div>
+      <div id="bag-items"><div class="bag-empty">Vacía</div></div>
     </div>
-    <!-- CHAT LATERAL -->
-    <div id="game-chat">
-      <div id="gc-hdr">💬 Chat</div>
-      <div id="gc-tabs">
-        <button class="gctab gcs" id="gct-sala"   onclick="setGcTab('sala')">Sala</button>
-        <button class="gctab"     id="gct-global" onclick="setGcTab('global')">Global</button>
-        <button class="gctab"     id="gct-grupo"  onclick="setGcTab('grupo')">Grupo</button>
+    <div id="services-pane">
+      <button class="svc-btn hosp" id="btn-hosp" onclick="send('hospital')">🏥 Hospital</button>
+      <button class="svc-btn shop" id="btn-shop" onclick="send('tienda')">🏪 Tienda</button>
+    </div>
+  </div>
+
+  <!-- ── CENTER: OUTPUT + MINIMAP ── -->
+  <div id="center">
+    <!-- Mini mapa clickable -->
+    <div id="minimap-btn" onclick="openMap()" title="Clic para ampliar el mapa">
+      <svg id="map-svg-mini" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
+        <rect x="10" y="10"  width="500" height="205" rx="4" fill="#080f08" stroke="#1a3a1a" stroke-width="2"/>
+        <rect x="10" y="222" width="500" height="48"  rx="3" fill="#080f08" stroke="#1a2a1a" stroke-width="2"/>
+        <rect x="10" y="277" width="500" height="200" rx="4" fill="#060810" stroke="#10103a" stroke-width="2"/>
+        <rect x="10" y="484" width="500" height="48"  rx="3" fill="#080f08" stroke="#1a2a1a" stroke-width="2"/>
+        <rect x="10" y="539" width="500" height="210" rx="4" fill="#100800" stroke="#302000" stroke-width="2"/>
+        <g id="map-conn-mini"></g>
+        <g id="map-rooms-mini"></g>
+      </svg>
+      <div id="minimap-label">🗺 MAPA</div>
+    </div>
+    <div id="glog"></div>
+  </div>
+
+  <!-- ── RIGHT: LEADERBOARD + CHAT ── -->
+  <div id="right">
+    <div id="lb-pane">
+      <div id="lb-hdr">👥 Jugadores</div>
+      <div id="lb-list"><div style="color:var(--dim);font-size:9px;padding:5px">Sin datos</div></div>
+    </div>
+    <div id="chat-pane">
+      <div id="chat-tabs">
+        <button class="ctab cs" id="ct-sala"   onclick="setChatTab('sala')">Sala</button>
+        <button class="ctab"    id="ct-global" onclick="setChatTab('global')">Global</button>
+        <button class="ctab"    id="ct-grupo"  onclick="setChatTab('grupo')">Grupo</button>
       </div>
-      <div id="gc-log"></div>
-      <div id="gc-in-row">
-        <input id="gc-in" type="text" placeholder="Mensaje..." disabled
-               onkeydown="if(event.key==='Enter') sendGcChat()">
-        <button id="gc-send" onclick="sendGcChat()" disabled>↵</button>
+      <div id="chat-log"></div>
+      <div id="chat-in-row">
+        <input id="chat-in" type="text" placeholder="Mensaje..." disabled
+               onkeydown="if(event.key==='Enter')sendChat()">
+        <button id="chat-send" onclick="sendChat()" disabled>↵</button>
       </div>
     </div>
   </div>
 
-  <!-- DASHBOARD -->
-  <div class="view" id="dash-view" style="flex-direction:column;">
-    <div id="dash-app">
-      <!-- Stats dashboard -->
-      <div id="dsp">
-        <div class="sh">Personaje</div>
-        <div class="pid"><div class="pid-n" id="ds-nm">—</div><div class="pid-c" id="ds-cl">—</div></div>
-        <div>
-          <div class="lvr"><span style="color:var(--dim);font-size:10px">Nivel</span><span class="lvb" id="ds-nv">1</span></div>
-          <div style="margin-top:3px">
-            <div class="bl"><span class="bl-n">XP</span><span id="ds-xp">0/150</span></div>
-            <div class="xw"><div class="bf bf-xp" id="db-xp" style="width:0%"></div></div>
-          </div>
-        </div>
-        <div class="sh">Vida &amp; Mana</div>
-        <div>
-          <div class="bl"><span class="bl-n">❤ HP</span><span id="ds-hp">—</span></div>
-          <div class="bw"><div class="bf bf-hp" id="db-hp" style="width:100%"></div></div>
-          <div class="bl"><span class="bl-n">✦ Mana</span><span id="ds-mp">—</span></div>
-          <div class="bw"><div class="bf bf-mp" id="db-mp" style="width:100%"></div></div>
-        </div>
-        <div class="sh">Combate</div>
-        <div>
-          <div class="sr"><span class="sr-l">Daño</span>          <span class="sr-v" id="ds-dmg">—</span></div>
-          <div class="sr"><span class="sr-l">Ataques</span>        <span class="sr-v" id="ds-atq" style="color:var(--green)">—</span></div>
-          <div class="sr"><span class="sr-l">Coste especial</span> <span class="sr-v" id="ds-mc" style="color:var(--mana)">—</span></div>
-          <div class="sr"><span class="sr-l">Monedas</span>        <span class="sr-v" id="ds-mo" style="color:var(--gold)">—</span></div>
-          <div class="sr"><span class="sr-l">Sala</span>           <span class="sr-v" id="ds-sl">—</span></div>
-        </div>
-      </div>
-      <!-- Map -->
-      <div id="dmp">
-        <div id="dmp-hdr">
-          <span>🗺 MAPA</span>
-          <div class="leg">
-            <div class="ld"><div class="ldot" style="background:#8b6914"></div>Desierto</div>
-            <div class="ld"><div class="ldot" style="background:#1565c0"></div>Mar</div>
-            <div class="ld"><div class="ldot" style="background:#546e7a"></div>Nieve</div>
-            <div class="ld"><div class="ldot" style="background:#2e7d32"></div>Segura</div>
-            <div class="ld"><div class="ldot" style="background:#b71c1c"></div>Boss</div>
-            <div class="ld"><div class="ldot" style="background:#c9a84c;border-radius:50%"></div>Tú</div>
-          </div>
-        </div>
-        <div id="map-wrap">
-          <svg id="msvg" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
-            <defs><filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/>
-              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-            <rect x="10" y="10" width="500" height="205" rx="6" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
-            <text x="18" y="25" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
-            <rect x="10" y="222" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-            <text x="18" y="236" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
-            <rect x="10" y="277" width="500" height="200" rx="6" fill="#060810" stroke="#10103a" stroke-width="1"/>
-            <text x="18" y="291" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
-            <rect x="10" y="484" width="500" height="48" rx="5" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-            <text x="18" y="498" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
-            <rect x="10" y="539" width="500" height="210" rx="6" fill="#100800" stroke="#302000" stroke-width="1"/>
-            <text x="18" y="553" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
-            <g id="conn-g"></g><g id="room-g"></g>
-          </svg>
-        </div>
-      </div>
-      <!-- Players -->
-      <div id="plp">
-        <div id="plp-hdr">👥 Jugadores</div>
-        <div id="pl-list"><div style="color:var(--dim);font-size:10px;padding:7px">Sin datos</div></div>
-      </div>
+  <!-- ── BOTTOM CONTROLS ── -->
+  <div id="controls">
+    <!-- Movimiento -->
+    <button class="cb dir" onclick="send('n')" id="btn-n">↑N</button>
+    <button class="cb dir" onclick="send('s')" id="btn-s">↓S</button>
+    <button class="cb dir" onclick="send('e')" id="btn-e">→E</button>
+    <button class="cb dir" onclick="send('o')" id="btn-o">←O</button>
+    <div class="cb-sep"></div>
+    <!-- Combate -->
+    <button class="cb combat" onclick="send('atacar')">⚔ Atacar</button>
+    <button class="cb combat" onclick="send('1')">① Golpe</button>
+    <button class="cb combat" onclick="send('2')">② Especial</button>
+    <button class="cb combat" onclick="send('3')">③ Pasar</button>
+    <button class="cb combat" onclick="send('4')">④ Objeto</button>
+    <div class="cb-sep"></div>
+    <!-- PvP -->
+    <button class="cb pvp" onclick="promptDuelo()">⚔ Duelo</button>
+    <div class="cb-sep"></div>
+    <!-- Acciones -->
+    <button class="cb" onclick="send('mirar')">👁</button>
+    <button class="cb" onclick="send('guardar')">💾</button>
+    <button class="cb" onclick="send('stats')">📊</button>
+    <div class="cb-sep"></div>
+    <!-- Input libre -->
+    <div id="input-bar">
+      <input id="cmd" type="text" placeholder="Comando..." disabled
+             autocomplete="off" spellcheck="false"
+             onkeydown="if(event.key==='Enter')doSend()">
+      <button id="sbtn" onclick="doSend()" disabled>↵</button>
     </div>
-    <!-- Chat -->
-    <div id="dash-chat">
-      <div id="ch-top">
-        <button class="ctab as" id="t-sala" onclick="setTab('sala')">📍 Sala</button>
-        <button class="ctab" id="t-global" onclick="setTab('global')">🌍 Global</button>
-      </div>
-      <div id="ch-log"></div>
-      <div id="ch-in-row">
-        <input id="ch-in" type="text" placeholder="Mensaje de chat..." disabled
-               onkeydown="if(event.key==='Enter') sendChat()">
-        <button class="sbtn2" id="ch-send" onclick="sendChat()" disabled>Enviar</button>
-      </div>
-    </div>
+    <!-- Ayuda -->
+    <button class="cb gold-btn" id="help-btn" onclick="openHelp()">❓ Ayuda</button>
   </div>
 
-</div><!-- #views -->
+</div><!-- #app -->
 
 <script>
-/* ── MAP ── */
+/* ── MAP DATA ── */
 const RPOS={
-  24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
-  21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
-  23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
-  20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
-  22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
-  15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
-  14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
-  11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
-  13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
-  10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
-  12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
-   6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
-   5:{x:260,y:578,n:"Trono Rey Demonio",boss:true,b:"desierto"},
-   2:{x:105,y:645,n:"Dunas del Norte",boss:false,b:"desierto"},
-   4:{x:415,y:645,n:"Templo Maldito",boss:false,b:"desierto"},
-   1:{x:105,y:722,n:"Entrada Desierto",boss:false,b:"desierto"},
-   3:{x:415,y:722,n:"Ruinas",boss:false,b:"desierto"},
+  44:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
+  41:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
+  43:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
+  40:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
+  42:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
+  39:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
+  38:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
+  35:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
+  37:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
+  34:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
+  36:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
+  33:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
+   6:{x:260,y:560,n:"Viento Susurrante",boss:false,b:"desierto"},
+   1:{x:105,y:620,n:"North Mass",boss:false,b:"desierto"},
+   3:{x:415,y:620,n:"Ruinas",boss:false,b:"desierto"},
+  12:{x:260,y:680,n:"Altar Soberano",boss:true,b:"desierto"},
+  13:{x:105,y:720,n:"Extensión Azhar",boss:false,b:"desierto"},
 };
-const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[5,10],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
+const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[5,33],[6,33],[33,34],[34,35],[34,36],[35,38],[36,37],[37,38],[38,39],[38,40],[39,40],[40,41],[40,42],[41,44],[42,43],[43,44]];
 const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
-const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra",21:"Bosque Hielo",22:"Fortaleza",23:"Trono Hielo",24:"Cumbre Alpha"};
+const SNAMES={1:"North Mass",2:"Dunas Norte",3:"Ruinas",4:"Ciudad Abrasada",5:"Valle Muerto",6:"Viento Susurrante",7:"Oasis Oculto",8:"Sol Eterno",9:"Cripta",10:"Caravana Fantasma",11:"Fosa Titanes",12:"Altar Soberano",13:"Extensión Azhar",33:"Oasis",34:"Costa Tormentosa",35:"Aguas Profundas",36:"Cueva Submarina",37:"Naufragio",38:"Abismo Kraken",39:"Puerto",40:"Tundra Helada",41:"Bosque Hielo",42:"Fortaleza Cristal",43:"Trono Hielo",44:"Cumbre Alpha"};
 
-function buildMap(){
+function buildMap(connId,roomId){
   const ns="http://www.w3.org/2000/svg";
-  const cg=document.getElementById("conn-g"),rg=document.getElementById("room-g");
+  const cg=document.getElementById(connId), rg=document.getElementById(roomId);
+  if(!cg||!rg) return;
   CONNS.forEach(([a,b])=>{
     const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
     const l=document.createElementNS(ns,"line");
     l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
     l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
-    l.setAttribute("stroke","#2a2a2a");l.setAttribute("stroke-width","1.5");
+    l.setAttribute("stroke","#252525");l.setAttribute("stroke-width","2");
     cg.appendChild(l);
   });
   Object.entries(RPOS).forEach(([id,r])=>{
     const g=document.createElementNS(ns,"g");
-    g.setAttribute("id","r"+id);g.setAttribute("cursor","pointer");g.setAttribute("data-id",id);
-    const W=r.boss?62:54,H=22;
+    g.setAttribute("id",roomId+"-r"+id);g.setAttribute("data-sid",id);
+    const W=r.boss?58:50,H=20;
     const rect=document.createElementNS(ns,"rect");
     rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
-    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",3);
-    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
-    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
-    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
+    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",2);
+    rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
+    rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
+    rect.setAttribute("stroke-width","1");
     const txt=document.createElementNS(ns,"text");
     txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
     txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
-    txt.setAttribute("fill",r.boss?"#cc4444":(BC[r.b]||"#666"));
-    txt.setAttribute("font-size","8");txt.setAttribute("font-family","monospace");
+    txt.setAttribute("fill",r.boss?"#cc3333":(BC[r.b]||"#555"));
+    txt.setAttribute("font-size","7");txt.setAttribute("font-family","monospace");
     txt.textContent=id;
     g.appendChild(rect);g.appendChild(txt);
-    let tt=null;
-    g.addEventListener("mouseenter",e=>{
-      tt=document.createElement("div");
-      tt.style.cssText="position:fixed;background:#1c1c1c;border:1px solid #444;padding:4px 8px;border-radius:4px;font-size:10px;color:#ccc;pointer-events:none;z-index:200;white-space:nowrap;font-family:monospace";
-      tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
-    });
-    g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-6)+"px";}});
-    g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
+    if(roomId==="map-rooms-full"){
+      let tt=null;
+      g.addEventListener("mouseenter",e=>{
+        tt=document.createElement("div");
+        tt.style.cssText="position:fixed;background:#1a1a1a;border:1px solid #444;padding:3px 7px;border-radius:3px;font-size:10px;color:#ccc;pointer-events:none;z-index:600;white-space:nowrap;font-family:monospace";
+        tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
+      });
+      g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-5)+"px";}});
+      g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
+    }
     rg.appendChild(g);
   });
 }
-buildMap();
 
 function highlightRoom(id){
-  document.querySelectorAll("[data-id]").forEach(g=>{
-    const rid=parseInt(g.getAttribute("data-id")),r=RPOS[rid];
-    if(!r)return;const rect=g.querySelector("rect");if(!rect)return;
-    rect.setAttribute("fill",r.boss?"#1a0000":"#101010");
-    rect.setAttribute("stroke",r.boss?"#8b1a1a":(BC[r.b]||"#333"));
-    rect.setAttribute("stroke-width",r.boss?"1.5":"1");
-    rect.removeAttribute("filter");
+  ["mini","full"].forEach(suf=>{
+    const pfx=suf==="mini"?"map-rooms-mini":"map-rooms-full";
+    document.querySelectorAll("[id^='"+pfx+"-r']").forEach(g=>{
+      const rid=parseInt(g.getAttribute("data-sid")),r=RPOS[rid];
+      if(!r)return;
+      const rect=g.querySelector("rect");if(!rect)return;
+      rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
+      rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
+      rect.removeAttribute("filter");
+    });
+    const g=document.getElementById(pfx+"-r"+id);
+    if(g){
+      const rect=g.querySelector("rect");
+      if(rect){
+        rect.setAttribute("fill","#1f1200");
+        rect.setAttribute("stroke","#c9a84c");
+        rect.setAttribute("stroke-width","2");
+        if(suf==="full")rect.setAttribute("filter","url(#glowf)");
+      }
+    }
   });
-  const g=document.getElementById("r"+id);
-  if(g){const rect=g.querySelector("rect");if(rect){
-    rect.setAttribute("fill","#2a1800");rect.setAttribute("stroke","#c9a84c");
-    rect.setAttribute("stroke-width","2");rect.setAttribute("filter","url(#glow)");
-  }}
 }
 
 /* ── STATE ── */
-let ws=null,hist=[],hidx=-1,chatTab="sala",gcTab="sala",myStats=null,currentView="game";
+let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,myInv={};
 
-/* ── VIEWS ── */
-function setView(v){
-  currentView=v;
-  document.querySelectorAll(".view").forEach(el=>el.classList.remove("active"));
-  document.getElementById(v==="game"?"game-view":"dash-view").classList.add("active");
-  document.querySelectorAll(".nav-btn").forEach((el,i)=>el.classList.toggle("active",(i===0&&v==="game")||(i===1&&v==="dash")));
-}
-
-/* ── LOGIN TABS ── */
+/* ── LOGIN ── */
 function showTab(t){
   document.getElementById("login-p").style.display=t==="login"?"block":"none";
   document.getElementById("reg-p").style.display=t==="register"?"block":"none";
@@ -2543,13 +2620,11 @@ function showTab(t){
 }
 showTab("login");
 
-/* ── CONEXIÓN ── */
+/* ── WS ── */
 function getWsUrl(){
-  const loc=window.location;
-  const proto=loc.protocol==="https:"?"wss:":"ws:";
-  return proto+"//"+loc.host+"/ws";
+  const l=window.location;
+  return (l.protocol==="https:"?"wss:":"ws:")+"//"+l.host+"/ws";
 }
-
 function doLogin(){
   const u=document.getElementById("lu").value.trim();
   const p=document.getElementById("lp").value;
@@ -2558,7 +2633,6 @@ function doLogin(){
   err.textContent="Conectando...";
   connect({type:"game_auth",usuario:u,password:p});
 }
-
 function doRegister(){
   const u=document.getElementById("ru").value.trim();
   const p1=document.getElementById("rp1").value;
@@ -2566,215 +2640,192 @@ function doRegister(){
   const nom=document.getElementById("rn").value.trim()||u;
   const err=document.getElementById("lerr");
   if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
-  if(u.length<3){err.textContent="Usuario: mínimo 3 caracteres.";return;}
-  if(p1.length<4){err.textContent="Contraseña: mínimo 4 caracteres.";return;}
-  if(p1!==p2){err.textContent="Las contraseñas no coinciden.";return;}
-  err.textContent="Creando cuenta...";
+  if(u.length<3){err.textContent="Usuario: mín. 3 caracteres.";return;}
+  if(p1.length<4){err.textContent="Contraseña: mín. 4 caracteres.";return;}
+  if(p1!==p2){err.textContent="Contraseñas no coinciden.";return;}
+  err.textContent="Creando...";
   connect({type:"game_register",usuario:u,password:p1,nombre:nom});
 }
-
 function connect(authMsg){
   ws=new WebSocket(getWsUrl());
   ws.onopen=()=>ws.send(JSON.stringify(authMsg));
   ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
-  ws.onclose=()=>{
-    setConn(false);
-    document.getElementById("cmd").disabled=true;
-    document.getElementById("sbtn").disabled=true;
-    document.getElementById("ch-in").disabled=true;
-    document.getElementById("ch-send").disabled=true;
-    appendLog("Conexión cerrada con el servidor.","gd");
-  };
-  ws.onerror=()=>{
-    document.getElementById("lerr").textContent="No se pudo conectar.";
-    ws=null;
-  };
+  ws.onclose=()=>{setConn(false);appendLog("Conexión cerrada.","gd");disableUI();};
+  ws.onerror=()=>{document.getElementById("lerr").textContent="No se pudo conectar.";ws=null;};
 }
-
 ["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
 ["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
 
-/* ── MENSAJES ── */
+/* ── MSG HANDLER ── */
 function handle(m){
   if(m.type==="auth_ok"){
     document.getElementById("lo").style.display="none";
-    setConn(true);
-    document.getElementById("cmd").disabled=false;
-    document.getElementById("sbtn").disabled=false;
-    document.getElementById("ch-in").disabled=false;
-    document.getElementById("ch-send").disabled=false;
-    document.getElementById("gc-in").disabled=false;
-    document.getElementById("gc-send").disabled=false;
+    setConn(true);enableUI();
     document.getElementById("cmd").focus();
   } else if(m.type==="auth_fail"){
-    document.getElementById("lerr").textContent=m.msg||"Error de autenticación";ws=null;
+    document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
   } else if(m.type==="game"){
     appendLog(m.text,classify(m.text));
   } else if(m.type==="prompt"){
     appendLog(m.text,"gp2");
-  } else if(m.type==="combat_menu"){
-    appendLog(m.text,"cm2",true);
   } else if(m.type==="levelup"){
     appendLog(m.text,"gl");
   } else if(m.type==="status"){
     updateStats(m);
   } else if(m.type==="chat"){
-    const tag=m.scope==="sala"?"[Sala]":"[Global]";
-    appendLog(tag+" "+(m.nombre||"")+(m.nombre?": ":"")+m.text,"gi");
-    appendChat(m.nombre,m.scope,m.text);
-    appendGcMsg(m.nombre,m.scope,m.text);
+    appendChat(m.nombre,m.scope,m.text||m.mensaje||"");
+    // también en log principal
+    const tag=m.scope==="sala"?"[Sala]":m.scope==="global"?"[Global]":"[Grupo]";
+    appendLog(tag+" "+(m.nombre||"")+(m.nombre?": ":"")+( m.text||m.mensaje||""),"gi");
   } else if(m.type==="players"){
-    updatePlayers(m.list);
-  } else if(m.type==="map"){
-    if(m.player_sala)highlightRoom(m.player_sala);
+    updateLeaderboard(m.list);
   }
 }
 
 function classify(t){
+  if(!t)return "gg";
   const l=t.toLowerCase();
   if(l.includes("victoria")||l.includes("🏆"))return "gv";
-  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto"))return "gd";
+  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto")||l.includes("💀"))return "gd";
   if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
   if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
+  if(l.includes("╔")||l.includes("║")||l.includes("╚"))return "gl";
   return "gg";
 }
 
 /* ── GAME LOG ── */
-function appendLog(text,cls,isBlock=false){
+function appendLog(text,cls){
+  if(!text)return;
   const log=document.getElementById("glog");
-  if(isBlock){
-    const d=document.createElement("div");d.className="gm "+cls;d.textContent=text;log.appendChild(d);
-  } else {
-    text.split("\n").forEach(line=>{
-      const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
-    });
-  }
+  text.split("\n").forEach(line=>{
+    const d=document.createElement("div");
+    d.className="gm "+cls;d.textContent=line;
+    log.appendChild(d);
+  });
   log.scrollTop=log.scrollHeight;
 }
 
-/* ── STATS (game + dashboard) ── */
+/* ── STATS ── */
 function updateStats(s){
   myStats=s;
-  // Game panel
-  set("s-nm",s.nombre||"—");set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  set("s-nv","Nv."+s.nivel);set("s-xp",s.xp+"/"+s.xpMax);
-  document.getElementById("top-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
+  set("s-nm",s.nombre||"—");
+  set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  set("s-nv","Nv."+s.nivel);
+  document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
+
   const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
   document.getElementById("b-xp").style.width=xpPct+"%";
+  set("s-xp",s.xp+"/"+s.xpMax);
+
   const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
   const bh=document.getElementById("b-hp");
-  bh.style.width=hpPct+"%";bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
+  bh.style.width=hpPct+"%";
+  bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#e67e22":"var(--red)";
   set("s-hp",s.hp+"/"+s.hpMax);
+
   document.getElementById("b-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
   set("s-mp",s.mana+"/"+s.manaMax);
+
   const atqs=s.ataquesTurno;
   set("s-dmg",s.danioBase||"—");
   set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("s-mc",(s.costoEspecial||0)+" mana");set("s-mo",s.monedas+" 💰");
-  // Dashboard panel
-  set("ds-nm",s.nombre||"—");set("ds-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  set("ds-nv","Nv."+s.nivel);set("ds-xp",s.xp+"/"+s.xpMax);
-  document.getElementById("db-xp").style.width=xpPct+"%";
-  const dbh=document.getElementById("db-hp");
-  dbh.style.width=hpPct+"%";dbh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#f57f17":"var(--red)";
-  set("ds-hp",s.hp+"/"+s.hpMax);
-  document.getElementById("db-mp").style.width=(s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0)+"%";
-  set("ds-mp",s.mana+"/"+s.manaMax);
-  set("ds-dmg",s.danioBase||"—");
-  set("ds-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("ds-mc",(s.costoEspecial||0)+" mana");set("ds-mo",s.monedas+" 💰");
-  set("ds-sl","["+s.sala_id+"] "+(SNAMES[s.sala_id]||"?"));
-  highlightRoom(s.sala_id);
+  set("s-mc",(s.costoEspecial||0)+" mana");
+
+  // Mochila
+  set("bag-coins",(s.monedas||0)+" 💰");
+  if(s.inventario!==undefined){
+    myInv=s.inventario;
+    renderBag();
+  }
+
+  // Sala actual → servicios
+  if(s.sala_id!==undefined) updateServices(s.sala_id);
+
+  // Mapa
+  if(s.sala_id) highlightRoom(s.sala_id);
 }
 
-/* ── PLAYERS ── */
-function updatePlayers(list){
-  const div=document.getElementById("pl-list");
-  if(!list||!list.length){div.innerHTML='<div style="color:var(--dim);font-size:10px;padding:7px">Nadie conectado</div>';return;}
-  const grupos={};const sinGrupo=[];
+function renderBag(){
+  const NAMES={"pocion_vida":"🧪 Poción Vida","pocion_danio":"⚗️ Poc. Daño","gema_teleporte":"💎 Gema Tele."};
+  const div=document.getElementById("bag-items");
+  const items=Object.entries(myInv).filter(([k,v])=>v>0);
+  if(!items.length){div.innerHTML='<div class="bag-empty">Vacía</div>';return;}
+  div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${NAMES[k]||k} x${v}</div>`).join("");
+}
+
+/* Salas con servicios */
+const SALAS_SERVICIOS={33:{hosp:true,shop:true},39:{hosp:true,shop:true},4:{hosp:true,shop:false}};
+function updateServices(salaId){
+  const s=SALAS_SERVICIOS[salaId]||{};
+  const h=document.getElementById("btn-hosp");
+  const sh=document.getElementById("btn-shop");
+  h.classList.toggle("visible",!!s.hosp);
+  sh.classList.toggle("visible",!!s.shop);
+}
+
+/* ── LEADERBOARD ── */
+function updateLeaderboard(list){
+  const div=document.getElementById("lb-list");
+  if(!list||!list.length){div.innerHTML='<div style="color:var(--dim);font-size:9px;padding:5px">Nadie conectado</div>';return;}
+  const grupos={};const singles=[];
   list.forEach(p=>{
     if(p.grupo_id){
-      if(!grupos[p.grupo_id])grupos[p.grupo_id]={lider:p.grupo_lider,miembros:[]};
-      grupos[p.grupo_id].miembros.push(p);
-    } else sinGrupo.push(p);
+      if(!grupos[p.grupo_id])grupos[p.grupo_id]={lider:p.grupo_lider,m:[]};
+      grupos[p.grupo_id].m.push(p);
+    } else singles.push(p);
   });
   let html="";
   Object.entries(grupos).forEach(([gid,g])=>{
-    html+=`<div style="margin-bottom:5px;border:1px solid #2a2a2a;border-radius:3px;overflow:hidden"><div style="background:#1a1a0a;padding:3px 6px;font-size:9px;color:var(--gold)">👥 Grupo #${gid} — ${esc(g.lider)}</div>`;
-    g.miembros.forEach(p=>{html+=`<div class="pi" style="padding-left:10px"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀":"📍 "+esc(p.sala_nombre)}</div></div>`;});
-    html+="</div>";
+    html+=`<div class="grp-hdr">👥 Grupo — ${esc(g.lider)}</div>`;
+    g.m.forEach(p=>{html+=playerHtml(p,true);});
   });
-  sinGrupo.forEach(p=>{html+=`<div class="pi"><div class="pi-n">${esc(p.nombre)}</div><div class="pi-i">Nv.${p.nivel} ${esc(p.clase)}</div><div class="pi-s ${p.muerto?"pi-d":""}">${p.muerto?"💀 Muerto":"📍 "+esc(p.sala_nombre)}</div></div>`;});
+  singles.forEach(p=>html+=playerHtml(p,false));
   div.innerHTML=html;
+}
+function playerHtml(p,indent){
+  return `<div class="pli"${indent?' style="padding-left:12px"':''}>`+
+    `<div class="pli-n">${esc(p.nombre)}</div>`+
+    `<div class="pli-i">Nv.${p.nivel} ${esc(p.clase)}</div>`+
+    `<div class="pli-s ${p.muerto?"pli-d":""}">${p.muerto?"💀 Muerto":"📍 "+esc(p.sala_nombre)}</div>`+
+    `</div>`;
 }
 
 /* ── CHAT ── */
-function setTab(t){
+function setChatTab(t){
   chatTab=t;
-  document.getElementById("t-sala").className="ctab"+(t==="sala"?" as":"");
-  document.getElementById("t-global").className="ctab"+(t==="global"?" ag":"");
-}
-
-/* ── CHAT LATERAL DE JUEGO ── */
-function setGcTab(t){
-  gcTab=t;
-  document.getElementById("gct-sala").className  ="gctab"+(t==="sala"  ?" gcs":"");
-  document.getElementById("gct-global").className="gctab"+(t==="global"?" gcg":"");
-  document.getElementById("gct-grupo").className ="gctab"+(t==="grupo" ?" gcgr":"");
-}
-
-function appendGcMsg(nombre,scope,texto){
-  const log=document.getElementById("gc-log");
-  if(!log)return;
-  const now=new Date();
-  const t=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
-  const nc=scope==="sala"?"n-sala":scope==="global"?"n-global":"n-grupo";
-  const div=document.createElement("div");
-  div.className="gcm";
-  div.innerHTML=`<span class="gcm-t">${t}</span><span class="gcm-n ${nc}">${esc(nombre)}</span><span class="gcm-tx">${esc(texto)}</span>`;
-  log.appendChild(div);
-  log.scrollTop=log.scrollHeight;
-  // Notificar tab inactivo
-  if(scope!==gcTab){
-    const el=document.getElementById("gct-"+scope);
-    if(el)el.style.boxShadow="0 0 0 1px var(--gold)";
-  }
-}
-
-function sendGcChat(){
-  const inp=document.getElementById("gc-in");
-  const msg=inp.value.trim();
-  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
-  let cmd;
-  if(gcTab==="sala")   cmd="decir "+msg;
-  else if(gcTab==="global") cmd="g "+msg;
-  else                      cmd="gc "+msg;
-  ws.send(cmd);
-  appendGcMsg(myStats?myStats.nombre:"Tú",gcTab,msg);
-  inp.value="";
-  // Quitar notificación del tab activo
-  const el=document.getElementById("gct-"+gcTab);
+  document.getElementById("ct-sala").className  ="ctab"+(t==="sala"  ?" cs":"");
+  document.getElementById("ct-global").className="ctab"+(t==="global"?" cg":"");
+  document.getElementById("ct-grupo").className ="ctab"+(t==="grupo" ?" cgr":"");
+  // Quitar notif
+  const el=document.getElementById("ct-"+t);
   if(el)el.style.boxShadow="";
 }
 function appendChat(nombre,scope,texto){
-  const log=document.getElementById("ch-log");
+  const log=document.getElementById("chat-log");
   const now=new Date();
-  const time=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
-  const label=scope==="sala"?"SALA":scope==="global"?"GLOBAL":"SYS";
-  const bc=scope==="sala"?"bs":scope==="global"?"bg2c":"bx";
-  const nc=scope==="sala"?"ns":scope==="global"?"ng":"nx";
-  const div=document.createElement("div");div.className="cm3";
-  div.innerHTML=`<span class="cm-t">${time}</span><span class="cm-b ${bc}">${label}</span><span class="cm-nm ${nc}">${esc(nombre)}</span><span class="cm-tx">${esc(texto)}</span>`;
-  log.appendChild(div);log.scrollTop=log.scrollHeight;
+  const t=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
+  const nc=scope==="sala"?"cn-s":scope==="global"?"cn-g":"cn-gr";
+  const d=document.createElement("div");d.className="cm";
+  d.innerHTML=`<span class="cm-t">${t}</span><span class="cm-n ${nc}">${esc(nombre||"")}</span><span class="cm-tx">${esc(texto)}</span>`;
+  log.appendChild(d);log.scrollTop=log.scrollHeight;
+  if(scope!==chatTab){
+    const el=document.getElementById("ct-"+scope);
+    if(el)el.style.boxShadow="0 0 0 1px var(--gold)";
+  }
 }
 function sendChat(){
-  const inp=document.getElementById("ch-in");
+  const inp=document.getElementById("chat-in");
   const msg=inp.value.trim();
   if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
-  const cmd=chatTab==="sala"?"decir "+msg:"g "+msg;
+  let cmd;
+  if(chatTab==="sala")cmd="decir "+msg;
+  else if(chatTab==="global")cmd="g "+msg;
+  else cmd="gc "+msg;
   ws.send(cmd);
   appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
   inp.value="";
+  const el=document.getElementById("ct-"+chatTab);
+  if(el)el.style.boxShadow="";
 }
 
 /* ── ENVÍO ── */
@@ -2783,8 +2834,10 @@ function doSend(){
   const inp=document.getElementById("cmd");
   const cmd=inp.value.trim();
   if(!cmd)return;
-  hist.unshift(cmd);if(hist.length>50)hist.pop();hidx=-1;
-  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
+  hist.unshift(cmd);if(hist.length>60)hist.pop();hidx=-1;
+  send(cmd);
+  appendLog("> "+cmd,"gs");
+  inp.value="";
 }
 document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("cmd").addEventListener("keydown",e=>{
@@ -2793,10 +2846,41 @@ document.addEventListener("DOMContentLoaded",()=>{
   });
 });
 
-/* ── UTILS ── */
+/* ── PvP prompt ── */
+function promptDuelo(){
+  const nom=prompt("Nombre del jugador a retar:");
+  if(!nom)return;
+  const mon=prompt("Monedas a apostar (0 para sin apuesta):");
+  if(mon===null)return;
+  send("duelo "+nom+" "+( parseInt(mon)||0));
+}
+
+/* ── MAP MODAL ── */
+function openMap(){document.getElementById("map-modal").classList.add("open");}
+function closeMap(e){if(e.target===document.getElementById("map-modal"))closeMapBtn();}
+function closeMapBtn(){document.getElementById("map-modal").classList.remove("open");}
+
+/* ── HELP MODAL ── */
+function openHelp(){document.getElementById("help-modal").classList.add("open");}
+function closeHelp(e){if(e.target===document.getElementById("help-modal"))closeHelpBtn();}
+function closeHelpBtn(){document.getElementById("help-modal").classList.remove("open");}
+
+/* ── UI helpers ── */
+function enableUI(){
+  ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
+  ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
+}
+function disableUI(){
+  ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+  ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+}
 function setConn(on){document.getElementById("cdot").className=on?"on":"";}
 function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+/* ── INIT ── */
+buildMap("map-conn-mini","map-rooms-mini");
+buildMap("map-conn-full","map-rooms-full");
 </script>
 </body>
 </html>"""
