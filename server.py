@@ -446,22 +446,25 @@ class Player:
             pass
 
     async def send_status(self):
+        """Envía stats completas al cliente WebSocket del jugador."""
         if not self.personaje:
             return
         p = self.personaje
+        payload = {
+            "type":          "status",
+            "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
+            "mana":          p["manaActual"],  "manaMax": p["manaMax"],
+            "nivel":         self.nivel,       "xp":      self.xp,
+            "xpMax":         XP_POR_NIVEL,     "monedas": self.monedas,
+            "clase":         p["nombreClase"], "nombre":  self.nombre,
+            "sala_id":       self.sala_id,
+            "danioBase":     p["danioBase"],
+            "ataquesTurno":  p.get("ataquesTurno", 1),
+            "costoEspecial": p.get("costoEspecial", 0),
+            "inventario":    self.inventario,
+        }
         try:
-            await self.ws.send_json({
-                "type":          "status",
-                "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
-                "mana":          p["manaActual"],  "manaMax": p["manaMax"],
-                "nivel":         self.nivel,       "xp":      self.xp,
-                "xpMax":         XP_POR_NIVEL,     "monedas": self.monedas,
-                "clase":         p["nombreClase"], "nombre":  self.nombre,
-                "sala_id":       self.sala_id,
-                "danioBase":     p["danioBase"],
-                "ataquesTurno":  p.get("ataquesTurno", 1),
-                "costoEspecial": p.get("costoEspecial", 0),
-            })
+            await self.ws.send_json(payload)
         except Exception:
             pass
 
@@ -512,25 +515,10 @@ async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
 
 
 async def notify_web_session(player: "Player"):
-    ws = web_sessions.get(player.usuario)
-    if not ws or not player.personaje:
+    """Empuja stats actualizadas al jugador (mismo WebSocket que usa para jugar)."""
+    if not player.personaje:
         return
-    p = player.personaje
-    try:
-        await ws.send_json({
-            "type":          "stats",
-            "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
-            "mana":          p["manaActual"],  "manaMax": p["manaMax"],
-            "nivel":         player.nivel,     "xp":      player.xp,
-            "xpMax":         XP_POR_NIVEL,     "monedas": player.monedas,
-            "clase":         p["nombreClase"], "nombre":  player.nombre,
-            "sala_id":       player.sala_id,
-            "danioBase":     p["danioBase"],
-            "ataquesTurno":  p.get("ataquesTurno", 1),
-            "costoEspecial": p.get("costoEspecial", 0),
-        })
-    except Exception:
-        web_sessions.pop(player.usuario, None)
+    await player.send_status()  # reutiliza send_status que ya tiene todo
 
 
 async def broadcast_players_to_web():
@@ -668,6 +656,7 @@ async def cmd_tienda(player: Player):
         player.monedas -= item["precio"]
         player.inventario[iid] = player.inventario.get(iid, 0) + 1
         await player.send(f"  Compraste {item['emoji']} {item['nombre']}. Quedan {player.monedas}.")
+        await player.send_status()  # actualizar mochila y monedas en tiempo real
 
 
 async def cmd_mochila(player: Player):
@@ -698,6 +687,7 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
         player.inventario[iid] -= 1
         msg = f"  {player.nombre} usa Pocion de Vida +{curado} HP! ({p['vidaActual']}/{p['vidaMax']})"
         await broadcast_sala(combate.sala_id if combate else player.sala_id, msg)
+        await player.send_status()
         return True
 
     elif iid == "pocion_danio":
@@ -708,6 +698,7 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
         player.inventario[iid] -= 1
         msg = f"  {player.nombre} usa Pocion de Danio +30% este combate!"
         await broadcast_sala(combate.sala_id if combate else player.sala_id, msg)
+        await player.send_status()
         return True
 
     elif iid == "gema_teleporte":
@@ -730,6 +721,7 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
         player.sala_id = destino_id
         await player.send(f"  Llegas a: {SALAS[destino_id]['nombre']}")
         await broadcast_sala(destino_id, f"  {player.nombre} aparece en un destello azul.", excluir=player)
+        await player.send_status()
         await describir_sala(player)
         return True
 
@@ -1997,6 +1989,7 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "danioBase": p["danioBase"],
                 "ataquesTurno": p.get("ataquesTurno", 1),
                 "costoEspecial": p.get("costoEspecial", 0),
+                "inventario": player_online.inventario,
                 "online": True,
             }
         else:
@@ -2016,6 +2009,7 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "danioBase": p_save.get("danioBase", 0),
                 "ataquesTurno": base_c.get("ataquesTurno", 1),
                 "costoEspecial": base_c.get("costoEspecial", 0),
+                "inventario": save.get("inventario", {}),
                 "online": False,
             }
 
@@ -2661,6 +2655,7 @@ function handle(m){
   if(m.type==="auth_ok"){
     document.getElementById("lo").style.display="none";
     setConn(true);enableUI();
+    if(m.stats) updateStats(m.stats);  // stats iniciales al conectar
     document.getElementById("cmd").focus();
   } else if(m.type==="auth_fail"){
     document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
@@ -2670,7 +2665,7 @@ function handle(m){
     appendLog(m.text,"gp2");
   } else if(m.type==="levelup"){
     appendLog(m.text,"gl");
-  } else if(m.type==="status"){
+  } else if(m.type==="status"||m.type==="stats"){
     updateStats(m);
   } else if(m.type==="chat"){
     appendChat(m.nombre,m.scope,m.text||m.mensaje||"");
