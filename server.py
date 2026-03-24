@@ -22,6 +22,7 @@ from copy import deepcopy
 from enum import Enum
 from aiohttp import web
 import aiohttp
+import traceback
 
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
@@ -1310,7 +1311,7 @@ async def loop_combate(combate: Combate):
         for p in combate.jugadores:
             await p.send_status()
 
-    # ── FIN DEL COMBATE ──
+        # ── FIN DEL COMBATE ──
     combate.estado = EstadoCombate.FINALIZADO
 
     # Cerrar popup de combate en todos los jugadores
@@ -1321,148 +1322,29 @@ async def loop_combate(combate: Combate):
             pass
 
     if combate.enemigos_vivos():
-        await broadcast_sala(sala_id, "\n  DERROTA.")
+        await broadcast_sala(sala_id, "\n DERROTA.")
     else:
-        await broadcast_sala(sala_id, "\n  VICTORIA!")
+        await broadcast_sala(sala_id, "\n VICTORIA!")
         xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f"  {xp} XP para cada superviviente.")
+        await broadcast_sala(sala_id, f" {xp} XP para cada superviviente.")
         for p in combate.jugadores_vivos():
             await dar_xp(p, xp)
             p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
             p.salas_limpias.add(sala_id)
-            await p.send_status()   # actualizar HP tras +20
-        await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
-        await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
+            await p.send_status()
+        await broadcast_sala(sala_id, " +20 HP a cada superviviente.")
+        await broadcast_sala(sala_id, " El camino está despejado. Puedes avanzar.")
 
     # Limpiar buffs
     for p in combate.jugadores:
         if p.buff_danio:
             p.buff_danio = False
-            asyncio.create_task(p.send("  Pocion de Danio terminada."))
+            asyncio.create_task(p.send(" Pocion de Danio terminada."))
 
+    # Limpiar combate
     del combates_activos[sala_id]
     for p in combate.jugadores:
-        p.combate = None
-    for p in combate.jugadores:
-    p.combate = None
-
-
-async def pedir_accion(player: Player, combate: Combate):
-    """
-    Consume del input_queue EXCLUSIVAMENTE.
-    Timeout de 60s por turno — si no responde, pasa turno automáticamente.
-    """
-    if player.personaje["vidaActual"] <= 0:
-        combate.acciones[player.id] = "3"
-        return
-
-    await player.send(
-        "  1-Atacar  2-Especial  3-Pasar  4-Objeto\n"
-        "  decir <msg>  |  g <msg>"
-    )
-
-    deadline = asyncio.get_event_loop().time() + 60  # 60s por turno
-
-    while True:
-        tiempo_restante = max(0.1, deadline - asyncio.get_event_loop().time())
-        try:
-            raw = await asyncio.wait_for(player.recv(), timeout=tiempo_restante)
-        except asyncio.TimeoutError:
-            combate.acciones[player.id] = "3"
-            await player.send("  ⏱ Tiempo agotado — turno pasado automáticamente.")
-            return
-
-        # Desconexión durante combate → pasar turno automáticamente
-        if raw is None:
-            combate.acciones[player.id] = "3"
-            return
-
-        accion = raw.strip()
-        if not accion:
-            continue
-
-        if accion.lower().startswith("decir "):
-            await cmd_chat(player, accion[6:], sala_solo=True)
-            continue
-        if accion.lower().startswith("g "):
-            await cmd_chat(player, accion[2:], sala_solo=False)
-            continue
-        if accion == "4":
-            await cmd_mochila(player)
-            await player.send("  Que objeto usar? (Enter=cancelar, o escribe vida/dano/gema):")
-            try:
-                n = await asyncio.wait_for(player.recv(), timeout=30)
-            except asyncio.TimeoutError:
-                n = None
-            if n and n.strip():
-                await usar_item(player, n.strip(), combate=combate)
-            await player.send("  1-Atacar  2-Especial  3-Pasar  4-Objeto")
-            continue
-        if accion in ("1", "2", "3"):
-            combate.acciones[player.id] = accion
-            await broadcast_sala(combate.sala_id, f"  {player.nombre} ha elegido.", excluir=player)
-            return
-
-        await player.send("  Elige 1, 2, 3 o 4.")
-
-
-async def resolver_accion(player: Player, accion: str, combate: Combate):
-    sala_id = combate.sala_id
-    vivos   = combate.enemigos_vivos()
-    if not vivos:
-        return
-    obj = vivos[0]
-    p   = player.personaje
-
-    if accion == "1":
-        num = ataques_por_turno(p.get("ataquesTurno", 1))
-        for _ in range(num):
-            if obj["vida_actual"] <= 0:
-                break
-            base = calcular_danio(p["danioBase"])
-            d    = int(base * 1.3) if player.buff_danio else base
-            sfx  = " (+30%)" if player.buff_danio else ""
-            obj["vida_actual"] = max(0, obj["vida_actual"] - d)
-            await broadcast_sala(sala_id,
-                f"  {player.nombre} ataca {obj['nombre']} -{d}{sfx}  "
-                f"({obj['vida_actual']}/{obj['vidaMax']})")
-
-    elif accion == "2":
-        costo = p.get("costoEspecial", 0)
-        if p["manaActual"] < costo:
-            await player.send(f"  Sin mana (necesitas {costo}, tienes {p['manaActual']}).")
-            return
-        p["manaActual"] -= costo
-        clase = p["nombreClase"]
-
-        if clase == "curandero":
-            cur = p.get("curacionEspecial", 20)
-            p["vidaActual"] = min(p["vidaActual"] + cur, p["vidaMax"])
-            await broadcast_sala(sala_id,
-                f"  {player.nombre} se cura +{cur} HP ({p['vidaActual']}/{p['vidaMax']})")
-        else:
-            base = calcular_danio(p.get("danioEspecial", p["danioBase"]))
-            d    = int(base * 1.3) if player.buff_danio else base
-            sfx  = " (+30%)" if player.buff_danio else ""
-            obj["vida_actual"] = max(0, obj["vida_actual"] - d)
-            nombre_hab = {
-                "guerrero":   "Golpe de Tanque",
-                "mago":       "Magia Antigua",
-                "arquero":    "Flecha Ignea",
-                "nigromante": "Maldicion del Tiempo",
-                "hechicero":  "Invocar Esqueleto",
-                "caballero":  "Embestida",
-                "cazador":    "Inmovilizar",
-                "asesino":    "Muerte Garantizada",
-                "barbaro":    "A Bocajarro",
-            }.get(clase, "Habilidad Especial")
-            await broadcast_sala(sala_id,
-                f"  {player.nombre} usa {nombre_hab} en {obj['nombre']} -{d}{sfx}  "
-                f"({obj['vida_actual']}/{obj['vidaMax']})")
-
-    elif accion == "3":
-        await broadcast_sala(sala_id, f"  {player.nombre} pasa el turno.")
-
+        p.combate = None   # ← Esta línea debe tener la misma indentación que el "for" de arriba
 
 # ============================================================
 # COMANDOS
