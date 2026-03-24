@@ -1401,11 +1401,11 @@ async def loop_combate(combate: Combate):
             pass
 
     if not combate.jugadores_vivos():
-        await broadcast_sala(sala_id, "\n DERROTA. Todos los jugadores han caído.")
+        await broadcast_sala(sala_id, "\n💀 DERROTA. Todos los jugadores han caído.")
     else:
-        await broadcast_sala(sala_id, "\n VICTORIA!")
+        await broadcast_sala(sala_id, "\n🏆 ¡VICTORIA!")
         xp_total = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f" {xp_total} XP para cada superviviente.")
+        await broadcast_sala(sala_id, f"✨ {xp_total} XP para cada superviviente.")
         
         for p in combate.jugadores_vivos():
             await dar_xp(p, xp_total)
@@ -1413,16 +1413,17 @@ async def loop_combate(combate: Combate):
             p.salas_limpias.add(sala_id)
             await p.send_status()
             
-        await broadcast_sala(sala_id, " +20 HP a cada superviviente. El camino está despejado.")
+        await broadcast_sala(sala_id, "❤️ +20 HP a cada superviviente. El camino está despejado.")
 
     for p in combate.jugadores:
         p.combate = None
         if p.buff_danio:
             p.buff_danio = False
-            await p.send(" Pocion de Danio terminada.")
+            await p.send("⚗️ Poción de Daño terminada.")
 
     if sala_id in combates_activos:
         del combates_activos[sala_id]
+  
 
 async def resolver_accion(player: Player, accion: str, combate: Combate):
     """Resuelve la acción de un jugador en combate."""
