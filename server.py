@@ -1295,6 +1295,112 @@ async def iniciar_combate(sala_id: int):
 
 async def loop_combate(combate: Combate):
     sala_id = combate.sala_id
+    while combate.enemigos_vivos() and combate.jugadores_vivos():
+        combate.turno += 1
+        combate.acciones = {}
+        combate.estado = EstadoCombate.ESPERANDO_ACCIONES
+
+        # Regen mana
+        for p in combate.jugadores_vivos():
+            p.personaje["manaActual"] = min(
+                p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
+                p.personaje["manaMax"]
+            )
+
+        await broadcast_sala(sala_id, f"\n{'-'*52}\n TURNO {combate.turno}\n{'-'*52}")
+        for e in combate.enemigos_vivos():
+            await broadcast_sala(sala_id, f" {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
+        for p in combate.jugadores_vivos():
+            await p.send(
+                f" TU [{p.personaje['nombreClase']}] "
+                f"HP:{p.personaje['vidaActual']}/{p.personaje['vidaMax']} "
+                f"Mana:{p.personaje['manaActual']}/{p.personaje['manaMax']}"
+            )
+
+        await broadcast_sala(sala_id, " Esperando acciones de todos...")
+
+        # FIX: Si solo hay 1 jugador, no esperamos a nadie más
+        vivos = combate.jugadores_vivos()
+        if len(vivos) == 1:
+            await pedir_accion(vivos[0], combate)
+        else:
+            await asyncio.gather(*[
+                asyncio.create_task(pedir_accion(p, combate))
+                for p in vivos
+            ])
+
+        # Resolución
+        combate.estado = EstadoCombate.RESOLVIENDO
+        await broadcast_sala(sala_id, "\n --- RESOLUCION ---")
+        for p in list(combate.jugadores_vivos()):
+            await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
+            if not combate.enemigos_vivos():
+                break
+
+        # Turno enemigos
+        if combate.enemigos_vivos() and combate.jugadores_vivos():
+            combate.estado = EstadoCombate.TURNO_ENEMIGO
+            await broadcast_sala(sala_id, "\n --- TURNO ENEMIGOS ---")
+            for e in combate.enemigos_vivos():
+                vivos_jug = combate.jugadores_vivos()
+                if not vivos_jug:
+                    break
+                obj = random.choice(vivos_jug)
+                for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
+                    if obj.personaje["vidaActual"] <= 0:
+                        break
+                    d = calcular_danio(e["danioBase"])
+                    obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
+                    await broadcast_sala(
+                        sala_id,
+                        f" {e['nombre']} golpea a {obj.nombre} -{d} "
+                        f"({obj.personaje['vidaActual']}/{obj.personaje['vidaMax']})"
+                    )
+
+        # Detectar muertes
+        for p in combate.jugadores:
+            if p.personaje["vidaActual"] <= 0 and not p.muerto:
+                await broadcast_sala(sala_id, f" {p.nombre} ha caido!")
+                asyncio.create_task(respawn(p))
+
+        # Actualizar stats
+        for p in combate.jugadores:
+            await p.send_status()
+
+    # ── FIN DEL COMBATE ──
+    combate.estado = EstadoCombate.FINALIZADO
+
+    # Cerrar popup
+    for p in combate.jugadores:
+        try:
+            await p.ws.send_json({"type": "combat_end"})
+        except Exception:
+            pass
+
+    if combate.enemigos_vivos():
+        await broadcast_sala(sala_id, "\n DERROTA.")
+    else:
+        await broadcast_sala(sala_id, "\n VICTORIA!")
+        xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
+        await broadcast_sala(sala_id, f" {xp} XP para cada superviviente.")
+        for p in combate.jugadores_vivos():
+            await dar_xp(p, xp)
+            p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
+            p.salas_limpias.add(sala_id)
+            await p.send_status()
+        await broadcast_sala(sala_id, " +20 HP a cada superviviente.")
+        await broadcast_sala(sala_id, " El camino está despejado. Puedes avanzar.")
+
+    # Limpiar buffs
+    for p in combate.jugadores:
+        if p.buff_danio:
+            p.buff_danio = False
+            asyncio.create_task(p.send(" Pocion de Danio terminada."))
+
+    # Limpiar combate
+    del combates_activos[sala_id]
+    for p in combate.jugadores:
+        p.combate = None
 
     while combate.enemigos_vivos() and combate.jugadores_vivos():
         combate.turno   += 1
