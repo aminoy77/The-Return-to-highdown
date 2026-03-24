@@ -2966,7 +2966,7 @@ function closeCombatPopup(){
 /* PVP POPUP */
 function openPvpPopup(retador,monedas){
   document.getElementById("pvp-info").textContent=
-    retador+" te reta a duelo"+(monedas?" - Apuesta: "+monedas+" monedas":"")+" - Aceptas?";
+    retador+" te reta a duelo"+(monedas?" - Apuesta: "+monedas+" monedas":"")+". Aceptas?";
   document.getElementById("pvp-popup").classList.add("open");
 }
 function acceptDuelo(){
