@@ -1392,13 +1392,13 @@ async def loop_combate(combate: Combate):
         for p in combate.jugadores:
             #await p.send_status()
 
-        combate.estado = EstadoCombate.FINALIZADO
+    combate.estado = EstadoCombate.FINALIZADO
 
     for p in combate.jugadores:
-        try:
-            await p.ws.send_json({"type": "combat_end"})
-        except Exception:
-            pass
+      try:
+        await p.ws.send_json({"type": "combat_end"})
+      except Exception:
+        pass
 
     if not combate.jugadores_vivos():
         await broadcast_sala(sala_id, "\n DERROTA. Todos los jugadores han caído.")
