@@ -1195,6 +1195,60 @@ async def mover_jugador(player: Player, direccion: str):
 # COMBATE
 # ============================================================
 
+async def pedir_accion(player: Player, combate: Combate):
+    """
+    Pide acción al jugador. Si eres el único en la sala, resuelve inmediatamente.
+    """
+    if player.personaje["vidaActual"] <= 0:
+        combate.acciones[player.id] = "3"
+        return
+
+    await player.send(
+        " 1-Atacar 2-Especial 3-Pasar 4-Objeto\n"
+        " decir <msg> | g <msg>"
+    )
+
+    while True:
+        raw = await player.recv()
+        if raw is None:                     # desconexión
+            combate.acciones[player.id] = "3"
+            return
+
+        accion = raw.strip()
+        if not accion:
+            continue
+
+        if accion.lower().startswith("decir "):
+            await cmd_chat(player, accion[6:], sala_solo=True)
+            continue
+        if accion.lower().startswith("g "):
+            await cmd_chat(player, accion[2:], sala_solo=False)
+            continue
+
+        if accion == "4":
+            await cmd_mochila(player)
+            await player.send(" Qué objeto usar? (vida / dano / gema):")
+            n = await player.recv()
+            if n and n.strip():
+                await usar_item(player, n.strip(), combate=combate)
+            await player.send(" 1-Atacar 2-Especial 3-Pasar 4-Objeto")
+            continue
+
+        if accion in ("1", "2", "3"):
+            combate.acciones[player.id] = accion
+            await broadcast_sala(combate.sala_id, f" {player.nombre} ha elegido.", excluir=player)
+
+            # Si eres el único jugador → resolver inmediatamente
+            if len(combate.jugadores_vivos()) <= 1:
+                await player.send(" Eres el único jugador. Resolviendo turno...")
+                asyncio.create_task(resolver_accion(player, accion, combate))
+
+            return
+
+        await player.send(" Elige 1, 2, 3 o 4.")
+
+
+
 async def iniciar_combate(sala_id: int):
     if sala_id in combates_activos:
         return
@@ -1267,18 +1321,17 @@ async def loop_combate(combate: Combate):
 
         await broadcast_sala(sala_id, "  Esperando acciones de todos...")
 
-        async def pedir_accion(player: Player, combate: Combate):
-    """
-    Pide acción al jugador. Si eres el único en la sala, resuelve inmediatamente.
-    """
-    if player.personaje["vidaActual"] <= 0:
-        combate.acciones[player.id] = "3"
-        return
+                await broadcast_sala(sala_id, " Esperando acciones de todos...")
 
-    await player.send(
-        " 1-Atacar 2-Especial 3-Pasar 4-Objeto\n"
-        " decir <msg> | g <msg>"
-    )
+        # Si solo hay 1 jugador, no esperamos a nadie más
+        vivos = combate.jugadores_vivos()
+        if len(vivos) == 1:
+            await pedir_accion(vivos[0], combate)
+        else:
+            await asyncio.gather(*[
+                asyncio.create_task(pedir_accion(p, combate))
+                for p in vivos
+            ])
 
     while True:
         raw = await player.recv()
