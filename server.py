@@ -59,17 +59,11 @@ async def _sb_upsert(row: dict):
 
 
 async def get_leaderboard_async(limit: int = 20) -> list:
-    """
-    Devuelve el ranking global de jugadores ordenado por nivel desc.
-    Funciona con Supabase (REST) o con ficheros locales como fallback.
-    """
+    """Ranking global ordenado por nivel desc."""
     if USAR_SUPABASE:
-        # Supabase almacena los datos en la columna jsonb "data"
-        # Ordenamos por (data->>'nivel')::int desc
-        url = (f"{SUPABASE_URL}/rest/v1/{TABLA}"
-               f"?select=usuario,data"
-               f"&order=data->>'nivel'.desc.nullslast"
-               f"&limit={limit}")
+        # PostgREST: traemos todos y ordenamos en Python
+        # (ordenar por campo JSONB anidado no es directo en PostgREST)
+        url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=200"
         try:
             async with aiohttp.ClientSession() as s:
                 async with s.get(url, headers=_sb_headers()) as r:
@@ -79,37 +73,41 @@ async def get_leaderboard_async(limit: int = 20) -> list:
                         for row in rows:
                             d = row.get("data") or {}
                             if isinstance(d, str):
-                                import json as _json
-                                d = _json.loads(d)
+                                try:
+                                    d = json.loads(d)
+                                except Exception:
+                                    continue
                             if not d.get("nombre"):
                                 continue
                             result.append({
                                 "nombre":  d.get("nombre", row["usuario"]),
                                 "clase":   d.get("personaje", {}).get("nombreClase", "?"),
-                                "nivel":   d.get("nivel", 1),
+                                "nivel":   int(d.get("nivel", 1)),
                                 "usuario": row["usuario"],
                             })
-                        return result
+                        result.sort(key=lambda x: x["nivel"], reverse=True)
+                        return result[:limit]
+                    else:
+                        print(f"[LB] Supabase error {r.status}")
         except Exception as e:
-            print(f"[LB] Error Supabase: {e}")
+            print(f"[LB] Error: {e}")
     # Fallback: ficheros locales
     result = []
     if os.path.isdir(SAVES_DIR):
-        import json as _json
         for fname in os.listdir(SAVES_DIR):
             if not fname.endswith(".json"):
                 continue
             try:
                 with open(os.path.join(SAVES_DIR, fname)) as f:
-                    save = _json.load(f)
-                d = save.get("data", save)
+                    save_raw = json.load(f)
+                d = save_raw.get("data", save_raw) or {}
                 if not d.get("nombre"):
                     continue
                 result.append({
                     "nombre":  d.get("nombre", fname),
                     "clase":   d.get("personaje", {}).get("nombreClase", "?"),
-                    "nivel":   d.get("nivel", 1),
-                    "usuario": save.get("usuario", fname),
+                    "nivel":   int(d.get("nivel", 1)),
+                    "usuario": save_raw.get("usuario", fname),
                 })
             except Exception:
                 pass
