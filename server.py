@@ -1161,7 +1161,7 @@ async def mover_jugador(player: Player, direccion: str):
     if player.muerto:
         await player.send("  Estas muerto. Espera el respawn.")
         return
-    if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
+    if getattr(player, 'combate', None) and player.combate and getattr(player.combate, 'estado', None) != EstadoCombate.FINALIZADO:
         await player.send("  No puedes huir del combate!")
         return
     sala_actual = SALAS.get(player.sala_id)
@@ -1343,6 +1343,8 @@ async def loop_combate(combate: Combate):
     del combates_activos[sala_id]
     for p in combate.jugadores:
         p.combate = None
+    for p in combate.jugadores:
+    p.combate = None
 
 
 async def pedir_accion(player: Player, combate: Combate):
@@ -2006,9 +2008,6 @@ async def procesar_comando(player: Player, cmd: str):
         await player.send(f"  Desconocido: '{cmd}'. Escribe 'ayuda'.")
 
 
-# ============================================================
-# HANDLE GAME WS  (VERSIÓN CORREGIDA)
-# ============================================================
 async def handle_game_ws(ws, usuario: str):
     player = Player(ws)
     player.usuario = usuario
@@ -2035,12 +2034,11 @@ async def handle_game_ws(ws, usuario: str):
     rt = asyncio.create_task(reader_task())
 
     try:
-        print(f"[LOGIN] Intentando cargar cuenta: {usuario}")
+        print(f"[LOGIN] Cargando cuenta para {usuario}...")
 
-        # Cargar cuenta (esto era el punto de fallo más común)
         await cargar_cuenta_async(player, usuario)
 
-        print(f"[LOGIN] Cuenta cargada correctamente: {usuario}")
+        print(f"[LOGIN] Cuenta cargada OK: {usuario} - Nivel {player.nivel}")
 
         await player.send(
             f"\n Bienvenido de vuelta, {player.nombre}!\n"
@@ -2051,20 +2049,20 @@ async def handle_game_ws(ws, usuario: str):
 
         await player.send_status()
 
-        # Enviar leaderboard al conectar
+        # Leaderboard
         lb = await get_leaderboard_async()
         try:
             await player.ws.send_json({"type": "leaderboard", "ranking": lb})
-        except Exception:
+        except:
             pass
 
         await broadcast_todos(f"\n {player.nombre} se unió al dungeon!")
         await broadcast_players_to_web()
         await describir_sala(player)
 
-        # Bucle principal del juego
+        # Bucle principal
         while True:
-            if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
+            if getattr(player, 'combate', None) and player.combate and getattr(player.combate, 'estado', None) != EstadoCombate.FINALIZADO:
                 await asyncio.sleep(0.05)
                 continue
 
@@ -2086,18 +2084,15 @@ async def handle_game_ws(ws, usuario: str):
             pass
 
     finally:
-        # Limpieza
         if player.usuario and player.personaje:
             await guardar_cuenta_async(player)
-            print(f"[SAVE] Guardado: {player.usuario}")
 
         if player.grupo:
             asyncio.create_task(cmd_salirgrupo(player))
 
-        for p in jugadores_conectados:
+        for p in jugadores_conectados[:]:
             if p.invitacion_de == player:
                 p.invitacion_de = None
-                asyncio.create_task(p.send(f" La invitación de {player.nombre} expiró."))
 
         rt.cancel()
 
@@ -2109,7 +2104,6 @@ async def handle_game_ws(ws, usuario: str):
             await broadcast_players_to_web()
 
         print(f"[GAME] Desconectado: {usuario}")
-
 # ============================================================
 # HANDLE DASHBOARD WS
 # ============================================================
