@@ -1395,10 +1395,10 @@ async def loop_combate(combate: Combate):
     combate.estado = EstadoCombate.FINALIZADO
 
     for p in combate.jugadores:
-      try:
-        await p.ws.send_json({"type": "combat_end"})
-      except Exception:
-        pass
+        try:
+            await p.ws.send_json({"type": "combat_end"})
+        except Exception:
+            pass
 
     if not combate.jugadores_vivos():
         await broadcast_sala(sala_id, "\n DERROTA. Todos los jugadores han caído.")
@@ -1423,7 +1423,6 @@ async def loop_combate(combate: Combate):
 
     if sala_id in combates_activos:
         del combates_activos[sala_id]
-
 
 async def resolver_accion(player: Player, accion: str, combate: Combate):
     """Resuelve la acción de un jugador en combate."""
