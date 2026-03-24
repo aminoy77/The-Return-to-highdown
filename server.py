@@ -1389,8 +1389,6 @@ async def loop_combate(combate: Combate):
                 await broadcast_sala(sala_id, f" {p.nombre} ha caido!")
                 asyncio.create_task(respawn(p))
 
-        for p in combate.jugadores:
-            #await p.send_status()
 
     combate.estado = EstadoCombate.FINALIZADO
 
