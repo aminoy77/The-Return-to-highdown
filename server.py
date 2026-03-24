@@ -1394,7 +1394,7 @@ async def loop_combate(combate: Combate):
 
     combate.estado = EstadoCombate.FINALIZADO
 
-    for p in combate.jugadores:
+       for p in combate.jugadores:
         try:
             await p.ws.send_json({"type": "combat_end"})
         except Exception:
