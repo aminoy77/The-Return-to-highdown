@@ -224,7 +224,12 @@ ENEMIGOS = {
 XP_POR_TIER = {
     "Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250
 }
-XP_POR_NIVEL   = 150
+
+# XP escalable: base 150, +20 por nivel
+def xp_para_nivel(nivel_actual: int) -> int:
+    """Calcula XP necesaria para subir del nivel_actual al siguiente."""
+    return 150 + ((nivel_actual - 1) * 20)
+
 MONEDAS_SUBIDA = 20
 SALA_RESPAWN   = 33   # Oasis — sala segura, no hay enemigos
 TIEMPO_RESPAWN = 5
@@ -525,7 +530,7 @@ class Player:
             "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
             "mana":          p["manaActual"],  "manaMax": p["manaMax"],
             "nivel":         self.nivel,       "xp":      self.xp,
-            "xpMax":         XP_POR_NIVEL,     "monedas": self.monedas,
+            "xpMax":         xp_para_nivel(self.nivel),  "monedas": self.monedas,
             "clase":         p["nombreClase"], "nombre":  self.nombre,
             "sala_id":       self.sala_id,
             "danioBase":     p["danioBase"],
@@ -660,9 +665,10 @@ def calcular_danio(base):
 
 async def dar_xp(player: Player, cantidad: int):
     player.xp += cantidad
-    await player.send(f"  +{cantidad} XP  ({player.xp}/{XP_POR_NIVEL})")
-    while player.xp >= XP_POR_NIVEL:
-        player.xp      -= XP_POR_NIVEL
+    xp_necesaria = xp_para_nivel(player.nivel)
+    await player.send(f"  +{cantidad} XP  ({player.xp}/{xp_necesaria})")
+    while player.xp >= xp_necesaria:
+        player.xp      -= xp_necesaria
         player.nivel   += 1
         player.monedas += MONEDAS_SUBIDA
         p = player.personaje
@@ -678,6 +684,7 @@ async def dar_xp(player: Player, cantidad: int):
             f"  ╚══════════════════════════════╝"
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
+        xp_necesaria = xp_para_nivel(player.nivel)  # Recalcular para siguiente nivel
     await notify_web_session(player)
     # Actualizar leaderboard global para todos
     asyncio.create_task(broadcast_leaderboard())
@@ -1096,7 +1103,7 @@ async def flujo_login(player: "Player") -> bool:
         await cargar_cuenta_async(player, usuario)
         await player.send(
             f"\n  Bienvenido de vuelta, {player.nombre}!\n"
-            f"  Nivel {player.nivel}  XP:{player.xp}/{XP_POR_NIVEL}  Monedas:{player.monedas}\n"
+            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_nivel(player.nivel)}  Monedas:{player.monedas}\n"
             f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
             f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
         )
@@ -1197,21 +1204,12 @@ async def mover_jugador(player: Player, direccion: str):
 # ============================================================
 
 async def pedir_accion(player: Player, combate: Combate):
-    """
-    Pide acción al jugador. Si eres el único en la sala, resuelve inmediatamente.
-    """
-    if player.personaje["vidaActual"] <= 0:
-        combate.acciones[player.id] = "3"
-        return
-
-    await player.send(
-        " 1-Atacar 2-Especial 3-Pasar 4-Objeto\n"
-        " decir <msg> | g <msg>"
-    )
-
+    """Maneja el menú de combate para un jugador específico."""
+    await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+    
     while True:
         raw = await player.recv()
-        if raw is None:                     # desconexión
+        if raw is None: # Jugador desconectado
             combate.acciones[player.id] = "3"
             return
 
@@ -1219,6 +1217,7 @@ async def pedir_accion(player: Player, combate: Combate):
         if not accion:
             continue
 
+        # Permitir chat durante el combate
         if accion.lower().startswith("decir "):
             await cmd_chat(player, accion[6:], sala_solo=True)
             continue
@@ -1226,28 +1225,66 @@ async def pedir_accion(player: Player, combate: Combate):
             await cmd_chat(player, accion[2:], sala_solo=False)
             continue
 
+        # Opción de Inventario (4) - Ahora con popup de selección
         if accion == "4":
-            await cmd_mochila(player)
-            await player.send(" Qué objeto usar? (vida / dano / gema):")
-            n = await player.recv()
-            if n and n.strip():
-                await usar_item(player, n.strip(), combate=combate)
-            await player.send(" 1-Atacar 2-Especial 3-Pasar 4-Objeto")
-            continue
+            # Verificar si tiene objetos
+            tiene_objetos = any(player.inventario.get(k, 0) > 0 for k in CATALOGO.keys())
+            if not tiene_objetos:
+                await player.send("  No tienes objetos en tu inventario.")
+                await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+                continue
+            
+            # Mostrar popup de inventario
+            items_disponibles = []
+            for iid, item in CATALOGO.items():
+                cantidad = player.inventario.get(iid, 0)
+                if cantidad > 0:
+                    items_disponibles.append((iid, item, cantidad))
+            
+            lineas = ["\n  📦 SELECCIONA UN OBJETO:"]
+            for idx, (iid, item, cantidad) in enumerate(items_disponibles, 1):
+                lineas.append(f"  {idx}. {item['emoji']} {item['nombre']} (x{cantidad})")
+            lineas.append("  0. Cancelar")
+            await player.send("\n".join(lineas))
+            
+            # Pedir selección
+            seleccion = await player.send_prompt("  Elige objeto (0 para cancelar): ")
+            if seleccion == "0" or not seleccion.strip():
+                await player.send("  Cancelado. Elige otra acción.")
+                await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+                continue
+            
+            try:
+                idx = int(seleccion) - 1
+                if 0 <= idx < len(items_disponibles):
+                    iid, item, _ = items_disponibles[idx]
+                    # Usar el item
+                    usado = await usar_item(player, iid, combate=combate)
+                    if usado:
+                        # Solo si se usó correctamente, termina el turno
+                        combate.acciones[player.id] = "4"  # Marcar como acción de objeto
+                        await broadcast_sala(combate.sala_id, f" {player.nombre} ha usado un objeto.", excluir=player)
+                        return
+                    else:
+                        # No se pudo usar, volver a pedir acción
+                        await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+                        continue
+                else:
+                    await player.send("  Opción inválida.")
+                    await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+                    continue
+            except ValueError:
+                await player.send("  Elige un número válido.")
+                await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+                continue
 
+        # Acciones válidas que terminan el turno del jugador
         if accion in ("1", "2", "3"):
             combate.acciones[player.id] = accion
-            await broadcast_sala(combate.sala_id, f" {player.nombre} ha elegido.", excluir=player)
-
-            # Si eres el único jugador → resolver inmediatamente
-            if len(combate.jugadores_vivos()) <= 1:
-                await player.send(" Eres el único jugador. Resolviendo turno...")
-                asyncio.create_task(resolver_accion(player, accion, combate))
-
+            await broadcast_sala(combate.sala_id, f" {player.nombre} ha elegido su accion.", excluir=player)
             return
 
-        await player.send(" Elige 1, 2, 3 o 4.")
-
+        await player.send(" Elige una opcion valida: 1, 2, 3 o 4.")
 
 
 async def iniciar_combate(sala_id: int):
@@ -1292,6 +1329,7 @@ async def iniciar_combate(sala_id: int):
             pass
 
     asyncio.create_task(loop_combate(combate))
+
 
 async def loop_combate(combate: Combate):
     sala_id = combate.sala_id
@@ -1400,7 +1438,7 @@ async def loop_combate(combate: Combate):
 
     # Limpiar efectos temporales y estado de combate
     for p in combate.jugadores:
-        p.combate = None
+                p.combate = None
         if p.buff_danio:
             p.buff_danio = False
             await p.send(" Pocion de Danio terminada.")
@@ -1408,47 +1446,63 @@ async def loop_combate(combate: Combate):
     if sala_id in combates_activos:
         del combates_activos[sala_id]
 
-async def pedir_accion(player: Player, combate: Combate):
-    """Maneja el menú de combate para un jugador específico."""
-    await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+
+async def resolver_accion(player: Player, accion: str, combate: Combate):
+    """Resuelve la acción de un jugador en combate."""
+    p = player.personaje
     
-    while True:
-        raw = await player.recv()
-        if raw is None: # Jugador desconectado
-            combate.acciones[player.id] = "3"
+    if accion == "1":  # Atacar
+        num_ataques = ataques_por_turno(p.get("ataquesTurno", 1))
+        enemigos_vivos = combate.enemigos_vivos()
+        if not enemigos_vivos:
             return
-
-        accion = raw.strip()
-        if not accion:
-            continue
-
-        # Permitir chat durante el combate
-        if accion.lower().startswith("decir "):
-            await cmd_chat(player, accion[6:], sala_solo=True)
-            continue
-        if accion.lower().startswith("g "):
-            await cmd_chat(player, accion[2:], sala_solo=False)
-            continue
-
-        # Opción de Inventario
-        if accion == "4":
-            await cmd_mochila(player)
-            # Enviar prompt para el objeto
-            await player.send(" Qué objeto usar? (vida / dano / gema):", tipo="prompt")
-            n = await player.recv()
-            if n and n.strip():
-                await usar_item(player, n.strip(), combate=combate)
-            # Después de usar objeto, vuelve a pedir acción de combate
-            await player.send(" 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
-            continue
-
-        # Acciones válidas que terminan el turno del jugador
-        if accion in ("1", "2", "3"):
-            combate.acciones[player.id] = accion
-            await broadcast_sala(combate.sala_id, f" {player.nombre} ha elegido su accion.", excluir=player)
+        
+        for _ in range(num_ataques):
+            if not combate.enemigos_vivos():
+                break
+            objetivo = random.choice(combate.enemigos_vivos())
+            danio = calcular_danio(p["danioBase"])
+            if player.buff_danio:
+                danio = int(danio * 1.3)
+            objetivo["vida_actual"] = max(0, objetivo["vida_actual"] - danio)
+            await broadcast_sala(
+                combate.sala_id,
+                f" {player.nombre} ataca a {objetivo['nombre']} -{danio} "
+                f"({objetivo['vida_actual']}/{objetivo['vidaMax']})"
+            )
+            
+    elif accion == "2":  # Especial
+        costo = p.get("costoEspecial", 0)
+        if p["manaActual"] < costo:
+            await player.send("  Sin mana suficiente. Pasas turno.")
             return
+        
+        p["manaActual"] -= costo
+        num_ataques = ataques_por_turno(p.get("ataquesTurno", 1))
+        enemigos_vivos = combate.enemigos_vivos()
+        if not enemigos_vivos:
+            return
+        
+        for _ in range(num_ataques):
+            if not combate.enemigos_vivos():
+                break
+            objetivo = random.choice(combate.enemigos_vivos())
+            danio = calcular_danio(p.get("danioEspecial", p["danioBase"]))
+            if player.buff_danio:
+                danio = int(danio * 1.3)
+            objetivo["vida_actual"] = max(0, objetivo["vida_actual"] - danio)
+            await broadcast_sala(
+                combate.sala_id,
+                f" {player.nombre} usa ESPECIAL en {objetivo['nombre']} -{danio} "
+                f"({objetivo['vida_actual']}/{objetivo['vidaMax']})"
+            )
+            
+    elif accion == "3":  # Pasar
+        await broadcast_sala(combate.sala_id, f" {player.nombre} pasa turno.")
+        
+    elif accion == "4":  # Objeto (ya resuelto en pedir_accion)
+        pass  # La acción ya se resolvió al usar el objeto
 
-        await player.send(" Elige una opcion valida: 1, 2, 3 o 4.")
 
 # ============================================================
 # COMANDOS
@@ -1647,6 +1701,7 @@ async def _disolver_grupo(grupo: Grupo):
         m.grupo = None
         await m.send("  El grupo se ha disuelto.")
     grupos.pop(grupo.id, None)
+
 
 # ============================================================
 # SISTEMA DE DUELOS (PvP)
@@ -1873,13 +1928,13 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac in ("stats", "estado"):
         p  = player.personaje
-        xf = XP_POR_NIVEL - player.xp
+        xf = xp_para_nivel(player.nivel) - player.xp
         await player.send(
             f"\n  {player.nombre} [{p['nombreClase']}]  Nv.{player.nivel}\n"
             f"  HP:      {p['vidaActual']}/{p['vidaMax']}\n"
             f"  Mana:    {p['manaActual']}/{p['manaMax']}\n"
             f"  Dano:    {p['danioBase']}\n"
-            f"  XP:      {player.xp}/{XP_POR_NIVEL}  (faltan {xf})\n"
+            f"  XP:      {player.xp}/{xp_para_nivel(player.nivel)}  (faltan {xf})\n"
             f"  Monedas: {player.monedas}"
         )
 
@@ -1969,7 +2024,7 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac in ("nivel", "level"):
         await player.send(
-            f"  Nivel {player.nivel}  XP:{player.xp}/{XP_POR_NIVEL}  Monedas:{player.monedas}")
+            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_nivel(player.nivel)}  Monedas:{player.monedas}")
 
     elif ac in ("guardar", "save"):
         await guardar_cuenta_async(player)
@@ -2028,7 +2083,7 @@ async def handle_game_ws(ws, usuario: str):
 
         await player.send(
             f"\n Bienvenido de vuelta, {player.nombre}!\n"
-            f" Nivel {player.nivel}  XP:{player.xp}/{XP_POR_NIVEL}  Monedas:{player.monedas}\n"
+            f" Nivel {player.nivel}  XP:{player.xp}/{xp_para_nivel(player.nivel)}  Monedas:{player.monedas}\n"
             f" HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']} "
             f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
         )
@@ -2090,6 +2145,8 @@ async def handle_game_ws(ws, usuario: str):
             await broadcast_players_to_web()
 
         print(f"[GAME] Desconectado: {usuario}")
+
+
 # ============================================================
 # HANDLE DASHBOARD WS
 # ============================================================
@@ -2107,7 +2164,7 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "hp": p["vidaActual"],        "hpMax":         p["vidaMax"],
                 "mana": p["manaActual"],      "manaMax":       p["manaMax"],
                 "nivel": player_online.nivel, "xp":            player_online.xp,
-                "xpMax": XP_POR_NIVEL,        "monedas":       player_online.monedas,
+                "xpMax": xp_para_nivel(player_online.nivel), "monedas":       player_online.monedas,
                 "clase": p["nombreClase"],    "nombre":        player_online.nombre,
                 "sala_id": player_online.sala_id,
                 "danioBase": p["danioBase"],
@@ -2132,7 +2189,7 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "hp": p_save.get("vidaActual", 0),   "hpMax":   p_save.get("vidaMax", 0),
                 "mana": p_save.get("manaActual", 0), "manaMax": p_save.get("manaMax", 0),
                 "nivel": save.get("nivel", 1),        "xp":     save.get("xp", 0),
-                "xpMax": XP_POR_NIVEL,                "monedas":save.get("monedas", 0),
+                "xpMax": xp_para_nivel(save.get("nivel", 1)), "monedas":save.get("monedas", 0),
                 "clase": clase,                        "nombre": save.get("nombre", usuario),
                 "sala_id": save.get("sala_id", 1),
                 "danioBase": p_save.get("danioBase", 0),
@@ -2184,11 +2241,6 @@ async def handle_dashboard_ws(ws, usuario: str):
         chat_ws_clients.discard(ws)
         web_sessions.pop(usuario, None)
         print(f"[DASH] {usuario} desconectado")
-
-
-# ============================================================
-# AIOHTTP HANDLERS
-# ============================================================
 
 
 # ============================================================
@@ -2456,6 +2508,26 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
             border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
 #pvp-reject{background:var(--red);color:#fff;border:none;padding:7px 18px;
             border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
+
+/* ITEM SELECTION POPUP */
+#item-popup{display:none;position:fixed;top:50%;left:50%;
+            transform:translate(-50%,-50%);
+            background:var(--bg2);border:2px solid var(--orange);border-radius:8px;
+            padding:15px 20px;z-index:550;min-width:250px;max-width:300px;
+            box-shadow:0 6px 30px rgba(0,0,0,.7);}
+#item-popup.open{display:block;}
+#item-title{color:var(--orange);font-size:13px;font-weight:bold;margin-bottom:10px;text-align:center;}
+#item-list{max-height:200px;overflow-y:auto;margin-bottom:10px;}
+.item-row{display:flex;justify-content:space-between;align-items:center;
+          padding:5px 8px;border-bottom:1px solid var(--dim2);cursor:pointer;
+          font-size:10px;transition:background .15s;}
+.item-row:hover{background:var(--bg3);}
+.item-row:last-child{border-bottom:none;}
+.item-name{color:var(--text);}
+.item-count{color:var(--dim);}
+.item-cancel{text-align:center;padding:8px;color:var(--dim);cursor:pointer;
+             font-size:10px;border-top:1px solid var(--border);margin-top:5px;}
+.item-cancel:hover{color:var(--text);}
 </style>
 </head>
 <body>
@@ -2536,8 +2608,15 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
     <button class="cp-btn" id="cp-atk" onclick="send('1')">① Atacar</button>
     <button class="cp-btn" id="cp-esp" onclick="send('2')">② Especial</button>
     <button class="cp-btn" id="cp-pas" onclick="send('3')">③ Pasar</button>
-    <button class="cp-btn" id="cp-obj" onclick="send('4')">④ Objeto</button>
+    <button class="cp-btn" id="cp-obj" onclick="openItemPopup()">④ Objeto</button>
   </div>
+</div>
+
+<!-- ITEM SELECTION POPUP -->
+<div id="item-popup">
+  <div id="item-title">📦 Seleccionar Objeto</div>
+  <div id="item-list"></div>
+  <div class="item-cancel" onclick="closeItemPopup()">Cancelar (volver al combate)</div>
 </div>
 
 <!-- PVP CHALLENGE POPUP -->
@@ -2663,27 +2742,27 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 <script>
 /* MAP */
 const RPOS={
-  44:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
-  41:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
-  43:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
-  40:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
-  42:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
-  39:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
-  38:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
-  35:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
-  37:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
-  34:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
-  36:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
-  33:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
-   6:{x:200,y:570,n:"Viento Susurrante",boss:false,b:"desierto"},
-   1:{x:105,y:630,n:"North Mass",boss:false,b:"desierto"},
-   3:{x:415,y:630,n:"Ruinas",boss:false,b:"desierto"},
-  12:{x:260,y:680,n:"Altar Soberano",boss:true,b:"desierto"},
-  13:{x:105,y:720,n:"Extensión Azhar",boss:false,b:"desierto"},
+  24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
+  21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
+  23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
+  20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
+  22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
+  15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
+  14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
+  11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
+  13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
+  10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
+  12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
+  6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
+  5:{x:200,y:570,n:"Trono Rey Demonio",boss:true,b:"desierto"},
+  1:{x:105,y:630,n:"Entrada Desierto",boss:false,b:"desierto"},
+  3:{x:415,y:630,n:"Ruinas Desierto",boss:false,b:"desierto"},
+  4:{x:260,y:680,n:"Templo Maldito",boss:false,b:"desierto"},
+  2:{x:105,y:720,n:"Dunas Norte",boss:false,b:"desierto"},
 };
-const CONNS=[[1,6],[3,6],[6,33],[33,34],[34,35],[34,36],[35,38],[36,37],[37,38],[38,39],[38,40],[39,40],[40,41],[40,42],[41,44],[42,43],[43,44]];
+const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
 const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
-const SNAMES={1:"North Mass",2:"Dunas Norte",3:"Ruinas",4:"Ciudad Abrasada",5:"Valle Muerto",6:"Viento Susurrante",7:"Oasis Oculto",8:"Sol Eterno",9:"Cripta",10:"Caravana Fantasma",11:"Fosa Titanes",12:"Altar Soberano",13:"Extensión Azhar",33:"Oasis",34:"Costa Tormentosa",35:"Aguas Profundas",36:"Cueva Submarina",37:"Naufragio",38:"Abismo Kraken",39:"Puerto",40:"Tundra Helada",41:"Bosque Hielo",42:"Fortaleza Cristal",43:"Trono Hielo",44:"Cumbre Alpha"};
+const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas Desierto",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa Tormentosa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra Helada",21:"Bosque Hielo",22:"Fortaleza Cristal",23:"Trono Hielo",24:"Cumbre Alpha"};
 
 function buildMap(connId,roomId){
   const ns="http://www.w3.org/2000/svg";
@@ -2748,7 +2827,7 @@ function highlightRoom(id){
 }
 
 /* STATE */
-let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null;
+let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,currentEnemies=[];
 
 /* LOGIN */
 function showTab(t){
@@ -2802,6 +2881,10 @@ function handle(m){
     document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
   } else if(m.type==="game"){
     appendLog(m.text,classify(m.text));
+    // Actualizar stats si el mensaje indica cambio de HP/mana
+    if(m.text && (m.text.includes("HP:")||m.text.includes("Mana:")||m.text.includes("vida")||m.text.includes("mana"))){
+      requestStatsUpdate();
+    }
   } else if(m.type==="prompt"){
     appendLog(m.text,"gp2");
   } else if(m.type==="levelup"){
@@ -2815,11 +2898,24 @@ function handle(m){
   } else if(m.type==="leaderboard"){
     renderLeaderboard(m.ranking);
   } else if(m.type==="combat_start"){
+    currentEnemies=m.enemigos||[];
     openCombatPopup(m.enemigos);
   } else if(m.type==="combat_end"){
     closeCombatPopup();
+    currentEnemies=[];
+  } else if(m.type==="combat_update"){
+    // Actualizar estado de enemigos en tiempo real
+    if(m.enemigos)currentEnemies=m.enemigos;
+    updateCombatPopup();
   } else if(m.type==="pvp_challenge"){
     openPvpPopup(m.retador,m.monedas);
+  }
+}
+
+function requestStatsUpdate(){
+  // Solicitar actualización de stats al servidor
+  if(ws&&ws.readyState===WebSocket.OPEN){
+    ws.send("stats");
   }
 }
 
@@ -2894,7 +2990,7 @@ function renderBag(inv){
   div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
-const SALAS_SVC={33:{h:true,s:true},39:{h:true,s:true},4:{h:true,s:false}};
+const SALAS_SVC={6:{h:true,s:true},15:{h:true,s:true},33:{h:true,s:true},39:{h:true,s:false},4:{h:true,s:false}};
 function updateServices(sid){
   const sv=SALAS_SVC[sid]||{};
   document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
@@ -2952,12 +3048,63 @@ function sendChat(){
 /* COMBAT POPUP */
 function openCombatPopup(enemigos){
   const popup=document.getElementById("combat-popup");
-  const div=document.getElementById("cp-enemies");
-  div.innerHTML=(enemigos||[]).map(e=>`<div class="cp-enemy"><span>${esc(e.nombre)}</span><span style="color:var(--red)">${e.hp}/${e.hpMax} HP</span></div>`).join("");
+  updateCombatPopupContent(enemigos);
   popup.classList.add("open");
+}
+function updateCombatPopup(){
+  updateCombatPopupContent(currentEnemies);
+}
+function updateCombatPopupContent(enemigos){
+  const div=document.getElementById("cp-enemies");
+  if(!enemigos||!enemigos.length){
+    div.innerHTML='<div style="color:var(--dim);font-size:10px;">Cargando enemigos...</div>';
+    return;
+  }
+  div.innerHTML=enemigos.map(e=>`<div class="cp-enemy"><span>${esc(e.nombre)}</span><span style="color:var(${e.hp/e.hpMax<0.3?'--red':'--green'})">${e.hp}/${e.hpMax} HP</span></div>`).join("");
 }
 function closeCombatPopup(){
   document.getElementById("combat-popup").classList.remove("open");
+  closeItemPopup();
+}
+
+/* ITEM POPUP */
+function openItemPopup(){
+  if(!myStats||!myStats.inventario){
+    send('4'); // Enviar 4 directamente si no hay stats
+    return;
+  }
+  
+  const inv=myStats.inventario;
+  const items=[];
+  const N={"pocion_vida":"🧪 Poción de Vida","pocion_danio":"⚗️ Poción de Daño","gema_teleporte":"💎 Gema de Teletransporte"};
+  
+  for(const[k,v]of Object.entries(inv)){
+    if(v>0&&N[k]){
+      items.push({id:k,name:N[k],count:v});
+    }
+  }
+  
+  if(items.length===0){
+    // No tiene objetos, enviar 4 directamente
+    send('4');
+    return;
+  }
+  
+  const list=document.getElementById("item-list");
+  list.innerHTML=items.map((it,idx)=>`<div class="item-row" onclick="selectItem('${it.id}')"><span class="item-name">${it.name}</span><span class="item-count">x${it.count}</span></div>`).join("");
+  
+  document.getElementById("item-popup").classList.add("open");
+}
+function closeItemPopup(){
+  document.getElementById("item-popup").classList.remove("open");
+}
+function selectItem(itemId){
+  closeItemPopup();
+  // Enviar el número correspondiente al item seleccionado
+  const itemMap={"pocion_vida":"1","pocion_danio":"2","gema_teleporte":"3"};
+  const num=itemMap[itemId]||"1";
+  send('4'); // Primero enviar 4 para indicar que queremos usar objeto
+  setTimeout(()=>send(num),50); // Luego enviar la selección
 }
 
 /* PVP POPUP */
@@ -3025,6 +3172,7 @@ buildMap("map-conn-full","map-rooms-full");
 </script>
 </body>
 </html>"""
+
 
 async def http_handler(request: web.Request) -> web.Response:
     """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
