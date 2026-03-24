@@ -1292,8 +1292,7 @@ async def iniciar_combate(sala_id: int):
 
     asyncio.create_task(loop_combate(combate))
 
-
-async def loop_combate(combate: Combate):
+    async def loop_combate(combate: Combate):
     sala_id = combate.sala_id
     while combate.enemigos_vivos() and combate.jugadores_vivos():
         combate.turno += 1
@@ -1556,6 +1555,7 @@ async def loop_combate(combate: Combate):
     del combates_activos[sala_id]
     for p in combate.jugadores:
         p.combate = None   # ← Esta línea debe tener la misma indentación que el "for" de arriba
+
 
 # ============================================================
 # COMANDOS
