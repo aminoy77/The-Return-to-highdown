@@ -712,7 +712,7 @@ class BotPlayer(Player):
                     await self._iniciar_combate_si_hay_enemigos()
                 return
             
-            direcciones = list(sala.get("conexiones", {}).keys()))
+            direcciones = list(sala.get("conexiones", {}).keys())
             if direcciones:
                 # Evitar volver a salas con enemigos si la vida es baja
                 if self.personaje["vidaActual"] < self.personaje["vidaMax"] * 0.4:
