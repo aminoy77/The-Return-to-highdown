@@ -1904,7 +1904,7 @@ async def procesar_comando(player: Player, cmd: str):
     elif ac in ("mirar", "look", "l"):
         await describir_sala(player)
 
-        elif ac in ("stats", "estado"):
+    elif ac in ("stats", "estado"):
         p  = player.personaje
         xf = xp_para_nivel(player.nivel) - player.xp
         await player.send(
