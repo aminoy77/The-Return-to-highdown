@@ -592,7 +592,7 @@ async def notify_web_session(player: "Player"):
     """Empuja stats actualizadas al jugador (mismo WebSocket que usa para jugar)."""
     if not player.personaje:
         return
-    await player.send_status()  # reutiliza send_status que ya tiene todo
+   # await player.send_status()  # reutiliza send_status que ya tiene todo
 
 
 async def broadcast_players_to_web():
@@ -688,7 +688,7 @@ async def dar_xp(player: Player, cantidad: int):
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
         xp_necesaria = xp_para_nivel(player.nivel)
-    await notify_web_session(player)
+    #await notify_web_session(player)
     asyncio.create_task(broadcast_leaderboard())
 
 # ============================================================
@@ -706,7 +706,7 @@ async def respawn(player: Player):
     player.muerto   = False
     await player.send(f"  Reapareces en sala de entrada. HP:{p['vidaActual']}/{p['vidaMax']}")
     await broadcast_sala(SALA_RESPAWN, f"  {player.nombre} reaparece.", excluir=player)
-    await notify_web_session(player)
+    #await notify_web_session(player)
     await describir_sala(player)
 
 
@@ -1195,7 +1195,7 @@ async def mover_jugador(player: Player, direccion: str):
     await broadcast_sala(player.sala_id, f"  {player.nombre} se va hacia el {direccion}.", excluir=player)
     player.sala_id = nueva
     await broadcast_sala(player.sala_id, f"  {player.nombre} ha llegado.", excluir=player)
-    await notify_web_session(player)
+    #await notify_web_session(player)
     await broadcast_players_to_web()
     await describir_sala(player)
 
@@ -1390,7 +1390,7 @@ async def loop_combate(combate: Combate):
                 asyncio.create_task(respawn(p))
 
         for p in combate.jugadores:
-            await p.send_status()
+            #await p.send_status()
 
     combate.estado = EstadoCombate.FINALIZADO
 
@@ -1506,7 +1506,7 @@ async def cmd_hospital(player: Player):
         f"  Estas listo para continuar."
     )
     await broadcast_sala(player.sala_id, f"  {player.nombre} sale del hospital completamente curado.", excluir=player)
-    await notify_web_session(player)
+    #await notify_web_session(player)
 
 
 # ============================================================
@@ -2860,15 +2860,15 @@ function handle(m){
     document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
   } else if(m.type==="game"){
     appendLog(m.text,classify(m.text));
-    // Actualizar stats si el mensaje indica cambio de HP/mana
-    if(m.text && (m.text.includes("HP:")||m.text.includes("Mana:")||m.text.includes("vida")||m.text.includes("mana"))){
-      requestStatsUpdate();
-    }
+    // ELIMINADO: La detección automática que causaba el bucle infinito
+    // Las stats se actualizan solo cuando el servidor envía type="status" 
+    // o cuando el usuario presiona el botón de stats manualmente
   } else if(m.type==="prompt"){
     appendLog(m.text,"gp2");
   } else if(m.type==="levelup"){
     appendLog(m.text,"gl");
   } else if(m.type==="status"||m.type==="stats"){
+    // Solo actualizar stats cuando el servidor las envía explícitamente
     updateStats(m);
   } else if(m.type==="chat"){
     const tag=m.scope==="sala"?"[Sala]":m.scope==="global"?"[Global]":"[Grupo]";
@@ -2883,7 +2883,6 @@ function handle(m){
     closeCombatPopup();
     currentEnemies=[];
   } else if(m.type==="combat_update"){
-    // Actualizar estado de enemigos en tiempo real
     if(m.enemigos)currentEnemies=m.enemigos;
     updateCombatPopup();
   } else if(m.type==="pvp_challenge"){
@@ -2891,12 +2890,7 @@ function handle(m){
   }
 }
 
-function requestStatsUpdate(){
-  // Solicitar actualización de stats al servidor
-  if(ws&&ws.readyState===WebSocket.OPEN){
-    ws.send("stats");
-  }
-}
+
 
 function classify(t){
   if(!t)return "gg";
