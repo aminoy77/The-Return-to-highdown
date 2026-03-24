@@ -413,7 +413,7 @@ class Grupo:
     def nombre_lider(self):
         return self.lider.nombre
 
-    def lista_nombres(self):
+    def lista_nombros(self):
         return [p.nombre for p in self.miembros]
 
     def tiene(self, player: "Player"):
@@ -557,6 +557,336 @@ class Player:
                 return ""
             if r.strip():
                 return r.strip()
+
+
+# ============================================================
+# SISTEMA DE BOTS / NPCs JUGABLES
+# ============================================================
+
+NOMBRES_BOTS = [
+    "Aldric", "Seraphina", "Thorne", "Lyra", "Grommash", 
+    "Elara", "Kael", "Mira", "Torvald", "Isolde",
+    "Zephyr", "Nova", "Ragnar", "Fiora", "Cassius",
+    "Aura", "Dante", "Freya", "Orion", "Luna",
+    "Bjorn", "Celeste", "Drake", "Ember", "Frost"
+]
+
+CLASES_BOTS = ["guerrero", "mago", "arquero", "curandero", "caballero", "asesino"]
+
+FRASES_CHAT = [
+    "¡Esta mazmorra es peligrosa!",
+    "¿Alguien quiere hacer grupo?",
+    "Necesito pociones...",
+    "¡Vamos a por ese boss!",
+    "*se sienta a descansar*",
+    "¿Por dónde se va al Oasis?",
+    "¡Buena suerte a todos!",
+    "Que grind más pesado...",
+    "¿Alguien tiene pociones de sobra?",
+    "¡Vivan las aventuras!",
+    "El clima aquí es horrible...",
+    "He oído que el Alpha es imposible de solo.",
+    "¡A por el Kraken!",
+    "Necesito subir de nivel urgentemente."
+]
+
+
+class FakeWebSocket:
+    """WebSocket falso para los bots"""
+    def __init__(self):
+        self.closed = False
+        
+    async def send_json(self, data):
+        # Los bots procesan la info pero no la muestran
+        pass
+        
+    async def send_str(self, data):
+        pass
+        
+    async def close(self):
+        self.closed = True
+
+
+class BotPlayer(Player):
+    """Bot que simula ser un jugador real"""
+    
+    def __init__(self, nombre: str, clase: str, nivel: int = 1):
+        # Crear un websocket falso para el bot
+        self._ws_fake = FakeWebSocket()
+        super().__init__(self._ws_fake)
+        
+        self.nombre = nombre
+        self.usuario = f"bot_{nombre.lower()}"
+        self.nivel = nivel
+        self.xp = random.randint(0, xp_para_nivel(nivel) - 1)
+        self.monedas = random.randint(20, 150)
+        self.sala_id = random.choice([1, 6, 10, 15, 20])  # Spawnear en zonas seguras o inicio
+        self.muerto = False
+        self.buff_danio = False
+        self.inventario = {"pocion_vida": random.randint(0, 3)}
+        self.is_bot = True  # Flag para identificar bots
+        self.addr = "127.0.0.1"  # Fake addr
+        
+        # Inicializar personaje
+        stats = deepcopy(CLASES[clase])
+        # Escalar stats según nivel
+        bonus_vida = (nivel - 1) * 10
+        bonus_danio = (nivel - 1) * 3
+        bonus_mana = (nivel - 1) * 5
+        
+        self.personaje = {
+            "nombreClase": clase.capitalize(),
+            "vidaMax": stats["vidaMax"] + bonus_vida,
+            "vidaActual": stats["vidaMax"] + bonus_vida,
+            "manaMax": stats["manaMax"] + bonus_mana,
+            "manaActual": stats["manaMax"] + bonus_mana,
+            "danioBase": stats["danioBase"] + bonus_danio,
+            "manaTurno": stats["manaTurno"],
+            "danioEspecial": stats["danioEspecial"],
+            "ataquesTurno": stats["ataquesTurno"],
+            "costoEspecial": stats["costoEspecial"],
+            "habilidad": stats["habilidad"]
+        }
+        
+        self._task = None
+        self._comportamiento = random.choice(["pasivo", "agresivo", "social"])
+        self._ultimo_chat = 0
+        
+    async def start_ai(self):
+        """Inicia el loop de IA del bot"""
+        self._task = asyncio.create_task(self._loop_ia())
+        
+    async def _loop_ia(self):
+        """Loop principal de comportamiento"""
+        await asyncio.sleep(random.uniform(2, 5))  # Delay inicial aleatorio
+        
+        while True:
+            try:
+                if self.muerto:
+                    await asyncio.sleep(TIEMPO_RESPAWN)
+                    continue
+                    
+                if self.combate:
+                    await self._comportamiento_combate()
+                else:
+                    await self._comportamiento_exploracion()
+                    
+                await asyncio.sleep(random.uniform(4, 10))
+                
+            except Exception as e:
+                print(f"[Bot {self.nombre}] Error: {e}")
+                await asyncio.sleep(5)
+                
+    async def _comportamiento_exploracion(self):
+        """Comportamiento fuera de combate"""
+        sala = SALAS.get(self.sala_id, {})
+        
+        # 20% probabilidad de hablar (solo si hay otros jugadores humanos en la sala)
+        if random.random() < 0.2:
+            otros = [p for p in jugadores_en_sala(self.sala_id) if not getattr(p, 'is_bot', False) and p != self]
+            if otros and (asyncio.get_event_loop().time() - self._ultimo_chat) > 30:
+                mensaje = random.choice(FRASES_CHAT)
+                await cmd_chat(self, mensaje, sala_solo=True)
+                self._ultimo_chat = asyncio.get_event_loop().time()
+                return
+            
+        # Si hay tienda y necesita curación o pociones
+        if sala.get("tienda"):
+            if self.personaje["vidaActual"] < self.personaje["vidaMax"] * 0.6 and self.monedas >= 30:
+                if self.inventario.get("pocion_vida", 0) < 2:
+                    await cmd_comprar(self, "vida")
+                    return
+        
+        # Si hay hospital y vida baja, curarse
+        if sala.get("hospital") and self.personaje["vidaActual"] < self.personaje["vidaMax"] * 0.5:
+            await cmd_hospital(self)
+            return
+                
+        # 40% probabilidad de moverse si no hay enemigos pendientes
+        if random.random() < 0.4:
+            # No moverse si la sala tiene enemigos y no está limpia
+            tiene_enemigos = "bioma" in sala or bool(sala.get("encuentros"))
+            if tiene_enemigos and self.sala_id not in self.salas_limpias:
+                # 30% de probabilidad de atacar en lugar de moverse
+                if random.random() < 0.3:
+                    await self._iniciar_combate_si_hay_enemigos()
+                return
+            
+            direcciones = list(sala.get("conexiones", {}).keys()))
+            if direcciones:
+                # Evitar volver a salas con enemigos si la vida es baja
+                if self.personaje["vidaActual"] < self.personaje["vidaMax"] * 0.4:
+                    # Preferir moverse a salas seguras (Oasis, Puerto)
+                    salidas_seguras = [d for d in direcciones if SALAS.get(sala["conexiones"][d], {}).get("hospital")]
+                    if salidas_seguras:
+                        direccion = random.choice(salidas_seguras)
+                    else:
+                        direccion = random.choice(direcciones)
+                else:
+                    direccion = random.choice(direcciones)
+                
+                await mover_jugador(self, direccion)
+                return
+                
+        # Si hay enemigos en la sala y no está limpia, posibilidad de atacar
+        tiene_enemigos = "bioma" in sala or bool(sala.get("encuentros"))
+        if tiene_enemigos and self.sala_id not in self.salas_limpias:
+            if random.random() < 0.25:  # 25% chance de iniciar combate
+                await self._iniciar_combate_si_hay_enemigos()
+                
+    async def _iniciar_combate_si_hay_enemigos(self):
+        """Intenta iniciar un combate si hay enemigos"""
+        if self.sala_id in combates_activos:
+            return  # Ya hay combate, se unirá automáticamente
+        sala = SALAS.get(self.sala_id, {})
+        tiene_combate = "bioma" in sala or bool(sala.get("encuentros"))
+        if tiene_combate and not self.muerto:
+            await iniciar_combate(self.sala_id)
+                
+    async def _comportamiento_combate(self):
+        """Toma decisiones en combate"""
+        if not self.combate:
+            return
+            
+        # Pequeña delay para simular "pensar"
+        await asyncio.sleep(random.uniform(0.5, 1.5))
+        
+        # Lógica de supervivencia
+        hp_pct = self.personaje["vidaActual"] / self.personaje["vidaMax"]
+        
+        # Si HP baja y tiene poción, usarla
+        if hp_pct < 0.35 and self.inventario.get("pocion_vida", 0) > 0:
+            await usar_item(self, "pocion_vida", combate=self.combate)
+            return
+            
+        # Si mana suficiente y hay enemigos, usar especial (50% probabilidad si tiene mana)
+        if (self.personaje["manaActual"] >= self.personaje.get("costoEspecial", 999) and 
+            random.random() < 0.5):
+            self.combate.acciones[self.id] = "2"
+        else:
+            # Atacar normal
+            self.combate.acciones[self.id] = "1"
+            
+    async def recv(self):
+        """Los bots no reciben input del usuario, esto es override"""
+        # Esperar indefinidamente ya que los bots no usan input manual
+        await asyncio.sleep(3600)
+        return None
+        
+    async def disconnect(self):
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        if self in jugadores_conectados:
+            jugadores_conectados.remove(self)
+
+
+# Gestor de bots
+bots_activos = []
+
+async def spawn_bot(nombre=None, clase=None, nivel=None):
+    """Crea y spawnea un bot en el mundo"""
+    global bots_activos
+    
+    # Máximo 3 bots simultáneos
+    if len(bots_activos) >= 3:
+        return None
+        
+    # Elegir nombre no usado
+    nombres_usados = [b.nombre for b in bots_activos] + [p.nombre for p in jugadores_conectados if hasattr(p, 'nombre') and p.nombre]
+    nombre = nombre or random.choice([n for n in NOMBRES_BOTS if n not in nombres_usados])
+    
+    if nombre in nombres_usados:
+        # Añadir número al nombre si está repetido
+        for i in range(2, 10):
+            nuevo_nombre = f"{nombre}{i}"
+            if nuevo_nombre not in nombres_usados:
+                nombre = nuevo_nombre
+                break
+        else:
+            return None  # No hay nombres disponibles
+    
+    clase = clase or random.choice(CLASES_BOTS)
+    
+    # Nivel aleatorio basado en el promedio de jugadores humanos, o 1-3 si no hay nadie
+    jugadores_humanos = [p for p in jugadores_conectados if not getattr(p, 'is_bot', False)]
+    if jugadores_humanos:
+        nivel_promedio = sum(p.nivel for p in jugadores_humanos) // len(jugadores_humanos)
+        nivel = nivel or max(1, random.randint(nivel_promedio - 1, nivel_promedio + 1))
+    else:
+        nivel = nivel or random.randint(1, 3)
+    
+    bot = BotPlayer(nombre, clase, nivel)
+    
+    # Añadir a listas globales
+    jugadores_conectados.append(bot)
+    bots_activos.append(bot)
+    
+    await broadcast_sala(bot.sala_id, f"🤖 {bot.nombre} ({clase.capitalize()} Nv.{nivel}) ha entrado al mundo.")
+    await bot.start_ai()
+    
+    print(f"[Sistema] Bot {nombre} spawneado en sala {bot.sala_id}")
+    return bot
+
+async def despawn_bot(nombre: str):
+    """Elimina un bot del mundo"""
+    global bots_activos
+    
+    for bot in bots_activos[:]:
+        if bot.nombre == nombre:
+            await broadcast_sala(bot.sala_id, f"🤖 {bot.nombre} se ha desconectado.")
+            await bot.disconnect()
+            bots_activos.remove(bot)
+            return True
+    return False
+
+async def mantener_poblacion_bots():
+    """Mantiene 2-3 bots activos si hay pocos jugadores humanos"""
+    await asyncio.sleep(10)  # Esperar a que el servidor inicie completamente
+    
+    while True:
+        try:
+            await asyncio.sleep(20)  # Revisar cada 20 segundos
+            
+            jugadores_humanos = [p for p in jugadores_conectados if not getattr(p, 'is_bot', False)]
+            bots_vivos = [b for b in bots_activos if not b.muerto]
+            
+            # Calcular cuántos bots deberíamos tener
+            if len(jugadores_humanos) == 0:
+                target_bots = 3  # Mantener 3 bots si no hay nadie
+            elif len(jugadores_humanos) == 1:
+                target_bots = 2  # 2 bots para acompañar a 1 jugador
+            elif len(jugadores_humanos) == 2:
+                target_bots = 1  # 1 bot para 2 jugadores
+            else:
+                target_bots = 0  # No bots si hay 3+ jugadores humanos
+            
+            # Spawnear bots si faltan
+            while len(bots_vivos) < target_bots:
+                await spawn_bot()
+                await asyncio.sleep(2)  # Esperar entre spawns
+                
+            # Despawnear bots si sobran (solo los que no están en combate)
+            while len(bots_vivos) > target_bots:
+                # Elegir un bot que no esté en combate
+                bot_inactivo = None
+                for bot in bots_vivos:
+                    if not bot.combate:
+                        bot_inactivo = bot
+                        break
+                
+                if bot_inactivo:
+                    await despawn_bot(bot_inactivo.nombre)
+                    bots_vivos.remove(bot_inactivo)
+                else:
+                    break  # Todos en combate, esperar
+                
+        except Exception as e:
+            print(f"[BotManager] Error: {e}")
+            await asyncio.sleep(5)
 
 
 # ============================================================
@@ -1919,7 +2249,8 @@ async def procesar_comando(player: Player, cmd: str):
         for p in jugadores_conectados:
             st     = "MUERTO" if p.muerto else f"Sala {p.sala_id}"
             grp    = f" [Grupo {p.grupo.id}]" if p.grupo else ""
-            lineas.append(f"  - {p.nombre} [Nv.{p.nivel} {p.personaje['nombreClase']}] ({st}){grp}")
+            bot_tag = " [BOT]" if getattr(p, 'is_bot', False) else ""
+            lineas.append(f"  - {p.nombre}{bot_tag} [Nv.{p.nivel} {p.personaje['nombreClase']}] ({st}){grp}")
         await player.send("\n".join(lineas))
 
     elif ac == "invitar":
@@ -2961,7 +3292,7 @@ function renderBag(inv){
   div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
-const SALAS_SVC={6:{h:true,s:true},15:{h:true,s:true},33:{h:true,s:true},39:{h:true,s:false},4:{h:true,s:false}};
+const SALAS_SVC={6:{h:true,s:true},15:{h:true,s:true},33:{h:true,s:false},39:{h:true,s:false},4:{h:true,s:false}};
 function updateServices(sid){
   const sv=SALAS_SVC[sid]||{};
   document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
@@ -3283,7 +3614,11 @@ async def main():
     print(f"[SERVER] Puerto: {port}")
     print(f"[SERVER] Abre http://localhost:{port} para jugar")
     print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
+    print("[SERVER] Sistema de Bots activado (máx 3 bots)")
     print("[SERVER] Listo.\n")
+
+    # Iniciar el mantenedor de bots
+    asyncio.create_task(mantener_poblacion_bots())
 
     await asyncio.Future()
 
