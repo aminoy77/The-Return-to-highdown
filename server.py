@@ -224,7 +224,7 @@ def xp_para_nivel(nivel_actual: int) -> int:
     return 150 + ((nivel_actual - 1) * 20)
 
 MONEDAS_SUBIDA = 20
-SALA_INICIAL   = 1    # Primera sala donde aparecen los jugadores nuevos
+SALA_INICIAL   = 0.1    # Primera sala donde aparecen los jugadores nuevos
 SALA_OASIS     = 6    # Oasis - solo respawn si ya fue visitado
 SALA_RESPAWN_DEFAULT = 1  # Respawn por defecto si no ha visitado oasis
 TIEMPO_RESPAWN = 5
