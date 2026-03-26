@@ -4058,7 +4058,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 </script>
 </body>
 </html>
-
+"""
 
 async def http_handler(request: web.Request) -> web.Response:
     """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
