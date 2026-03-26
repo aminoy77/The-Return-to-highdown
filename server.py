@@ -3172,20 +3172,33 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 <div id="map-modal" onclick="if(event.target===this)closeMapBtn()">
  <div id="map-inner">
    <button id="map-close" onclick="closeMapBtn()">✕</button>
-   <svg id="map-svg-full" viewBox="0 0 520 760" width="460" height="640" xmlns="http://www.w3.org/2000/svg">
+   <svg id="map-svg-full" viewBox="0 0 800 900" width="760" height="860" xmlns="http://www.w3.org/2000/svg">
      <defs><filter id="glowf"><feGaussianBlur stdDeviation="4" result="b"/>
        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-     <rect x="10" y="10" width="500" height="205" rx="5" fill="#080f08" stroke="#1a3a1a" stroke-width="1"/>
-     <text x="16" y="23" fill="#2d5a2d" font-size="8" font-family="monospace">❄ NIEVE</text>
-     <rect x="10" y="222" width="500" height="48" rx="4" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-     <text x="16" y="234" fill="#2e7d32" font-size="8" font-family="monospace">⚓ PUERTO</text>
-     <rect x="10" y="277" width="500" height="200" rx="5" fill="#060810" stroke="#10103a" stroke-width="1"/>
-     <text x="16" y="290" fill="#1040a0" font-size="8" font-family="monospace">🌊 MAR</text>
-     <rect x="10" y="484" width="500" height="48" rx="4" fill="#080f08" stroke="#1a2a1a" stroke-width="1"/>
-     <text x="16" y="497" fill="#2e7d32" font-size="8" font-family="monospace">🌴 OASIS</text>
-     <rect x="10" y="539" width="500" height="210" rx="5" fill="#100800" stroke="#302000" stroke-width="1"/>
-     <text x="16" y="552" fill="#6b5010" font-size="8" font-family="monospace">🏜 DESIERTO</text>
-     <g id="map-conn-full"></g><g id="map-rooms-full"></g>
+     
+     <!-- FONDO POR BIOMAS -->
+     <!-- NIEVE (73-148) - Arriba -->
+     <rect x="10" y="10" width="780" height="280" rx="5" fill="#080f14" stroke="#1a3a4a" stroke-width="1"/>
+     <text x="20" y="25" fill="#4a6a7a" font-size="10" font-family="monospace">❄️ NIEVE (Salas 73-148)</text>
+     
+     <!-- MAR (33-72) - Centro -->
+     <rect x="10" y="300" width="780" height="280" rx="5" fill="#060814" stroke="#1a2a4a" stroke-width="1"/>
+     <text x="20" y="315" fill="#1565c0" font-size="10" font-family="monospace">🌊 MAR (Salas 33-72)</text>
+     
+     <!-- OASIS (6) -->
+     <rect x="360" y="590" width="80" height="40" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
+     <text x="400" y="615" fill="#2e7d32" font-size="8" font-family="monospace" text-anchor="middle">🌴 OASIS</text>
+     
+     <!-- DESIERTO (1-32) - Abajo -->
+     <rect x="10" y="640" width="780" height="250" rx="5" fill="#100800" stroke="#302000" stroke-width="1"/>
+     <text x="20" y="655" fill="#8b6914" font-size="10" font-family="monospace">🏜️ DESIERTO (Salas 1-32)</text>
+     
+     <!-- TUTORIAL (0.1-0.4) -->
+     <rect x="650" y="590" width="140" height="40" rx="3" fill="#0d0d0d" stroke="#444" stroke-width="1"/>
+     <text x="720" y="615" fill="#888" font-size="8" font-family="monospace" text-anchor="middle">📚 TUTORIAL</text>
+     
+     <g id="map-conn-full"></g>
+     <g id="map-rooms-full"></g>
    </svg>
  </div>
 </div>
@@ -3294,13 +3307,14 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
  <!-- CENTER -->
  <div id="center">
    <div id="minimap-btn" onclick="openMap()" title="Clic para ampliar">
-     <svg id="map-svg-mini" viewBox="0 0 520 760" xmlns="http://www.w3.org/2000/svg">
-       <rect x="10" y="10"  width="500" height="205" rx="4" fill="#080f08" stroke="#1a3a1a" stroke-width="2"/>
-       <rect x="10" y="222" width="500" height="48"  rx="3" fill="#080f08" stroke="#1a2a1a" stroke-width="2"/>
-       <rect x="10" y="277" width="500" height="200" rx="4" fill="#060810" stroke="#10103a" stroke-width="2"/>
-       <rect x="10" y="484" width="500" height="48"  rx="3" fill="#080f08" stroke="#1a2a1a" stroke-width="2"/>
-       <rect x="10" y="539" width="500" height="210" rx="4" fill="#100800" stroke="#302000" stroke-width="2"/>
-       <g id="map-conn-mini"></g><g id="map-rooms-mini"></g>
+     <svg id="map-svg-mini" viewBox="0 0 800 900" xmlns="http://www.w3.org/2000/svg">
+       <rect x="10" y="10" width="780" height="280" rx="4" fill="#080f14" stroke="#1a3a4a" stroke-width="2"/>
+       <rect x="10" y="300" width="780" height="280" rx="4" fill="#060814" stroke="#1a2a4a" stroke-width="2"/>
+       <rect x="360" y="590" width="80" height="40" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
+       <rect x="10" y="640" width="780" height="250" rx="4" fill="#100800" stroke="#302000" stroke-width="2"/>
+       <rect x="650" y="590" width="140" height="40" rx="3" fill="#0d0d0d" stroke="#444" stroke-width="1"/>
+       <g id="map-conn-mini"></g>
+       <g id="map-rooms-mini"></g>
      </svg>
      <div id="minimap-label">🗺 MAPA</div>
    </div>
@@ -3357,34 +3371,248 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 <button id="bug-btn" onclick="resetGame()" title="Reiniciar juego (emergencia)">🐛</button>
 
 <script>
-/* MAP */
+/* MAP DATA - Todas las salas del juego */
 const RPOS={
- 24:{x:260,y:38,n:"Cumbre Alpha",boss:true,b:"nieve"},
- 21:{x:105,y:95,n:"Bosque Hielo",boss:false,b:"nieve"},
- 23:{x:415,y:95,n:"Trono Hielo",boss:false,b:"nieve"},
- 20:{x:105,y:165,n:"Tundra Helada",boss:false,b:"nieve"},
- 22:{x:415,y:165,n:"Fortaleza Cristal",boss:false,b:"nieve"},
- 15:{x:260,y:246,n:"Puerto",boss:false,b:"safe"},
- 14:{x:260,y:298,n:"Abismo Kraken",boss:true,b:"mar"},
- 11:{x:105,y:360,n:"Aguas Profundas",boss:false,b:"mar"},
- 13:{x:415,y:360,n:"Naufragio",boss:false,b:"mar"},
- 10:{x:105,y:435,n:"Costa Tormentosa",boss:false,b:"mar"},
- 12:{x:415,y:435,n:"Cueva Submarina",boss:false,b:"mar"},
- 6:{x:260,y:508,n:"Oasis",boss:false,b:"safe"},
- 5:{x:200,y:570,n:"Trono Rey Demonio",boss:true,b:"desierto"},
- 1:{x:105,y:630,n:"Entrada Desierto",boss:false,b:"desierto"},
- 3:{x:415,y:630,n:"Ruinas Desierto",boss:false,b:"desierto"},
- 4:{x:260,y:680,n:"Templo Maldito",boss:false,b:"desierto"},
- 2:{x:105,y:720,n:"Dunas Norte",boss:false,b:"desierto"},
+ // TUTORIAL (0.1 - 0.4)
+ "0.1":{x:720,y:610,n:"Tutorial: Como combatir",b:"tutorial"},
+ "0.2":{x:680,y:610,n:"Tutorial: Objetos",b:"tutorial"},
+ "0.3":{x:720,y:570,n:"Tutorial: Estructuras",b:"tutorial"},
+ "0.4":{x:760,y:570,n:"Tutorial: UI",b:"tutorial"},
+ 
+ // DESIERTO - Zona Sur (1-32)
+ 1:{x:100,y:860,n:"North Mass",b:"desierto"},
+ 2:{x:100,y:820,n:"Dunas del Norte",b:"desierto"},
+ 3:{x:140,y:780,n:"Ruinas del Desierto",b:"desierto"},
+ 4:{x:60,y:780,n:"Ciudad abrasada",b:"desierto",boss:true},
+ 5:{x:180,y:740,n:"Valle muerto",b:"desierto"},
+ 6:{x:400,y:610,n:"Oasis",b:"safe"},
+ 7:{x:360,y:780,n:"Sala del Viento",b:"desierto"},
+ 8:{x:320,y:820,n:"Camara del Oasis",b:"desierto"},
+ 9:{x:360,y:820,n:"Salon del Sol",b:"desierto"},
+ 10:{x:400,y:780,n:"Cripta de las Dunas",b:"desierto"},
+ 11:{x:440,y:820,n:"Caravana fantasma",b:"desierto"},
+ 12:{x:480,y:780,n:"Fosa de Titanes",b:"desierto"},
+ 13:{x:520,y:740,n:"Altar del Soberano",b:"desierto",boss:true},
+ 14:{x:560,y:780,n:"Extension de Azhar",b:"desierto"},
+ 15:{x:600,y:740,n:"Mar de Dunas",b:"desierto"},
+ 16:{x:640,y:780,n:"Vestigios Enterrados",b:"desierto"},
+ 17:{x:680,y:740,n:"Santuario Carmesi",b:"desierto"},
+ 18:{x:720,y:780,n:"Sepulcro de Colosos",b:"desierto"},
+ 19:{x:760,y:740,n:"Trono del Abismo",b:"desierto"},
+ 20:{x:100,y:700,n:"Llanura de Fuego Blanco",b:"desierto"},
+ 21:{x:140,y:660,n:"Dunas del Murmullo",b:"desierto"},
+ 22:{x:180,y:700,n:"Columnas del Olvido",b:"desierto"},
+ 23:{x:220,y:660,n:"Templo de Sangre",b:"desierto"},
+ 24:{x:260,y:700,n:"Abismo de los Caidos",b:"desierto"},
+ 25:{x:300,y:660,n:"Trono del Devastador",b:"desierto",boss:true},
+ 26:{x:340,y:700,n:"Horizonte Quebrado",b:"desierto"},
+ 27:{x:380,y:660,n:"Dunas del Hambre",b:"desierto"},
+ 28:{x:420,y:700,n:"Ruinas del Eco Silente",b:"desierto"},
+ 29:{x:460,y:660,n:"Santuario de la Marca",b:"desierto"},
+ 30:{x:500,y:700,n:"Campos de Huesos",b:"desierto"},
+ 31:{x:540,y:660,n:"Trono del Ultimo Señor",b:"desierto",boss:true},
+ 32:{x:580,y:700,n:"Falla de los Antiguos",b:"desierto"},
+ 
+ // MAR - Zona Centro (33-72)
+ 33:{x:100,y:540,n:"Embarcadero 1",b:"mar"},
+ 34:{x:140,y:500,n:"Abismo Coralino",b:"mar"},
+ 35:{x:180,y:540,n:"Trono del Oceano",b:"mar",boss:true},
+ 36:{x:220,y:500,n:"Cripta de las Algas",b:"mar"},
+ 37:{x:260,y:540,n:"Embarcadero 2",b:"mar"},
+ 38:{x:300,y:500,n:"Fosa de Sombras",b:"mar"},
+ 39:{x:340,y:540,n:"Arrecife Susurrante",b:"mar"},
+ 40:{x:380,y:500,n:"Caverna de la Bruma",b:"mar"},
+ 41:{x:420,y:540,n:"Templo de las Olas",b:"mar"},
+ 42:{x:460,y:500,n:"Laguna de los Naufragos",b:"mar"},
+ 43:{x:500,y:540,n:"Pantano del Silencio",b:"mar"},
+ 44:{x:540,y:500,n:"Refugio de las Medusas",b:"mar"},
+ 45:{x:580,y:540,n:"Camara del Pulpo",b:"mar"},
+ 46:{x:620,y:500,n:"Bosque de Manglares",b:"mar"},
+ 47:{x:660,y:540,n:"Isla de la Lluvia",b:"mar"},
+ 48:{x:700,y:500,n:"Grieta Abisal",b:"mar"},
+ 49:{x:740,y:540,n:"Playa de los Ecos",b:"mar"},
+ 50:{x:100,y:460,n:"Torre del Vigia",b:"mar"},
+ 51:{x:140,y:420,n:"Gruta de las Mareas",b:"mar"},
+ 52:{x:180,y:460,n:"Pantano de las Raices",b:"mar"},
+ 53:{x:220,y:420,n:"Caverna del Coral",b:"mar"},
+ 54:{x:260,y:460,n:"Estuario del Viento",b:"mar"},
+ 55:{x:300,y:420,n:"Pozo de Agua Estancada",b:"mar"},
+ 56:{x:340,y:460,n:"Acantilado de la Lluvia",b:"mar"},
+ 57:{x:380,y:420,n:"Laguna de las Sombras",b:"mar"},
+ 58:{x:420,y:460,n:"Bosque Inundado",b:"mar"},
+ 59:{x:460,y:420,n:"Camara de las Corrientes",b:"mar"},
+ 60:{x:500,y:460,n:"Isla del Horizonte",b:"mar"},
+ 61:{x:540,y:420,n:"Fosa de la Marea Negra",b:"mar"},
+ 62:{x:580,y:460,n:"Playa de Arena Humeda",b:"mar"},
+ 63:{x:620,y:420,n:"Gruta del Agua",b:"mar"},
+ 64:{x:660,y:460,n:"Delta de los Canales",b:"mar"},
+ 65:{x:700,y:420,n:"Arrecife de las Espinas",b:"mar"},
+ 66:{x:740,y:460,n:"Pantano de Lluvia Eterna",b:"mar"},
+ 67:{x:100,y:380,n:"Caverna del Vapor",b:"mar"},
+ 68:{x:140,y:340,n:"Laguna de los Reflejos",b:"mar"},
+ 69:{x:180,y:380,n:"Sendero del Lodo",b:"mar"},
+ 70:{x:220,y:340,n:"Bahia de la Niebla",b:"mar"},
+ 71:{x:260,y:380,n:"Cumbre del Leviatan",b:"mar",boss:true},
+ 72:{x:300,y:340,n:"Cumbre del Kraken",b:"mar",boss:true},
+ 
+ // NIEVE - Zona Norte (73-148)
+ 73:{x:100,y:260,n:"Ventisca Eterna",b:"nieve"},
+ 74:{x:140,y:220,n:"Bosque de Hielo Negro",b:"nieve"},
+ 75:{x:180,y:260,n:"Grieta del Frio Abisal",b:"nieve"},
+ 76:{x:220,y:220,n:"Llanura del Silencio",b:"nieve"},
+ 77:{x:260,y:260,n:"Cementerio Congelado",b:"nieve"},
+ 78:{x:300,y:220,n:"Tormenta Errante",b:"nieve"},
+ 79:{x:340,y:260,n:"Picos del Desgarro",b:"nieve"},
+ 80:{x:380,y:220,n:"Hondonada del Eco",b:"nieve"},
+ 81:{x:420,y:260,n:"Rio de Hielo Muerto",b:"nieve"},
+ 82:{x:460,y:220,n:"Fauces de la Tormenta",b:"nieve"},
+ 83:{x:500,y:260,n:"Campo de Estatuas",b:"nieve"},
+ 84:{x:540,y:220,n:"Abismo Nevado",b:"nieve"},
+ 85:{x:580,y:260,n:"Cumbre del Viento",b:"nieve"},
+ 86:{x:620,y:220,n:"Valle de las Sombras",b:"nieve"},
+ 87:{x:660,y:260,n:"Ruinas Congeladas",b:"nieve"},
+ 88:{x:700,y:220,n:"Paso del Susurro",b:"nieve"},
+ 89:{x:740,y:260,n:"Glaciar Viviente",b:"nieve"},
+ 90:{x:100,y:180,n:"Fosa del Olvido",b:"nieve"},
+ 91:{x:140,y:140,n:"Torres de Escarcha",b:"nieve"},
+ 92:{x:180,y:180,n:"Velo de Nieve",b:"nieve"},
+ 93:{x:220,y:140,n:"Lago de Cristal",b:"nieve"},
+ 94:{x:260,y:180,n:"Bosque de Agujas",b:"nieve"},
+ 95:{x:300,y:140,n:"Furia Blanca",b:"nieve"},
+ 96:{x:340,y:180,n:"Caverna de Escarcha",b:"nieve"},
+ 97:{x:380,y:140,n:"Paso del Ultimo Aliento",b:"nieve"},
+ 98:{x:420,y:180,n:"Colmillos del Invierno",b:"nieve"},
+ 99:{x:460,y:140,n:"Valle del Sueño",b:"nieve"},
+ 100:{x:500,y:180,n:"Niebla Blanca",b:"nieve"},
+ 101:{x:540,y:140,n:"Cumbre Quebrada",b:"nieve"},
+ 102:{x:580,y:180,n:"Territorio del Frio",b:"nieve"},
+ 103:{x:620,y:140,n:"Sendero del Hielo",b:"nieve"},
+ 104:{x:660,y:180,n:"Vigilantes de Escarcha",b:"nieve"},
+ 105:{x:700,y:140,n:"Desierto Blanco",b:"nieve"},
+ 106:{x:740,y:180,n:"Garganta del Viento",b:"nieve"},
+ 107:{x:100,y:100,n:"Ruinas del Invierno",b:"nieve"},
+ 108:{x:140,y:60,n:"Campo de Fragmentos",b:"nieve"},
+ 109:{x:180,y:100,n:"Pozo de Escarcha",b:"nieve"},
+ 110:{x:220,y:60,n:"Travesia del Frio",b:"nieve"},
+ 111:{x:260,y:100,n:"Tormenta Estatica",b:"nieve"},
+ 112:{x:300,y:60,n:"Cascada Congelada",b:"nieve"},
+ 113:{x:340,y:100,n:"Circulo de Hielo",b:"nieve"},
+ 114:{x:380,y:60,n:"Bosque de Sombras",b:"nieve"},
+ 115:{x:420,y:100,n:"Frontera del Frio",b:"nieve"},
+ 116:{x:460,y:60,n:"Vertice Nevado",b:"nieve"},
+ 117:{x:500,y:100,n:"Hogar de la Escarcha",b:"nieve"},
+ 118:{x:540,y:60,n:"Sendero de los Perdidos",b:"nieve"},
+ 119:{x:580,y:100,n:"Falla Glacial",b:"nieve"},
+ 120:{x:620,y:60,n:"Campo de Huesos",b:"nieve"},
+ 121:{x:660,y:100,n:"Tormenta Silenciosa",b:"nieve"},
+ 122:{x:700,y:60,n:"Nucleo de Hielo",b:"nieve"},
+ 123:{x:740,y:100,n:"Paso de los Colosos",b:"nieve"},
+ 124:{x:100,y:20,n:"Mar de Escarcha",b:"nieve"},
+ 125:{x:140,y:60,n:"Colina del Ultimo Suspiro",b:"nieve"},
+ 126:{x:180,y:20,n:"Catedral de Hielo",b:"nieve"},
+ 127:{x:220,y:60,n:"Velo del Olvido",b:"nieve"},
+ 128:{x:260,y:20,n:"Fauces Heladas",b:"nieve"},
+ 129:{x:300,y:60,n:"Bosque del Frio",b:"nieve"},
+ 130:{x:340,y:20,n:"Campo de Escarcha",b:"nieve"},
+ 131:{x:380,y:60,n:"Trampa de Nieve",b:"nieve"},
+ 132:{x:420,y:20,n:"Cumbre del Olvido",b:"nieve"},
+ 133:{x:460,y:60,n:"Rugido Blanco",b:"nieve"},
+ 134:{x:500,y:20,n:"Valle del Frio Eterno",b:"nieve"},
+ 135:{x:540,y:60,n:"Sombras Bajo el Hielo",b:"nieve"},
+ 136:{x:580,y:20,n:"Paso de la Escarcha",b:"nieve"},
+ 137:{x:620,y:60,n:"Caverna del Viento",b:"nieve"},
+ 138:{x:660,y:20,n:"Campos del Silencio",b:"nieve"},
+ 139:{x:700,y:60,n:"Colapso Glacial",b:"nieve"},
+ 140:{x:740,y:20,n:"Tormenta del Norte",b:"nieve"},
+ 141:{x:340,y:140,n:"Grieta del Ultimo Invierno",b:"nieve"},
+ 142:{x:380,y:180,n:"Altar de Hielo",b:"nieve"},
+ 143:{x:420,y:140,n:"Sendero del Frio Infinito",b:"nieve"},
+ 144:{x:460,y:180,n:"Cupula de Escarcha",b:"nieve"},
+ 145:{x:500,y:140,n:"Ruinas del Viento",b:"nieve"},
+ 146:{x:540,y:180,n:"Frontera del Vacio",b:"nieve"},
+ 147:{x:580,y:140,n:"Crater de Hielo",b:"nieve"},
+ 148:{x:620,y:180,n:"Trono del Invierno",b:"nieve",boss:true},
 };
-const CONNS=[[1,2],[1,3],[2,5],[3,4],[4,5],[5,6],[6,10],[10,11],[10,12],[11,14],[12,13],[13,14],[14,15],[14,20],[15,20],[20,21],[20,22],[21,24],[22,23],[23,24]];
-const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32"};
-const SNAMES={1:"Entrada Desierto",2:"Dunas Norte",3:"Ruinas Desierto",4:"Templo Maldito",5:"Trono Rey Demonio",6:"Oasis",10:"Costa Tormentosa",11:"Aguas Profundas",12:"Cueva Submarina",13:"Naufragio",14:"Abismo Kraken",15:"Puerto",20:"Tundra Helada",21:"Bosque Hielo",22:"Fortaleza Cristal",23:"Trono Hielo",24:"Cumbre Alpha"};
+
+/* Conexiones entre salas - basadas en el diccionario SALAS del servidor */
+const CONNS=[
+ // Tutorial
+ ["0.1","0.2"],["0.2","0.3"],["0.3","0.4"],
+ 
+ // Desierto principal
+ [1,2],[1,6],[1,13],[2,3],[3,4],[3,16],[4,5],[5,6],[6,7],[7,8],[7,9],[8,9],[10,11],[10,6],[11,12],[11,17],[12,13],[12,18],[13,14],[13,19],[14,15],[15,16],[16,22],[17,18],[18,27],[19,20],[20,21],[20,25],[21,22],[22,23],[23,24],[24,30],[24,32],[25,26],[26,19],[27,28],[28,29],[29,30],[30,31],[31,32],
+ 
+ // Conexiones Desierto-Mar (32-33, 6-37)
+ [32,33],[6,37],
+ 
+ // Mar
+ [33,34],[33,38],[33,39],[34,35],[35,36],[36,37],[36,41],[37,38],[37,42],[38,39],[38,44],[39,40],[39,44],[40,41],[41,46],[42,43],[42,52],[43,44],[43,51],[44,45],[44,50],[45,44],[46,47],[46,48],[47,48],[48,59],[49,50],[49,56],[50,44],[50,51],[50,55],[51,52],[51,54],[52,53],[53,54],[54,55],[55,54],[56,49],[57,58],[57,59],[58,60],[59,60],[59,62],[60,61],[61,62],[61,64],[62,63],[63,66],[64,65],[65,66],[65,67],[66,68],[68,69],[69,70],[70,71],[71,72],
+ 
+ // Conexiones Mar-Nieve (72-73)
+ [72,73],
+ 
+ // Nieve
+ [73,74],[74,75],[74,76],[75,76],[76,77],[77,78],[77,83],[78,79],[79,80],[79,98],[80,83],[81,82],[82,83],[83,84],[83,96],[84,85],[84,95],[85,86],[86,87],[86,89],[88,89],[89,86],[90,91],[91,92],[92,93],[92,101],[93,102],[94,95],[94,103],[95,96],[95,104],[96,97],[96,105],[97,96],[98,99],[98,107],[99,108],[100,109],[101,118],[102,117],[103,104],[104,105],[104,115],[105,106],[106,107],[107,112],[108,109],[108,111],[109,110],[110,111],[111,112],[112,125],[113,114],[113,124],[114,123],[115,116],[115,122],[116,121],[117,120],[118,119],[119,128],[120,121],[120,129],[121,122],[122,123],[122,132],[123,124],[123,133],[124,125],[124,133],[125,134],[126,127],[126,135],[127,136],[128,145],[129,144],[130,143],[131,142],[132,133],[132,141],[133,140],[134,135],[134,139],[137,138],[138,139],[139,140],[140,141],[141,142],[141,146],[142,143],[144,145],[145,146],[146,147],[146,148],[147,148]
+];
+
+const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32",tutorial:"#888"};
+const SNAMES={
+ 1:"North Mass",2:"Dunas del Norte",3:"Ruinas del Desierto",4:"Ciudad abrasada",
+ 5:"Valle muerto",6:"Oasis",7:"Sala del Viento",8:"Camara del Oasis",9:"Salon del Sol",
+ 10:"Cripta de las Dunas",11:"Caravana fantasma",12:"Fosa de Titanes",13:"Altar del Soberano",
+ 14:"Extension de Azhar",15:"Mar de Dunas",16:"Vestigios Enterrados",17:"Santuario Carmesi",
+ 18:"Sepulcro de Colosos",19:"Trono del Abismo",20:"Llanura de Fuego",21:"Dunas del Murmullo",
+ 22:"Columnas del Olvido",23:"Templo de Sangre",24:"Abismo de los Caidos",25:"Trono del Devastador",
+ 26:"Horizonte Quebrado",27:"Dunas del Hambre",28:"Ruinas del Eco",29:"Santuario de la Marca",
+ 30:"Campos de Huesos",31:"Trono del Ultimo Señor",32:"Falla de los Antiguos",
+ 33:"Embarcadero 1",34:"Abismo Coralino",35:"Trono del Oceano",36:"Cripta de las Algas",
+ 37:"Embarcadero 2",38:"Fosa de Sombras",39:"Arrecife Susurrante",40:"Caverna de la Bruma",
+ 41:"Templo de las Olas",42:"Laguna de los Naufragos",43:"Pantano del Silencio",
+ 44:"Refugio de las Medusas",45:"Camara del Pulpo",46:"Bosque de Manglares",
+ 47:"Isla de la Lluvia",48:"Grieta Abisal",49:"Playa de los Ecos",50:"Torre del Vigia",
+ 51:"Gruta de las Mareas",52:"Pantano de las Raices",53:"Caverna del Coral",
+ 54:"Estuario del Viento",55:"Pozo de Agua",56:"Acantilado de la Lluvia",
+ 57:"Laguna de las Sombras",58:"Bosque Inundado",59:"Camara de las Corrientes",
+ 60:"Isla del Horizonte",61:"Fosa de la Marea",62:"Playa de Arena Humeda",
+ 63:"Gruta del Agua",64:"Delta de los Canales",65:"Arrecife de las Espinas",
+ 66:"Pantano de Lluvia",67:"Caverna del Vapor",68:"Laguna de los Reflejos",
+ 69:"Sendero del Lodo",70:"Bahia de la Niebla",71:"Cumbre del Leviatan",72:"Cumbre del Kraken",
+ 73:"Ventisca Eterna",74:"Bosque de Hielo Negro",75:"Grieta del Frio",
+ 76:"Llanura del Silencio",77:"Cementerio Congelado",78:"Tormenta Errante",
+ 79:"Picos del Desgarro",80:"Hondonada del Eco",81:"Rio de Hielo Muerto",
+ 82:"Fauces de la Tormenta",83:"Campo de Estatuas",84:"Abismo Nevado",
+ 85:"Cumbre del Viento",86:"Valle de las Sombras",87:"Ruinas Congeladas",
+ 88:"Paso del Susurro",89:"Glaciar Viviente",90:"Fosa del Olvido",
+ 91:"Torres de Escarcha",92:"Velo de Nieve",93:"Lago de Cristal",
+ 94:"Bosque de Agujas",95:"Furia Blanca",96:"Caverna de Escarcha",
+ 97:"Paso del Ultimo Aliento",98:"Colmillos del Invierno",99:"Valle del Sueño",
+ 100:"Niebla Blanca",101:"Cumbre Quebrada",102:"Territorio del Frio",
+ 103:"Sendero del Hielo",104:"Vigilantes de Escarcha",105:"Desierto Blanco",
+ 106:"Garganta del Viento",107:"Ruinas del Invierno",108:"Campo de Fragmentos",
+ 109:"Pozo de Escarcha",110:"Travesia del Frio",111:"Tormenta Estatica",
+ 112:"Cascada Congelada",113:"Circulo de Hielo",114:"Bosque de Sombras",
+ 115:"Frontera del Frio",116:"Vertice Nevado",117:"Hogar de la Escarcha",
+ 118:"Sendero de los Perdidos",119:"Falla Glacial",120:"Campo de Huesos",
+ 121:"Tormenta Silenciosa",122:"Nucleo de Hielo",123:"Paso de los Colosos",
+ 124:"Mar de Escarcha",125:"Colina del Ultimo Suspiro",126:"Catedral de Hielo",
+ 127:"Velo del Olvido",128:"Fauces Heladas",129:"Bosque del Frio",
+ 130:"Campo de Escarcha",131:"Trampa de Nieve",132:"Cumbre del Olvido",
+ 133:"Rugido Blanco",134:"Valle del Frio Eterno",135:"Sombras Bajo el Hielo",
+ 136:"Paso de la Escarcha",137:"Caverna del Viento",138:"Campos del Silencio",
+ 139:"Colapso Glacial",140:"Tormenta del Norte",141:"Grieta del Ultimo Invierno",
+ 142:"Altar de Hielo",143:"Sendero del Frio Infinito",144:"Cupula de Escarcha",
+ 145:"Ruinas del Viento",146:"Frontera del Vacio",147:"Crater de Hielo",148:"Trono del Invierno"
+};
 
 function buildMap(connId,roomId){
  const ns="http://www.w3.org/2000/svg";
  const cg=document.getElementById(connId),rg=document.getElementById(roomId);
  if(!cg||!rg)return;
+ 
+ // Limpiar grupos existentes
+ while(cg.firstChild)cg.removeChild(cg.firstChild);
+ while(rg.firstChild)rg.removeChild(rg.firstChild);
+ 
  CONNS.forEach(([a,b])=>{
    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
    const l=document.createElementNS(ns,"line");
@@ -3393,9 +3621,10 @@ function buildMap(connId,roomId){
    l.setAttribute("stroke","#252525");l.setAttribute("stroke-width","2");
    cg.appendChild(l);
  });
+ 
  Object.entries(RPOS).forEach(([id,r])=>{
    const g=document.createElementNS(ns,"g");
-   g.setAttribute("id",roomId+"-r"+id);g.setAttribute("data-sid",id);
+   g.setAttribute("id",roomId+"-r"+id.replace(".","_"));g.setAttribute("data-sid",id);
    const W=r.boss?56:48,H=18;
    const rect=document.createElementNS(ns,"rect");
    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
@@ -3410,6 +3639,7 @@ function buildMap(connId,roomId){
    txt.setAttribute("font-size","7");txt.setAttribute("font-family","monospace");
    txt.textContent=id;
    g.appendChild(rect);g.appendChild(txt);
+   
    if(roomId==="map-rooms-full"){
      let tt=null;
      g.addEventListener("mouseenter",e=>{
@@ -3425,16 +3655,17 @@ function buildMap(connId,roomId){
 }
 
 function highlightRoom(id){
+ const safeId=String(id).replace(".","_");
  ["mini","full"].forEach(suf=>{
    const pfx=suf==="mini"?"map-rooms-mini":"map-rooms-full";
    document.querySelectorAll("[id^='"+pfx+"-r']").forEach(g=>{
-     const rid=parseInt(g.getAttribute("data-sid")),r=RPOS[rid];if(!r)return;
+     const rid=g.getAttribute("data-sid"),r=RPOS[rid];if(!r)return;
      const rect=g.querySelector("rect");if(!rect)return;
      rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
      rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
      rect.setAttribute("stroke-width","1");rect.removeAttribute("filter");
    });
-   const g=document.getElementById(pfx+"-r"+id);
+   const g=document.getElementById(pfx+"-r"+safeId);
    if(g){const rect=g.querySelector("rect");if(rect){
      rect.setAttribute("fill","#1f1200");rect.setAttribute("stroke","#c9a84c");
      rect.setAttribute("stroke-width","2");
@@ -3492,7 +3723,8 @@ function connect(authMsg){
  ws.onerror=()=>{document.getElementById("lerr").textContent="No se pudo conectar.";ws=null;};
 }
 ["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
-["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
+["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).add
+EventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
 
 /* MSG HANDLER */
 function handle(m){
@@ -3617,7 +3849,14 @@ function renderBag(inv){
  div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
-const SALAS_SVC={6:{h:true,s:true},15:{h:true,s:true},33:{h:true,s:true},39:{h:true,s:false},4:{h:true,s:false}};
+const SALAS_SVC={
+ 0.3:{h:true,s:true},0.4:{h:false,s:false},
+ 4:{h:true,s:false},6:{h:true,s:true},8:{h:true,s:true},
+ 15:{h:true,s:true},17:{h:true,s:false},21:{h:true,s:true},
+ 33:{h:true,s:false},34:{h:true,s:false},37:{h:false,s:false},
+ 38:{h:true,s:false},39:{h:false,s:true},44:{h:true,s:true},
+ 53:{h:true,s:false},58:{h:false,s:true},70:{h:true,s:false}
+};
 function updateServices(sid){
  const sv=SALAS_SVC[sid]||{};
  document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
@@ -3795,11 +4034,14 @@ function setConn(on){document.getElementById("cdot").className=on?"on":"";}
 function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 
-buildMap("map-conn-mini","map-rooms-mini");
-buildMap("map-conn-full","map-rooms-full");
+// Inicializar mapas al cargar
+document.addEventListener("DOMContentLoaded",()=>{
+ buildMap("map-conn-mini","map-rooms-mini");
+ buildMap("map-conn-full","map-rooms-full");
+});
 </script>
 </body>
-</html>"""
+</html>
 
 
 async def http_handler(request: web.Request) -> web.Response:
