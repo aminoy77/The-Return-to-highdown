@@ -6,12 +6,11 @@ server.py — MUD Multiplayer
 - HTTP puerto 8080  → sirve chat.html
 
 Uso:
- pip install websockets
- python3 server.py
+  pip install websockets
+  python3 server.py
 
 Jugar:   python3 client.py <IP>
 Chat UI: http://<IP>:8080/chat.html
-
 """
 
 import asyncio
@@ -23,7 +22,6 @@ from copy import deepcopy
 from enum import Enum
 from aiohttp import web
 import aiohttp
-import traceback
 
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
@@ -63,6 +61,8 @@ async def _sb_upsert(row: dict):
 async def get_leaderboard_async(limit: int = 20) -> list:
     """Ranking global ordenado por nivel desc."""
     if USAR_SUPABASE:
+        # PostgREST: traemos todos y ordenamos en Python
+        # (ordenar por campo JSONB anidado no es directo en PostgREST)
         url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=200"
         try:
             async with aiohttp.ClientSession() as s:
@@ -118,6 +118,7 @@ async def get_leaderboard_async(limit: int = 20) -> list:
 async def broadcast_leaderboard():
     """Envía el leaderboard a todos los jugadores conectados."""
     lb = await get_leaderboard_async()
+    payload = json.dumps({"type": "leaderboard", "ranking": lb})
     for p in jugadores_conectados:
         try:
             await p.ws.send_json({"type": "leaderboard", "ranking": lb})
@@ -125,60 +126,58 @@ async def broadcast_leaderboard():
             pass
 
 # ============================================================
-# DATOS — CLASES COMPLETAS (con imagen)
+# DATOS — CLASES COMPLETAS
 # ============================================================
 CLASES = {
     "guerrero": {
         "vidaMax": 90, "danioBase": 40, "manaMax": 30, "manaTurno": 10,
         "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "golpe_tanque", "imagen": "guerrero.png"
+        "habilidad": "golpe_tanque"
     },
     "mago": {
         "vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 20,
         "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 60,
-        "habilidad": "magia_antigua", "imagen": "mago.png"
+        "habilidad": "magia_antigua"
     },
     "arquero": {
         "vidaMax": 40, "danioBase": 10, "manaMax": 40, "manaTurno": 15,
         "danioEspecial": 10, "ataquesTurno": [1, 4], "costoEspecial": 40,
-        "habilidad": "flecha_ignea", "danioEfecto": 10, "duracionEfecto": 2,
-        "imagen": "arquero.png"
+        "habilidad": "flecha_ignea", "danioEfecto": 10, "duracionEfecto": 2
     },
     "curandero": {
         "vidaMax": 50, "danioBase": 20, "manaMax": 50, "manaTurno": 20,
         "danioEspecial": 20, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "absorcion", "curacionEspecial": 20,
-        "imagen": "curandero.png"
+        "habilidad": "absorcion", "curacionEspecial": 20
     },
     "nigromante": {
         "vidaMax": 50, "danioBase": 10, "manaMax": 80, "manaTurno": 20,
         "danioEspecial": 60, "ataquesTurno": [1, 5], "costoEspecial": 60,
-        "habilidad": "maldicion_tiempo", "imagen": "nigromante.png"
+        "habilidad": "maldicion_tiempo"
     },
     "hechicero": {
         "vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 30,
         "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 70,
-        "habilidad": "invocar_esqueleto", "imagen": "hechicero.png"
+        "habilidad": "invocar_esqueleto"
     },
     "caballero": {
         "vidaMax": 70, "danioBase": 50, "manaMax": 40, "manaTurno": 10,
         "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 40,
-        "habilidad": "embestida", "imagen": "caballero.png"
+        "habilidad": "embestida"
     },
     "cazador": {
         "vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 10,
         "danioEspecial": 30, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "inmovilizar", "imagen": "cazador.png"
+        "habilidad": "inmovilizar"
     },
     "asesino": {
         "vidaMax": 50, "danioBase": 20, "manaMax": 20, "manaTurno": 10,
         "danioEspecial": 60, "ataquesTurno": [1, 3], "costoEspecial": 20,
-        "habilidad": "muerte_garantizada", "imagen": "asesino.png"
+        "habilidad": "muerte_garantizada"
     },
     "barbaro": {
         "vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 5,
         "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "abocajarro", "imagen": "barbaro.png"
+        "habilidad": "abocajarro"
     },
 }
 
@@ -186,6 +185,7 @@ CLASES = {
 # ENEMIGOS COMPLETOS
 # ============================================================
 ENEMIGOS = {
+    # ── Tier Base ──
     "bandido":       {"vidaMax": 60,  "danioBase": 20, "ataquesTurno": 1,      "tier": "Base"},
     "slime":         {"vidaMax": 90,  "danioBase": 5,  "ataquesTurno": 2,      "tier": "Base"},
     "duende":        {"vidaMax": 50,  "danioBase": 15, "ataquesTurno": 2,      "tier": "Base"},
@@ -193,6 +193,7 @@ ENEMIGOS = {
     "zombie":        {"vidaMax": 80,  "danioBase": 10, "ataquesTurno": 1,      "tier": "Base"},
     "lobo":          {"vidaMax": 60,  "danioBase": 15, "ataquesTurno": [1, 2], "tier": "Base"},
     "oso":           {"vidaMax": 75,  "danioBase": 35, "ataquesTurno": 1,      "tier": "Base"},
+    # ── Tier Especial ──
     "orco":          {"vidaMax": 70,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
     "ogro":          {"vidaMax": 90,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
     "troll":         {"vidaMax": 100, "danioBase": 35, "ataquesTurno": 1,      "tier": "Especial"},
@@ -202,14 +203,17 @@ ENEMIGOS = {
     "quimera":       {"vidaMax": 80,  "danioBase": 20, "ataquesTurno": 1,      "tier": "Especial"},
     "demonioInferior":{"vidaMax": 90, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Especial"},
     "tiburon":       {"vidaMax": 80,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
+    # ── Tier Superior ──
     "vampiro":       {"vidaMax": 125, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Superior"},
     "altoOrco":      {"vidaMax": 150, "danioBase": 50, "ataquesTurno": 1,      "tier": "Superior"},
     "golem":         {"vidaMax": 180, "danioBase": 50, "ataquesTurno": 1,      "tier": "Superior"},
     "elfoOscuro":    {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1,      "tier": "Superior"},
     "demonioSuperior":{"vidaMax": 150,"danioBase": 60, "ataquesTurno": 1,      "tier": "Superior"},
+    # ── Tier Elite ──
     "leviatan":      {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
     "reyEsqueleto":  {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
     "dragon":        {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
+    # ── Tier Boss ──
     "reyDemonio":    {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1,      "tier": "Boss"},
     "kraken":        {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1,      "tier": "Boss"},
     "alpha":         {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1,      "tier": "Boss"},
@@ -218,15 +222,9 @@ ENEMIGOS = {
 XP_POR_TIER = {
     "Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250
 }
-
-def xp_para_nivel(nivel_actual: int) -> int:
-    """Calcula XP necesaria para subir del nivel_actual al siguiente."""
-    return 150 + ((nivel_actual - 1) * 20)
-
+XP_POR_NIVEL   = 150
 MONEDAS_SUBIDA = 20
-SALA_INICIAL   = 0.1    # Primera sala donde aparecen los jugadores nuevos
-SALA_OASIS     = 6    # Oasis - solo respawn si ya fue visitado
-SALA_RESPAWN_DEFAULT = 1  # Respawn por defecto si no ha visitado oasis
+SALA_RESPAWN   = 6    # Oasis — sala segura, no hay enemigos
 TIEMPO_RESPAWN = 5
 MAX_JUGADORES  = 5
 
@@ -254,6 +252,11 @@ ALIAS_ITEMS = {
 
 # ============================================================
 # BIOMAS
+# Cada bioma define un pool de enemigos aleatorios.
+# Desierto = fácil (Base/Especial)
+# Mar      = medio (Especial/Superior)
+# Nieve    = difícil (Superior/Elite)
+# Los bosses siempre van como encuentros fijos.
 # ============================================================
 BIOMAS = {
     "desierto": {
@@ -1089,17 +1092,19 @@ SALAS = {
           "encuentros": [("alpha", 1)]}, 
 }
 
+
 # ============================================================
 # ESTADO GLOBAL
 # ============================================================
 jugadores_conectados = []
 combates_activos     = {}
 chat_ws_clients      = set()
-web_sessions         = {}
-grupos               = {}
+web_sessions         = {}   # usuario → websocket (navegadores autenticados)
+grupos               = {}   # grupo_id → Grupo
 
 
 class Grupo:
+    """Grupo de jugadores. El líder es quien lo creó."""
     _id_counter = 0
 
     def __init__(self, lider: "Player"):
@@ -1120,8 +1125,9 @@ class Grupo:
     def quitar(self, player: "Player"):
         if player in self.miembros:
             self.miembros.remove(player)
-            if player == self.lider and self.miembros:
-                self.lider = self.miembros[0]
+        # Si se va el líder, el siguiente pasa a ser líder
+        if player == self.lider and self.miembros:
+            self.lider = self.miembros[0]
 
 
 class EstadoCombate(Enum):
@@ -1144,6 +1150,7 @@ class Combate:
         sala = SALAS.get(sala_id, {})
         self.enemigos = []
 
+        # ── Opción A: bioma aleatorio ──
         if "bioma" in sala:
             bioma_nombre = sala["bioma"]
             cantidad     = sala.get("cantidad", 1)
@@ -1158,8 +1165,9 @@ class Combate:
                         "vida_actual": base["vidaMax"],
                         **base,
                     })
-                return
+            return
 
+        # ── Opción B: encuentros fijos ──
         for tipo, cantidad in sala.get("encuentros", []):
             for i in range(cantidad):
                 base = deepcopy(ENEMIGOS[tipo])
@@ -1183,10 +1191,10 @@ class Player:
     def __init__(self, ws):
         Player._id_counter += 1
         self.id          = Player._id_counter
-        self.ws          = ws
+        self.ws          = ws   # aiohttp WebSocketResponse
         self.nombre      = None
         self.personaje   = None
-        self.sala_id     = SALA_INICIAL
+        self.sala_id     = 1
         self.combate     = None
         self.nivel       = 1
         self.xp          = 0
@@ -1199,9 +1207,8 @@ class Player:
         self.addr        = None
         self.grupo            = None
         self.invitacion_de    = None
-        self.salas_limpias    = set()
-        self.salas_visitadas  = set()
-        self.duelo_pendiente  = None
+        self.salas_limpias    = set()   # salas donde el jugador ya derrotó a los enemigos
+        self.duelo_pendiente  = None    # {"retador": Player, "monedas": int} — duelo recibido pendiente
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
@@ -1220,20 +1227,18 @@ class Player:
         if not self.personaje:
             return
         p = self.personaje
-        imagen_clase = p.get("imagen", f"{p['nombreClase']}.png")
         payload = {
             "type":          "status",
             "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
             "mana":          p["manaActual"],  "manaMax": p["manaMax"],
             "nivel":         self.nivel,       "xp":      self.xp,
-            "xpMax":         xp_para_nivel(self.nivel),  "monedas": self.monedas,
+            "xpMax":         xp_para_subir(self.nivel), "monedas": self.monedas,
             "clase":         p["nombreClase"], "nombre":  self.nombre,
             "sala_id":       self.sala_id,
             "danioBase":     p["danioBase"],
             "ataquesTurno":  p.get("ataquesTurno", 1),
             "costoEspecial": p.get("costoEspecial", 0),
             "inventario":    self.inventario,
-            "imagenClase":   imagen_clase,
         }
         try:
             await self.ws.send_json(payload)
@@ -1256,6 +1261,10 @@ class Player:
             if r.strip():
                 return r.strip()
 
+
+# ============================================================
+# BROADCAST
+# ============================================================
 
 def jugadores_en_sala(sala_id):
     return [p for p in jugadores_conectados if p.sala_id == sala_id]
@@ -1282,7 +1291,15 @@ async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
     chat_ws_clients.difference_update(muertos)
 
 
+async def notify_web_session(player: "Player"):
+    """Empuja stats actualizadas al jugador (mismo WebSocket que usa para jugar)."""
+    if not player.personaje:
+        return
+    await player.send_status()  # reutiliza send_status que ya tiene todo
+
+
 async def broadcast_players_to_web():
+    """Envía la lista de jugadores conectados a todos los dashboards."""
     if not web_sessions:
         return
     players_data = [
@@ -1293,7 +1310,7 @@ async def broadcast_players_to_web():
             "sala_id":     p.sala_id,
             "sala_nombre": SALAS.get(p.sala_id, {}).get("nombre", "?"),
             "muerto":      p.muerto,
-            "grupo_id":    p.grupo.id if p.grupo else None,
+            "grupo_id":    p.grupo.id    if p.grupo else None,
             "grupo_lider": p.grupo.lider.nombre if p.grupo else None,
         }
         for p in jugadores_conectados if p.nombre and p.personaje
@@ -1309,10 +1326,15 @@ async def broadcast_players_to_web():
         web_sessions.pop(u, None)
 
 
+# ============================================================
+# CHAT
+# ============================================================
+
 async def cmd_chat(player: Player, mensaje: str, sala_solo: bool):
     if not mensaje.strip():
         await player.send("  Que quieres decir?")
         return
+    # Límite de seguridad
     mensaje = mensaje[:300]
     if sala_solo:
         texto = f"  [Sala] {player.nombre}: {mensaje}"
@@ -1323,6 +1345,10 @@ async def cmd_chat(player: Player, mensaje: str, sala_solo: bool):
         await broadcast_todos(texto)
         await broadcast_chat_ws("global", player.nombre, mensaje)
 
+
+# ============================================================
+# XP Y NIVELES
+# ============================================================
 
 def xp_de_tier(tier: str) -> int:
     t = tier.upper()
@@ -1339,12 +1365,18 @@ def ataques_por_turno(v):
 def calcular_danio(base):
     return max(1, int(base * random.uniform(0.85, 1.15)))
 
+def xp_para_subir(nivel: int) -> int:
+    """XP necesaria para pasar del nivel dado al siguiente. +20 por nivel."""
+    return 150 + (nivel - 1) * 20
+
+
 async def dar_xp(player: Player, cantidad: int):
     player.xp += cantidad
-    xp_necesaria = xp_para_nivel(player.nivel)
-    await player.send(f"  +{cantidad} XP  ({player.xp}/{xp_necesaria})")
-    while player.xp >= xp_necesaria:
-        player.xp      -= xp_necesaria
+    umbral = xp_para_subir(player.nivel)
+    await player.send(f"  +{cantidad} XP  ({player.xp}/{umbral})")
+    while player.xp >= xp_para_subir(player.nivel):
+        umbral = xp_para_subir(player.nivel)
+        player.xp      -= umbral
         player.nivel   += 1
         player.monedas += MONEDAS_SUBIDA
         p = player.personaje
@@ -1352,40 +1384,42 @@ async def dar_xp(player: Player, cantidad: int):
         p["danioBase"] += 5
         p["manaMax"]   += 5
         p["vidaActual"] = p["vidaMax"]
+        proximo = xp_para_subir(player.nivel)
         await player.send(
             f"\n  ╔══════════════════════════════╗\n"
             f"  ║  SUBISTE AL NIVEL {player.nivel:>2}!        ║\n"
             f"  ║  +{MONEDAS_SUBIDA} monedas  Total:{player.monedas:<5}      ║\n"
             f"  ║  HP:{p['vidaMax']}  Dano:{p['danioBase']}  Mana:{p['manaMax']}   ║\n"
+            f"  ║  Siguiente nivel: {proximo} XP          ║\n"
             f"  ╚══════════════════════════════╝"
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
-        xp_necesaria = xp_para_nivel(player.nivel)
+    await notify_web_session(player)
     asyncio.create_task(broadcast_leaderboard())
 
+
+# ============================================================
+# RESPAWN  — FIX: restaura 50% de vida, no 100%
+# ============================================================
 
 async def respawn(player: Player):
     player.muerto = True
     await player.send(f"  Has muerto. Reapareces en {TIEMPO_RESPAWN}s...")
     await asyncio.sleep(TIEMPO_RESPAWN)
     p = player.personaje
-    p["vidaActual"] = max(1, p["vidaMax"] // 2)
+    p["vidaActual"] = max(1, p["vidaMax"] // 2)   # ← FIX: era p["vidaMax"]
     p["manaActual"] = p["manaMax"]
-    
-    # Determinar sala de respawn: oasis solo si ya fue visitado
-    if SALA_OASIS in player.salas_visitadas:
-        player.sala_id = SALA_OASIS
-        sala_nombre = "Oasis"
-    else:
-        player.sala_id = SALA_RESPAWN_DEFAULT
-        sala_nombre = SALAS.get(SALA_RESPAWN_DEFAULT, {}).get("nombre", "Entrada")
-        await player.send(f"  (No has descubierto el Oasis aún. Reapareciendo en {sala_nombre})")
-    
+    player.sala_id  = SALA_RESPAWN
     player.muerto   = False
-    await player.send(f"  Reapareces en {sala_nombre}. HP:{p['vidaActual']}/{p['vidaMax']}")
-    await broadcast_sala(player.sala_id, f"  {player.nombre} reaparece.", excluir=player)
+    await player.send(f"  Reapareces en sala de entrada. HP:{p['vidaActual']}/{p['vidaMax']}")
+    await broadcast_sala(SALA_RESPAWN, f"  {player.nombre} reaparece.", excluir=player)
+    await notify_web_session(player)
     await describir_sala(player)
 
+
+# ============================================================
+# TIENDA
+# ============================================================
 
 async def cmd_tienda(player: Player):
     items = list(CATALOGO.items())
@@ -1411,7 +1445,7 @@ async def cmd_tienda(player: Player):
         player.monedas -= item["precio"]
         player.inventario[iid] = player.inventario.get(iid, 0) + 1
         await player.send(f"  Compraste {item['emoji']} {item['nombre']}. Quedan {player.monedas}.")
-        await player.send_status()
+        await player.send_status()  # actualizar mochila y monedas en tiempo real
 
 
 async def cmd_mochila(player: Player):
@@ -1483,12 +1517,18 @@ async def usar_item(player: Player, nombre: str, combate=None) -> bool:
     return False
 
 
+# ============================================================
+# SISTEMA DE CUENTAS — guardar / cargar / autenticar
+# ============================================================
+
 def _ruta_cuenta(usuario: str) -> str:
     seguro = "".join(c for c in usuario.lower() if c.isalnum() or c == "_")
     return os.path.join(SAVES_DIR, f"{seguro}.json")
 
 def _hash_password(password: str, salt: str) -> str:
     return hashlib.sha256((salt + password).encode()).hexdigest()
+
+# ── Versiones síncronas (ficheros locales, fallback) ──────────
 
 def _leer_fichero(usuario: str) -> dict | None:
     ruta = _ruta_cuenta(usuario)
@@ -1502,6 +1542,8 @@ def _escribir_fichero(datos: dict):
     ruta = os.path.join(SAVES_DIR, f"{seguro}.json")
     with open(ruta, "w", encoding="utf-8") as f:
         json.dump(datos, f, ensure_ascii=False, indent=2)
+
+# ── API unificada (async, Supabase si disponible) ─────────────
 
 async def cuenta_existe_async(usuario: str) -> bool:
     if USAR_SUPABASE:
@@ -1521,6 +1563,7 @@ async def verificar_password_async(usuario: str, password: str) -> bool:
 async def guardar_cuenta_async(player: "Player"):
     if not player.usuario or not player.personaje:
         return
+    # Leer salt/hash previos
     if USAR_SUPABASE:
         prev = await _sb_get(player.usuario)
     else:
@@ -1551,7 +1594,7 @@ async def guardar_cuenta_async(player: "Player"):
     if USAR_SUPABASE:
         await _sb_upsert(datos)
     else:
-        merged = {**datos, **datos["data"]}
+        merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
         merged["nombre"] = datos["data"]["nombre"]
         _escribir_fichero(merged)
 
@@ -1563,10 +1606,12 @@ async def cargar_cuenta_async(player: "Player", usuario: str):
     if not row:
         raise ValueError(f"Cuenta no encontrada: {usuario}")
 
+    # Supabase guarda en columna "data", fichero local puede ser plano
     datos = row.get("data") or {}
     if not datos:
-        datos = row
+        datos = row  # fallback: fichero plano
 
+    # Si data está vacío (cuenta recién creada sin personaje), usar defaults
     if not datos.get("personaje"):
         raise ValueError(f"Cuenta sin personaje inicializado: {usuario}")
 
@@ -1576,7 +1621,7 @@ async def cargar_cuenta_async(player: "Player", usuario: str):
     player.xp         = datos.get("xp", 0)
     player.monedas    = datos.get("monedas", 0)
     player.inventario = datos.get("inventario", {})
-    player.sala_id    = datos.get("sala_id", SALA_INICIAL)
+    player.sala_id    = datos.get("sala_id", 1)
 
     clase = datos.get("personaje", {}).get("nombreClase", "guerrero")
     base  = deepcopy(CLASES[clase])
@@ -1606,8 +1651,24 @@ async def crear_cuenta_async(usuario: str, password: str):
     else:
         _escribir_fichero({**row, "nombre": usuario})
 
+# ── Alias síncronos para compatibilidad con código existente ──
+# (los llamamos con await en los handlers ya async)
+cuenta_existe      = lambda u: None   # no usar directamente
+verificar_password = lambda u, p: None
+guardar_cuenta     = lambda player: None
+cargar_cuenta      = lambda player, u: None
+crear_cuenta_en_disco = lambda u, p: None
+
+
+# ============================================================
+# FLUJO DE AUTENTICACIÓN
+# ============================================================
 
 async def flujo_auth(player: "Player") -> bool:
+    """
+    Muestra el menú de login/registro.
+    Devuelve True si el jugador quedó autenticado, False si se desconectó.
+    """
     await player.send("=" * 52)
     await player.send("       BIENVENIDO AL MUD MULTIPLAYER")
     await player.send("=" * 52)
@@ -1618,7 +1679,7 @@ async def flujo_auth(player: "Player") -> bool:
             "  2. Iniciar sesion\n"
             "  Elige (1/2): "
         )
-        if opcion == "":
+        if opcion == "":       # desconexión durante auth
             return False
         if opcion in ("1", "2"):
             break
@@ -1631,8 +1692,10 @@ async def flujo_auth(player: "Player") -> bool:
 
 
 async def flujo_registro(player: "Player") -> bool:
+    """Crea una cuenta nueva y construye el personaje."""
     await player.send("\n  --- CREAR CUENTA ---")
 
+    # Usuario
     while True:
         usuario = (await player.send_prompt("  Nombre de usuario: ")).strip()
         if not usuario:
@@ -1645,6 +1708,7 @@ async def flujo_registro(player: "Player") -> bool:
             continue
         break
 
+    # Contraseña
     while True:
         pw1 = (await player.send_prompt("  Contrasena: ")).strip()
         if not pw1:
@@ -1658,10 +1722,12 @@ async def flujo_registro(player: "Player") -> bool:
             continue
         break
 
+    # Nombre visible en el juego
     nombre = (await player.send_prompt("  Como te llamaras en el juego? ")).strip()
     if not nombre:
         nombre = usuario
 
+    # Elegir clase
     lineas = ["\n  CLASES DISPONIBLES:"]
     for i, (clase, s) in enumerate(CLASES.items(), 1):
         atqs = s["ataquesTurno"]
@@ -1682,8 +1748,10 @@ async def flujo_registro(player: "Player") -> bool:
             break
         await player.send("  Clase no encontrada.")
 
+    # Crear cuenta en disco
     await crear_cuenta_async(usuario, pw1)
 
+    # Inicializar player
     player.usuario = usuario
     player.nombre  = nombre
     base = deepcopy(CLASES[clase_elegida])
@@ -1695,6 +1763,7 @@ async def flujo_registro(player: "Player") -> bool:
         **base,
     }
 
+    # Guardar inmediatamente con los datos del personaje
     await guardar_cuenta_async(player)
 
     await player.send(
@@ -1707,6 +1776,7 @@ async def flujo_registro(player: "Player") -> bool:
 
 
 async def flujo_login(player: "Player") -> bool:
+    """Autentica una cuenta existente y carga sus datos."""
     await player.send("\n  --- INICIAR SESION ---")
 
     intentos = 0
@@ -1720,6 +1790,7 @@ async def flujo_login(player: "Player") -> bool:
             intentos += 1
             continue
 
+        # Comprobar si ya está conectado
         ya_conectado = any(
             p.usuario == usuario for p in jugadores_conectados if hasattr(p, "usuario")
         )
@@ -1736,10 +1807,11 @@ async def flujo_login(player: "Player") -> bool:
             intentos += 1
             continue
 
+        # Autenticado — cargar datos
         await cargar_cuenta_async(player, usuario)
         await player.send(
             f"\n  Bienvenido de vuelta, {player.nombre}!\n"
-            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_nivel(player.nivel)}  Monedas:{player.monedas}\n"
+            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}\n"
             f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
             f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
         )
@@ -1749,9 +1821,18 @@ async def flujo_login(player: "Player") -> bool:
     return False
 
 
+# ============================================================
+# SETUP PERSONAJE (ahora solo delega a flujo_auth)
+# ============================================================
+
 async def setup_personaje(player: "Player") -> bool:
+    """Punto de entrada de autenticación. Devuelve True si el jugador está listo."""
     return await flujo_auth(player)
 
+
+# ============================================================
+# SALAS
+# ============================================================
 
 async def describir_sala(player: Player):
     sala = SALAS.get(player.sala_id)
@@ -1767,6 +1848,7 @@ async def describir_sala(player: Player):
         f"  {sala['descripcion']}",
     ]
 
+    # Mostrar bioma si la sala lo tiene
     if "bioma" in sala:
         bioma = BIOMAS.get(sala["bioma"], {})
         lineas.append(f"  {bioma.get('emoji','🌍')} Bioma: {sala['bioma'].capitalize()}  —  {bioma.get('descripcion','')}")
@@ -1775,6 +1857,7 @@ async def describir_sala(player: Player):
         lineas.append(f"  Aqui tambien: {', '.join(otros)}")
     lineas.append(f"  Salidas: {salidas}")
 
+    # Servicios disponibles en la sala
     servicios = []
     if sala.get("tienda"):
         servicios.append("🏪 Tienda (escribe 'tienda')")
@@ -1783,6 +1866,7 @@ async def describir_sala(player: Player):
     if servicios:
         lineas.append(f"  Servicios: {' | '.join(servicios)}")
 
+    # Indicar si hay peligro
     tiene_enemigos = "bioma" in sala or sala.get("encuentros")
     if tiene_enemigos:
         lineas.append("  Hay enemigos aqui. Escribe 'atacar' para combatir.")
@@ -1794,13 +1878,14 @@ async def mover_jugador(player: Player, direccion: str):
     if player.muerto:
         await player.send("  Estas muerto. Espera el respawn.")
         return
-    if getattr(player, 'combate', None) and player.combate and getattr(player.combate, 'estado', None) != EstadoCombate.FINALIZADO:
+    if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
         await player.send("  No puedes huir del combate!")
         return
     sala_actual = SALAS.get(player.sala_id)
     if not sala_actual:
         return
 
+    # ── Bloqueo por monstruos ────────────────────────────────
     tiene_enemigos = "bioma" in sala_actual or bool(sala_actual.get("encuentros"))
     if tiene_enemigos and player.sala_id not in player.salas_limpias:
         await player.send(
@@ -1816,117 +1901,26 @@ async def mover_jugador(player: Player, direccion: str):
         return
     await broadcast_sala(player.sala_id, f"  {player.nombre} se va hacia el {direccion}.", excluir=player)
     player.sala_id = nueva
-    
-    # Registrar sala como visitada
-    player.salas_visitadas.add(nueva)
-    
     await broadcast_sala(player.sala_id, f"  {player.nombre} ha llegado.", excluir=player)
+    await notify_web_session(player)
     await broadcast_players_to_web()
     await describir_sala(player)
 
 
-async def pedir_accion(player: Player, combate: Combate):
-    await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
+# ============================================================
+# COMBATE
+# ============================================================
 
-    while True:
-        raw = await player.recv()
-        if raw is None:
-            combate.acciones[player.id] = "3"
-            return
-
-        accion = raw.strip()
-        if not accion:
-            continue
-
-        if accion.lower().startswith("decir "):
-            await cmd_chat(player, accion[6:], sala_solo=True)
-            continue
-        if accion.lower().startswith("g "):
-            await cmd_chat(player, accion[2:], sala_solo=False)
-            continue
-
-        if accion == "4":
-            tiene_objetos = any(player.inventario.get(k, 0) > 0 for k in CATALOGO.keys())
-            if not tiene_objetos:
-                await player.send("  No tienes objetos en tu inventario.")
-                await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
-                continue
-
-            items_disponibles = []
-            for iid, item in CATALOGO.items():
-                cantidad = player.inventario.get(iid, 0)
-                if cantidad > 0:
-                    items_disponibles.append((iid, item, cantidad))
-
-            lineas = ["\n  📦 SELECCIONA UN OBJETO:"]
-            for idx, (iid, item, cantidad) in enumerate(items_disponibles, 1):
-                lineas.append(f"  {idx}. {item['emoji']} {item['nombre']} (x{cantidad})")
-            lineas.append("  0. Cancelar")
-            await player.send("\n".join(lineas))
-
-            seleccion = await player.send_prompt("  Elige objeto (0 para cancelar): ")
-            if seleccion == "0" or not seleccion.strip():
-                await player.send("  Cancelado. Elige otra acción.")
-                await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
-                continue
-
-            try:
-                idx = int(seleccion) - 1
-                if 0 <= idx < len(items_disponibles):
-                    iid, item, _ = items_disponibles[idx]
-                    usado = await usar_item(player, iid, combate=combate)
-                    if usado:
-                        combate.acciones[player.id] = "4"
-                        await broadcast_sala(combate.sala_id, f" {player.nombre} ha usado un objeto.", excluir=player)
-                        return
-                    else:
-                        await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
-                        continue
-                else:
-                    await player.send("  Opción inválida.")
-                    await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
-                    continue
-            except ValueError:
-                await player.send("  Elige un número válido.")
-                await player.send(" Tu turno! 1-Atacar 2-Especial 3-Pasar 4-Objeto", tipo="prompt")
-                continue
-
-        if accion in ("1", "2", "3"):
-            combate.acciones[player.id] = accion
-            await broadcast_sala(combate.sala_id, f" {player.nombre} ha elegido su accion.", excluir=player)
-            return
-
-        await player.send(" Elige una opcion valida: 1, 2, 3 o 4.")
-
-
-async def iniciar_combate(sala_id: int, jugador_solicitante: Player = None):
+async def iniciar_combate(sala_id: int):
+    if sala_id in combates_activos:
+        return
     sala = SALAS.get(sala_id)
     if not sala:
         return
 
+    # La sala tiene combate si tiene bioma O encuentros no vacíos
     tiene_combate = "bioma" in sala or bool(sala.get("encuentros"))
     if not tiene_combate:
-        return
-
-    # Si ya hay un combate activo, unir al jugador solicitante
-    if sala_id in combates_activos:
-        combate = combates_activos[sala_id]
-        if jugador_solicitante and jugador_solicitante not in combate.jugadores:
-            if combate.estado != EstadoCombate.FINALIZADO:
-                combate.jugadores.append(jugador_solicitante)
-                jugador_solicitante.combate = combate
-                await jugador_solicitante.send("  ¡Te uniste al combate en curso!")
-                await broadcast_sala(sala_id, f"  {jugador_solicitante.nombre} se unió al combate!")
-                
-                enemigos_info = []
-                for e in combate.enemigos:
-                    enemigos_info.append({"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")})
-                try:
-                    await jugador_solicitante.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
-                except Exception:
-                    pass
-            else:
-                await jugador_solicitante.send("  El combate ya ha finalizado. Espera un momento...")
         return
 
     jug = [p for p in jugadores_en_sala(sala_id) if not p.muerto]
@@ -1936,7 +1930,7 @@ async def iniciar_combate(sala_id: int, jugador_solicitante: Player = None):
     combate = Combate(sala_id, jug)
     combate.cargar_enemigos(sala_id)
 
-    if not combate.enemigos:
+    if not combate.enemigos:   # pool vacío (no debería pasar, pero por si acaso)
         return
 
     combates_activos[sala_id] = combate
@@ -1951,6 +1945,7 @@ async def iniciar_combate(sala_id: int, jugador_solicitante: Player = None):
         await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}  [{e.get('tier','?')}]")
         enemigos_info.append({"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")})
 
+    # Enviar popup de combate a todos los jugadores de la sala
     for p in jug:
         try:
             await p.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
@@ -1964,163 +1959,232 @@ async def loop_combate(combate: Combate):
     sala_id = combate.sala_id
 
     while combate.enemigos_vivos() and combate.jugadores_vivos():
-        combate.turno += 1
+        combate.turno   += 1
         combate.acciones = {}
-        combate.estado = EstadoCombate.ESPERANDO_ACCIONES
+        combate.estado   = EstadoCombate.ESPERANDO_ACCIONES
 
+        # Regen mana
         for p in combate.jugadores_vivos():
             p.personaje["manaActual"] = min(
                 p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
                 p.personaje["manaMax"]
             )
 
-        await broadcast_sala(sala_id, f"\n{'-'*52}\n TURNO {combate.turno}\n{'-'*52}")
+        # Mostrar estado del turno
+        await broadcast_sala(sala_id, f"\n{'-'*52}\n  TURNO {combate.turno}\n{'-'*52}")
         for e in combate.enemigos_vivos():
-            await broadcast_sala(sala_id, f" {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
-
+            await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}")
         for p in combate.jugadores_vivos():
             await p.send(
-                f" TU [{p.personaje['nombreClase']}] "
-                f"HP:{p.personaje['vidaActual']}/{p.personaje['vidaMax']} "
+                f"  TU [{p.personaje['nombreClase']}]  "
+                f"HP:{p.personaje['vidaActual']}/{p.personaje['vidaMax']}  "
                 f"Mana:{p.personaje['manaActual']}/{p.personaje['manaMax']}"
             )
 
-        await broadcast_sala(sala_id, " Esperando acciones de todos...")
+        await broadcast_sala(sala_id, "  Esperando acciones de todos...")
 
-        vivos = combate.jugadores_vivos()
+        # Todos los jugadores vivos eligen en paralelo
         await asyncio.gather(*[
             asyncio.create_task(pedir_accion(p, combate))
-            for p in vivos
+            for p in combate.jugadores_vivos()
         ])
 
+        # Resolución
         combate.estado = EstadoCombate.RESOLVIENDO
-        await broadcast_sala(sala_id, "\n --- RESOLUCION ---")
+        await broadcast_sala(sala_id, "\n  --- RESOLUCION ---")
         for p in list(combate.jugadores_vivos()):
-            accion = combate.acciones.get(p.id, "3")
-            await resolver_accion(p, accion, combate)
-        if not combate.enemigos_vivos():
-            break
+            await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
+            if not combate.enemigos_vivos():
+                break
 
+        # Turno enemigos
         if combate.enemigos_vivos() and combate.jugadores_vivos():
             combate.estado = EstadoCombate.TURNO_ENEMIGO
-            await broadcast_sala(sala_id, "\n --- TURNO ENEMIGOS ---")
+            await broadcast_sala(sala_id, "\n  --- TURNO ENEMIGOS ---")
             for e in combate.enemigos_vivos():
                 vivos_jug = combate.jugadores_vivos()
                 if not vivos_jug:
                     break
-
                 obj = random.choice(vivos_jug)
-                num_ataques = ataques_por_turno(e.get("ataquesTurno", 1))
-
-                for _ in range(num_ataques):
+                for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
                     if obj.personaje["vidaActual"] <= 0:
                         break
                     d = calcular_danio(e["danioBase"])
                     obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
                     await broadcast_sala(
                         sala_id,
-                        f" {e['nombre']} golpea a {obj.nombre} -{d} "
+                        f"  {e['nombre']} golpea a {obj.nombre} -{d}  "
                         f"({obj.personaje['vidaActual']}/{obj.personaje['vidaMax']})"
                     )
 
-                for p in combate.jugadores:
-                    if p.personaje["vidaActual"] <= 0 and not p.muerto:
-                        await broadcast_sala(sala_id, f" {p.nombre} ha caido!")
-                        asyncio.create_task(respawn(p))
+        # Detectar muertes
+        for p in combate.jugadores:
+            if p.personaje["vidaActual"] <= 0 and not p.muerto:
+                await broadcast_sala(sala_id, f"  {p.nombre} ha caido!")
+                asyncio.create_task(respawn(p))
 
+        # Actualizar stats en tiempo real (directo, sin create_task para evitar retrasos)
         for p in combate.jugadores:
             await p.send_status()
 
+    # ── FIN DEL COMBATE ──
     combate.estado = EstadoCombate.FINALIZADO
 
+    # Cerrar popup de combate en todos los jugadores
     for p in combate.jugadores:
         try:
             await p.ws.send_json({"type": "combat_end"})
         except Exception:
             pass
 
-    if not combate.jugadores_vivos():
-        await broadcast_sala(sala_id, "\n💀 DERROTA. Todos los jugadores han caído.")
+    if combate.enemigos_vivos():
+        await broadcast_sala(sala_id, "\n  DERROTA.")
     else:
-        await broadcast_sala(sala_id, "\n🏆 ¡VICTORIA!")
-        xp_total = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f"✨ {xp_total} XP para cada superviviente.")
-
+        await broadcast_sala(sala_id, "\n  VICTORIA!")
+        xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
+        await broadcast_sala(sala_id, f"  {xp} XP para cada superviviente.")
         for p in combate.jugadores_vivos():
-            await dar_xp(p, xp_total)
+            await dar_xp(p, xp)
             p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
             p.salas_limpias.add(sala_id)
-            await p.send_status()
+            await p.send_status()   # actualizar HP tras +20
+        await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
+        await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
 
-        await broadcast_sala(sala_id, "❤️ +20 HP a cada superviviente. El camino está despejado.")
-
+    # Limpiar buffs
     for p in combate.jugadores:
-        p.combate = None
         if p.buff_danio:
             p.buff_danio = False
-            await p.send("⚗️ Poción de Daño terminada.")
+            asyncio.create_task(p.send("  Pocion de Danio terminada."))
 
-    if sala_id in combates_activos:
-        del combates_activos[sala_id]
+    del combates_activos[sala_id]
+    for p in combate.jugadores:
+        p.combate = None
+
+
+async def pedir_accion(player: Player, combate: Combate):
+    """
+    Consume del input_queue EXCLUSIVAMENTE.
+    Timeout de 60s por turno — si no responde, pasa turno automáticamente.
+    """
+    if player.personaje["vidaActual"] <= 0:
+        combate.acciones[player.id] = "3"
+        return
+
+    await player.send(
+        "  1-Atacar  2-Especial  3-Pasar  4-Objeto\n"
+        "  decir <msg>  |  g <msg>"
+    )
+
+    deadline = asyncio.get_event_loop().time() + 60  # 60s por turno
+
+    while True:
+        tiempo_restante = max(0.1, deadline - asyncio.get_event_loop().time())
+        try:
+            raw = await asyncio.wait_for(player.recv(), timeout=tiempo_restante)
+        except asyncio.TimeoutError:
+            combate.acciones[player.id] = "3"
+            await player.send("  ⏱ Tiempo agotado — turno pasado automáticamente.")
+            return
+
+        # Desconexión durante combate → pasar turno automáticamente
+        if raw is None:
+            combate.acciones[player.id] = "3"
+            return
+
+        accion = raw.strip()
+        if not accion:
+            continue
+
+        if accion.lower().startswith("decir "):
+            await cmd_chat(player, accion[6:], sala_solo=True)
+            continue
+        if accion.lower().startswith("g "):
+            await cmd_chat(player, accion[2:], sala_solo=False)
+            continue
+        if accion == "4":
+            await cmd_mochila(player)
+            await player.send("  Que objeto usar? (Enter=cancelar, o escribe vida/dano/gema):")
+            try:
+                n = await asyncio.wait_for(player.recv(), timeout=30)
+            except asyncio.TimeoutError:
+                n = None
+            if n and n.strip():
+                await usar_item(player, n.strip(), combate=combate)
+            await player.send("  1-Atacar  2-Especial  3-Pasar  4-Objeto")
+            continue
+        if accion in ("1", "2", "3"):
+            combate.acciones[player.id] = accion
+            await broadcast_sala(combate.sala_id, f"  {player.nombre} ha elegido.", excluir=player)
+            return
+
+        await player.send("  Elige 1, 2, 3 o 4.")
 
 
 async def resolver_accion(player: Player, accion: str, combate: Combate):
-    p = player.personaje
+    sala_id = combate.sala_id
+    vivos   = combate.enemigos_vivos()
+    if not vivos:
+        return
+    obj = vivos[0]
+    p   = player.personaje
 
     if accion == "1":
-        num_ataques = ataques_por_turno(p.get("ataquesTurno", 1))
-        enemigos_vivos = combate.enemigos_vivos()
-        if not enemigos_vivos:
-            return
-
-        for _ in range(num_ataques):
-            if not combate.enemigos_vivos():
+        num = ataques_por_turno(p.get("ataquesTurno", 1))
+        for _ in range(num):
+            if obj["vida_actual"] <= 0:
                 break
-            objetivo = random.choice(combate.enemigos_vivos())
-            danio = calcular_danio(p["danioBase"])
-            if player.buff_danio:
-                danio = int(danio * 1.3)
-            objetivo["vida_actual"] = max(0, objetivo["vida_actual"] - danio)
-            await broadcast_sala(
-                combate.sala_id,
-                f" {player.nombre} ataca a {objetivo['nombre']} -{danio} "
-                f"({objetivo['vida_actual']}/{objetivo['vidaMax']})"
-            )
+            base = calcular_danio(p["danioBase"])
+            d    = int(base * 1.3) if player.buff_danio else base
+            sfx  = " (+30%)" if player.buff_danio else ""
+            obj["vida_actual"] = max(0, obj["vida_actual"] - d)
+            await broadcast_sala(sala_id,
+                f"  {player.nombre} ataca {obj['nombre']} -{d}{sfx}  "
+                f"({obj['vida_actual']}/{obj['vidaMax']})")
 
     elif accion == "2":
         costo = p.get("costoEspecial", 0)
         if p["manaActual"] < costo:
-            await player.send("  Sin mana suficiente. Pasas turno.")
+            await player.send(f"  Sin mana (necesitas {costo}, tienes {p['manaActual']}).")
             return
-
         p["manaActual"] -= costo
-        num_ataques = ataques_por_turno(p.get("ataquesTurno", 1))
-        enemigos_vivos = combate.enemigos_vivos()
-        if not enemigos_vivos:
-            return
+        clase = p["nombreClase"]
 
-        for _ in range(num_ataques):
-            if not combate.enemigos_vivos():
-                break
-            objetivo = random.choice(combate.enemigos_vivos())
-            danio = calcular_danio(p.get("danioEspecial", p["danioBase"]))
-            if player.buff_danio:
-                danio = int(danio * 1.3)
-            objetivo["vida_actual"] = max(0, objetivo["vida_actual"] - danio)
-            await broadcast_sala(
-                combate.sala_id,
-                f" {player.nombre} usa ESPECIAL en {objetivo['nombre']} -{danio} "
-                f"({objetivo['vida_actual']}/{objetivo['vidaMax']})"
-            )
+        if clase == "curandero":
+            cur = p.get("curacionEspecial", 20)
+            p["vidaActual"] = min(p["vidaActual"] + cur, p["vidaMax"])
+            await broadcast_sala(sala_id,
+                f"  {player.nombre} se cura +{cur} HP ({p['vidaActual']}/{p['vidaMax']})")
+        else:
+            base = calcular_danio(p.get("danioEspecial", p["danioBase"]))
+            d    = int(base * 1.3) if player.buff_danio else base
+            sfx  = " (+30%)" if player.buff_danio else ""
+            obj["vida_actual"] = max(0, obj["vida_actual"] - d)
+            nombre_hab = {
+                "guerrero":   "Golpe de Tanque",
+                "mago":       "Magia Antigua",
+                "arquero":    "Flecha Ignea",
+                "nigromante": "Maldicion del Tiempo",
+                "hechicero":  "Invocar Esqueleto",
+                "caballero":  "Embestida",
+                "cazador":    "Inmovilizar",
+                "asesino":    "Muerte Garantizada",
+                "barbaro":    "A Bocajarro",
+            }.get(clase, "Habilidad Especial")
+            await broadcast_sala(sala_id,
+                f"  {player.nombre} usa {nombre_hab} en {obj['nombre']} -{d}{sfx}  "
+                f"({obj['vida_actual']}/{obj['vidaMax']})")
 
     elif accion == "3":
-        await broadcast_sala(combate.sala_id, f" {player.nombre} pasa turno.")
+        await broadcast_sala(sala_id, f"  {player.nombre} pasa el turno.")
 
-    elif accion == "4":
-        pass
 
+# ============================================================
+# COMANDOS
+# ============================================================
 
 async def cmd_hospital(player: Player):
+    """Cura toda la vida y el mana. Solo disponible en salas con hospital."""
     p = player.personaje
     hp_faltaba   = p["vidaMax"]   - p["vidaActual"]
     mana_faltaba = p["manaMax"]   - p["manaActual"]
@@ -2139,19 +2203,27 @@ async def cmd_hospital(player: Player):
         f"  Estas listo para continuar."
     )
     await broadcast_sala(player.sala_id, f"  {player.nombre} sale del hospital completamente curado.", excluir=player)
+    await notify_web_session(player)
 
+
+# ============================================================
+# SISTEMA DE GRUPOS
+# ============================================================
 
 async def broadcast_grupo(grupo: Grupo, texto: str, excluir: Player = None):
+    """Envía un mensaje a todos los miembros del grupo."""
     for p in grupo.miembros:
         if p != excluir:
             await p.send(texto)
 
 
 async def cmd_invitar(player: Player, nombre_objetivo: str):
+    """Invita a otro jugador al grupo."""
     if not nombre_objetivo:
         await player.send("  Uso: invitar <nombre>")
         return
 
+    # Buscar jugador por nombre (case-insensitive)
     objetivo = next(
         (p for p in jugadores_conectados
          if p.nombre and p.nombre.lower() == nombre_objetivo.lower()),
@@ -2159,7 +2231,7 @@ async def cmd_invitar(player: Player, nombre_objetivo: str):
     )
 
     if objetivo is None:
-        await player.send(f"  Jugador '{nombre_objetivo}' no encontrado.")
+        await player.send(f"  Jugador '{nombre_objetivo}' no encontrado. Escribe 'jugadores' para ver quién está conectado.")
         return
 
     if objetivo == player:
@@ -2178,11 +2250,13 @@ async def cmd_invitar(player: Player, nombre_objetivo: str):
         await player.send(f"  {objetivo.nombre} ya pertenece a otro grupo.")
         return
 
+    # Si el que invita no tiene grupo, crea uno
     if player.grupo is None:
         nuevo_grupo = Grupo(player)
         grupos[nuevo_grupo.id] = nuevo_grupo
         player.grupo = nuevo_grupo
 
+    # Guardar invitación pendiente en el objetivo
     objetivo.invitacion_de = player
 
     await player.send(f"  Invitación enviada a {objetivo.nombre}.")
@@ -2193,6 +2267,7 @@ async def cmd_invitar(player: Player, nombre_objetivo: str):
 
 
 async def cmd_aceptar(player: Player):
+    """Acepta la invitación de grupo pendiente."""
     if player.invitacion_de is None:
         await player.send("  No tienes ninguna invitación pendiente.")
         return
@@ -2200,6 +2275,7 @@ async def cmd_aceptar(player: Player):
     invitador = player.invitacion_de
     player.invitacion_de = None
 
+    # Comprobar que el invitador sigue conectado y tiene grupo
     if invitador not in jugadores_conectados:
         await player.send("  El jugador que te invitó ya no está conectado.")
         return
@@ -2221,6 +2297,7 @@ async def cmd_aceptar(player: Player):
 
 
 async def cmd_rechazar(player: Player):
+    """Rechaza la invitación de grupo pendiente."""
     if player.invitacion_de is None:
         await player.send("  No tienes ninguna invitación pendiente.")
         return
@@ -2231,11 +2308,13 @@ async def cmd_rechazar(player: Player):
     await player.send(f"  Has rechazado la invitación de {invitador.nombre}.")
     await invitador.send(f"  {player.nombre} ha rechazado tu invitación.")
 
+    # Si el grupo del invitador quedó solo, disolverlo
     if invitador.grupo and len(invitador.grupo.miembros) <= 1:
         await _disolver_grupo(invitador.grupo)
 
 
 async def cmd_grupo(player: Player):
+    """Muestra la información del grupo actual."""
     if player.grupo is None:
         await player.send("  No perteneces a ningún grupo. Usa 'invitar <nombre>' para crear uno.")
         return
@@ -2254,6 +2333,7 @@ async def cmd_grupo(player: Player):
 
 
 async def cmd_salirgrupo(player: Player):
+    """El jugador abandona su grupo."""
     if player.grupo is None:
         await player.send("  No perteneces a ningún grupo.")
         return
@@ -2266,6 +2346,7 @@ async def cmd_salirgrupo(player: Player):
 
     await player.send("  Has abandonado el grupo.")
 
+    # Si queda un solo miembro, disolver
     if len(grupo.miembros) <= 1:
         await _disolver_grupo(grupo)
     else:
@@ -2278,6 +2359,7 @@ async def cmd_salirgrupo(player: Player):
 
 
 async def cmd_gchat(player: Player, mensaje: str):
+    """Chat de grupo."""
     if player.grupo is None:
         await player.send("  No perteneces a ningún grupo. Usa 'invitar' para crear uno.")
         return
@@ -2289,13 +2371,18 @@ async def cmd_gchat(player: Player, mensaje: str):
 
 
 async def _disolver_grupo(grupo: Grupo):
+    """Disuelve un grupo vacío o de un solo miembro."""
     for m in grupo.miembros:
         m.grupo = None
         await m.send("  El grupo se ha disuelto.")
     grupos.pop(grupo.id, None)
 
+# ============================================================
+# SISTEMA DE DUELOS (PvP)
+# ============================================================
 
 async def cmd_duelo(player: Player, args: str):
+    """duelo <nombre> [monedas] — Reta a otro jugador."""
     partes = args.split()
     if not partes:
         await player.send("  Uso: duelo <nombre> [monedas a apostar]")
@@ -2337,6 +2424,7 @@ async def cmd_duelo(player: Player, args: str):
         f"\n  ⚔ {player.nombre} te reta a duelo{apuesta_txt}.\n"
         f"  Escribe 'aceptar_duelo' o 'rechazar_duelo'."
     )
+    # Popup visual para el retado
     try:
         await objetivo.ws.send_json({
             "type":    "pvp_challenge",
@@ -2386,7 +2474,8 @@ async def cmd_rechazar_duelo(player: Player):
 
 
 async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
-    p1.combate = True
+    """Combate PvP 1v1 entre dos jugadores."""
+    p1.combate = True   # marcador temporal para bloquear otros combates
     p2.combate = True
 
     await p1.send(f"\n{'='*52}\n  ⚔ DUELO: {p1.nombre} vs {p2.nombre}\n{'='*52}")
@@ -2395,6 +2484,7 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
         await p1.send(f"  Apuesta: {monedas_apuesta} 💰 por jugador")
         await p2.send(f"  Apuesta: {monedas_apuesta} 💰 por jugador")
 
+    # Copias de stats para el duelo (no modificamos el personaje original durante el combate)
     hp1 = p1.personaje["vidaActual"]
     hp2 = p2.personaje["vidaActual"]
     turno = 0
@@ -2406,12 +2496,14 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
         await p1.send(f"\n  --- TURNO {turno} ---  TÚ: {hp1} HP  |  {p2.nombre}: {hp2} HP")
         await p2.send(f"\n  --- TURNO {turno} ---  TÚ: {hp2} HP  |  {p1.nombre}: {hp1} HP")
 
+        # Regen mana
         p1.personaje["manaActual"] = min(p1.personaje["manaActual"] + p1.personaje.get("manaTurno", 0), p1.personaje["manaMax"])
         p2.personaje["manaActual"] = min(p2.personaje["manaActual"] + p2.personaje.get("manaTurno", 0), p2.personaje["manaMax"])
 
         await p1.send("  1-Atacar  2-Especial  3-Pasar")
         await p2.send("  1-Atacar  2-Especial  3-Pasar")
 
+        # Ambos eligen en paralelo
         acc1, acc2 = "3", "3"
         async def elegir(p):
             while True:
@@ -2424,6 +2516,7 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
                 await p.send("  Elige 1, 2 o 3.")
         acc1, acc2 = await asyncio.gather(elegir(p1), elegir(p2))
 
+        # Resolver acción de p1 sobre p2
         async def aplicar(atacante, defensor, accion, hp_def):
             p = atacante.personaje
             if accion == "1":
@@ -2451,6 +2544,7 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
         if hp2 > 0:
             hp1 = await aplicar(p2, p1, acc2, hp1)
 
+    # Determinar ganador
     if hp1 <= 0 and hp2 <= 0:
         await p1.send("  ¡Empate!")
         await p2.send("  ¡Empate!")
@@ -2460,9 +2554,11 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
         ganador, perdedor = p2, p1
 
     if ganador:
+        # Pérdida de XP: 15% del XP actual
         xp_perdido = max(10, int(perdedor.xp * 0.15))
         perdedor.xp = max(0, perdedor.xp - xp_perdido)
 
+        # Transferir monedas apostadas
         if monedas_apuesta:
             monedas_reales = min(monedas_apuesta, perdedor.monedas)
             perdedor.monedas  -= monedas_reales
@@ -2480,11 +2576,15 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
         )
         await broadcast_todos(f"  ⚔ {ganador.nombre} derrotó a {perdedor.nombre} en duelo.")
 
+        # Actualizar HP real
         ganador.personaje["vidaActual"]  = max(1, hp1 if ganador == p1 else hp2)
         perdedor.personaje["vidaActual"] = 1
 
-        p1.combate = None
-        p2.combate = None
+    # Liberar marcador de combate
+    p1.combate = None
+    p2.combate = None
+    await notify_web_session(p1)
+    await notify_web_session(p2)
 
 
 async def procesar_comando(player: Player, cmd: str):
@@ -2502,13 +2602,13 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac in ("stats", "estado"):
         p  = player.personaje
-        xf = xp_para_nivel(player.nivel) - player.xp
+        xf = XP_POR_NIVEL - player.xp
         await player.send(
             f"\n  {player.nombre} [{p['nombreClase']}]  Nv.{player.nivel}\n"
             f"  HP:      {p['vidaActual']}/{p['vidaMax']}\n"
             f"  Mana:    {p['manaActual']}/{p['manaMax']}\n"
             f"  Dano:    {p['danioBase']}\n"
-            f"  XP:      {player.xp}/{xp_para_nivel(player.nivel)}  (faltan {xf})\n"
+            f"  XP:      {player.xp}/{XP_POR_NIVEL}  (faltan {xf})\n"
             f"  Monedas: {player.monedas}"
         )
 
@@ -2557,9 +2657,9 @@ async def procesar_comando(player: Player, cmd: str):
         if not tiene_combate:
             await player.send("  No hay enemigos en esta sala.")
         elif player.sala_id in combates_activos:
-            await iniciar_combate(player.sala_id, player)
+            await player.send("  Ya hay un combate en curso aqui.")
         else:
-            await iniciar_combate(player.sala_id, player)
+            await iniciar_combate(player.sala_id)
 
     elif ac in ("decir", "d"):
         await cmd_chat(player, cmd[len(ac):].strip(), sala_solo=True)
@@ -2598,7 +2698,7 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac in ("nivel", "level"):
         await player.send(
-            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_nivel(player.nivel)}  Monedas:{player.monedas}")
+            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}")
 
     elif ac in ("guardar", "save"):
         await guardar_cuenta_async(player)
@@ -2632,8 +2732,7 @@ async def handle_game_ws(ws, usuario: str):
     player.usuario = usuario
 
     if len(jugadores_conectados) >= MAX_JUGADORES:
-        await player.send("Servidor lleno (máx 5 jugadores).")
-        await ws.close()
+        await player.send("Servidor lleno (max 5 jugadores).")
         return
 
     jugadores_conectados.append(player)
@@ -2653,73 +2752,59 @@ async def handle_game_ws(ws, usuario: str):
     rt = asyncio.create_task(reader_task())
 
     try:
-        print(f"[LOGIN] Cargando cuenta para {usuario}...")
-
         await cargar_cuenta_async(player, usuario)
-
-        print(f"[LOGIN] Cuenta cargada OK: {usuario} - Nivel {player.nivel}")
-
+    except ValueError as e:
+        print(f"[GAME] Error cargando cuenta {usuario}: {e}")
+        await player.send(f"  Error cargando tu cuenta: {e}\n  Contacta con el administrador.")
+        jugadores_conectados.remove(player)
+        rt.cancel()
+        return
         await player.send(
             f"\n  Bienvenido de vuelta, {player.nombre}!\n"
-            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_nivel(player.nivel)}  Monedas:{player.monedas}\n"
+            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}\n"
             f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
             f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
         )
-
         await player.send_status()
-
+        # Enviar leaderboard global al conectar
         lb = await get_leaderboard_async()
         try:
             await player.ws.send_json({"type": "leaderboard", "ranking": lb})
-        except:
+        except Exception:
             pass
-
-        await broadcast_todos(f"\n {player.nombre} se unió al dungeon!")
+        await broadcast_todos(f"\n  {player.nombre} se unio al dungeon!")
         await broadcast_players_to_web()
         await describir_sala(player)
 
         while True:
-            if getattr(player, 'combate', None) and player.combate and getattr(player.combate, 'estado', None) != EstadoCombate.FINALIZADO:
+            if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
                 await asyncio.sleep(0.05)
                 continue
-
             raw = await player.recv()
             if raw is None:
                 break
             if not raw.strip():
                 continue
-
             await procesar_comando(player, raw.strip())
 
     except Exception as e:
-        print(f"[GAME ERROR] Usuario {usuario}: {e}")
-        import traceback
-        traceback.print_exc()
-        try:
-            await player.send(f"\n Error al cargar tu cuenta:\n {str(e)}\n\nContacta con el administrador.")
-        except:
-            pass
-
+        print(f"[GAME] Error: {e}")
     finally:
         if player.usuario and player.personaje:
             await guardar_cuenta_async(player)
-
+            print(f"[SAVE] {player.usuario}")
         if player.grupo:
             asyncio.create_task(cmd_salirgrupo(player))
-
-        for p in jugadores_conectados[:]:
+        for p in jugadores_conectados:
             if p.invitacion_de == player:
                 p.invitacion_de = None
-
+                asyncio.create_task(p.send(f"  La invitacion de {player.nombre} expiro."))
         rt.cancel()
-
         if player in jugadores_conectados:
             jugadores_conectados.remove(player)
-
         if player.nombre:
-            await broadcast_todos(f"\n {player.nombre} abandonó el dungeon.")
+            await broadcast_todos(f"\n  {player.nombre} abandono el dungeon.")
             await broadcast_players_to_web()
-
         print(f"[GAME] Desconectado: {usuario}")
 
 
@@ -2736,12 +2821,11 @@ async def handle_dashboard_ws(ws, usuario: str):
         player_online = next((p for p in jugadores_conectados if p.usuario == usuario), None)
         if player_online and player_online.personaje:
             p = player_online.personaje
-            imagen_clase = p.get("imagen", f"{p['nombreClase']}.png")
             stats = {
                 "hp": p["vidaActual"],        "hpMax":         p["vidaMax"],
                 "mana": p["manaActual"],      "manaMax":       p["manaMax"],
                 "nivel": player_online.nivel, "xp":            player_online.xp,
-                "xpMax": xp_para_nivel(player_online.nivel), "monedas":       player_online.monedas,
+                "xpMax": xp_para_subir(player_online.nivel), "monedas": player_online.monedas,
                 "clase": p["nombreClase"],    "nombre":        player_online.nombre,
                 "sala_id": player_online.sala_id,
                 "danioBase": p["danioBase"],
@@ -2749,9 +2833,9 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "costoEspecial": p.get("costoEspecial", 0),
                 "inventario": player_online.inventario,
                 "online": True,
-                "imagenClase": imagen_clase,
             }
         else:
+            # Cargar desde Supabase o fichero local
             if USAR_SUPABASE:
                 row = await _sb_get(usuario)
                 save_raw = row or {}
@@ -2762,20 +2846,18 @@ async def handle_dashboard_ws(ws, usuario: str):
             p_save = save.get("personaje", {})
             clase  = p_save.get("nombreClase", "guerrero")
             base_c = CLASES.get(clase, {})
-            imagen_clase = base_c.get("imagen", f"{clase}.png")
             stats = {
                 "hp": p_save.get("vidaActual", 0),   "hpMax":   p_save.get("vidaMax", 0),
                 "mana": p_save.get("manaActual", 0), "manaMax": p_save.get("manaMax", 0),
                 "nivel": save.get("nivel", 1),        "xp":     save.get("xp", 0),
-                "xpMax": xp_para_nivel(save.get("nivel", 1)), "monedas":save.get("monedas", 0),
+                "xpMax": xp_para_subir(save.get("nivel",1)), "monedas":save.get("monedas", 0),
                 "clase": clase,                        "nombre": save.get("nombre", usuario),
-                "sala_id": save.get("sala_id", SALA_INICIAL),
+                "sala_id": save.get("sala_id", 1),
                 "danioBase": p_save.get("danioBase", 0),
                 "ataquesTurno": base_c.get("ataquesTurno", 1),
                 "costoEspecial": base_c.get("costoEspecial", 0),
                 "inventario": save.get("inventario", {}),
                 "online": False,
-                "imagenClase": imagen_clase,
             }
 
         await ws.send_json({"type": "auth_ok", "stats": stats})
@@ -2823,6 +2905,11 @@ async def handle_dashboard_ws(ws, usuario: str):
 
 
 # ============================================================
+# AIOHTTP HANDLERS
+# ============================================================
+
+
+# ============================================================
 # HTML EMBEBIDO
 # ============================================================
 
@@ -2836,42 +2923,42 @@ def get_html() -> str:
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
- --bg:#0d0d0d;--bg2:#141414;--bg3:#1c1c1c;--bg4:#222;
- --border:#272727;--border2:#333;
- --gold:#c9a84c;--gold2:#e8c55c;
- --green:#43a047;--red:#e53935;--red2:#ff1744;
- --blue:#42a5f5;--mana:#5c6bc0;--purple:#8e44ad;
- --orange:#f39c12;--teal:#00bcd4;
- --text:#d0d0d0;--dim:#4a4a4a;--dim2:#222;
+  --bg:#0d0d0d;--bg2:#141414;--bg3:#1c1c1c;--bg4:#222;
+  --border:#272727;--border2:#333;
+  --gold:#c9a84c;--gold2:#e8c55c;
+  --green:#43a047;--red:#e53935;--red2:#ff1744;
+  --blue:#42a5f5;--mana:#5c6bc0;--purple:#8e44ad;
+  --orange:#f39c12;--teal:#00bcd4;
+  --text:#d0d0d0;--dim:#4a4a4a;--dim2:#222;
 }
 body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
-    height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+     height:100vh;overflow:hidden;display:flex;flex-direction:column;}
 
 /* LOGIN */
 #lo{position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;
-   align-items:center;justify-content:center;z-index:999;}
+    align-items:center;justify-content:center;z-index:999;}
 #lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;
-   padding:28px 36px;text-align:center;min-width:290px;max-width:360px;width:90%;}
+    padding:28px 36px;text-align:center;min-width:290px;max-width:360px;width:90%;}
 #lb h1{color:var(--gold);font-size:17px;margin-bottom:3px;}
 #lb p{color:var(--dim);font-size:10px;margin-bottom:13px;}
 .li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);
-   padding:7px 10px;font-family:monospace;font-size:12px;border-radius:3px;
-   outline:none;margin-bottom:6px;transition:border-color .15s;}
+    padding:7px 10px;font-family:monospace;font-size:12px;border-radius:3px;
+    outline:none;margin-bottom:6px;transition:border-color .15s;}
 .li:focus{border-color:var(--gold);}
 .li::placeholder{color:var(--dim);}
 .abtn{width:100%;background:var(--gold);border:none;color:#000;padding:8px;
-     font-weight:bold;font-size:12px;cursor:pointer;border-radius:3px;font-family:monospace;}
+      font-weight:bold;font-size:12px;cursor:pointer;border-radius:3px;font-family:monospace;}
 .abtn:hover{background:var(--gold2);}
 #lerr{color:var(--red);font-size:10px;margin-top:6px;min-height:14px;}
 .tabs{display:flex;gap:4px;margin-bottom:10px;}
 .tab{flex:1;padding:4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;
-    font-family:monospace;font-size:10px;color:var(--dim);background:var(--bg3);}
+     font-family:monospace;font-size:10px;color:var(--dim);background:var(--bg3);}
 .tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
 #reg-p{display:none;}
 
 /* TOPBAR */
 #topbar{background:var(--bg2);border-bottom:1px solid var(--border);
-       padding:3px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;height:26px;}
+        padding:3px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;height:26px;}
 #tb-title{color:var(--gold);font-weight:bold;font-size:11px;}
 #tb-player{color:var(--text);font-size:10px;}
 #tb-player span{color:var(--gold);}
@@ -2880,58 +2967,35 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 
 /* MAIN GRID */
 #app{flex:1;display:grid;overflow:hidden;
-    grid-template-columns:155px 1fr 195px;
-    grid-template-rows:1fr 38px;
-    gap:1px;background:var(--border);}
+     grid-template-columns:155px 1fr 195px;
+     grid-template-rows:1fr 38px;
+     gap:1px;background:var(--border);}
 
 /* LEFT */
 #left{background:var(--bg2);grid-column:1;grid-row:1;
-     display:flex;flex-direction:column;overflow:hidden;}
+      display:flex;flex-direction:column;overflow:hidden;}
 #stats-pane{padding:7px 8px;overflow-y:auto;flex:1;min-height:0;}
-
-/* Imagen de personaje en stats */
-#char-image{
-    width:80px;
-    height:80px;
-    margin:0 auto 8px;
-    border:2px solid var(--gold);
-    border-radius:50%;
-    background:var(--bg3);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    overflow:hidden;
-}
-#char-image img{
-    width:100%;
-    height:100%;
-    object-fit:cover;
-}
-#char-image .char-emoji{
-    font-size:40px;
-}
-
 .sp-name{font-size:12px;color:var(--gold);font-weight:bold;text-align:center;
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sp-cls{font-size:9px;color:var(--dim);text-align:center;margin-bottom:5px;}
 .sh{color:var(--gold);font-size:9px;text-transform:uppercase;letter-spacing:1px;
-   border-bottom:1px solid var(--border);padding-bottom:2px;margin:5px 0 3px;}
+    border-bottom:1px solid var(--border);padding-bottom:2px;margin:5px 0 3px;}
 .lvr{display:flex;justify-content:space-between;align-items:center;
-    font-size:9px;margin-bottom:3px;}
+     font-size:9px;margin-bottom:3px;}
 .lvb{background:var(--gold);color:#000;padding:1px 5px;border-radius:5px;
-    font-weight:bold;font-size:9px;}
+     font-weight:bold;font-size:9px;}
 .bl{display:flex;justify-content:space-between;font-size:9px;margin-bottom:1px;}
 .bl-n{color:var(--dim);}
 .bw{width:100%;height:8px;background:var(--bg3);border-radius:4px;
-   overflow:hidden;border:1px solid var(--border);margin-bottom:4px;}
+    overflow:hidden;border:1px solid var(--border);margin-bottom:4px;}
 .bf{height:100%;border-radius:4px;transition:width .35s,background .35s;}
 .bf-hp{background:var(--red);}
 .bf-mp{background:var(--mana);}
 .xw{width:100%;height:3px;background:var(--bg3);border-radius:2px;
-   overflow:hidden;margin-bottom:4px;}
+    overflow:hidden;margin-bottom:4px;}
 .bf-xp{background:var(--purple);}
 .sr{display:flex;justify-content:space-between;padding:2px 0;
-   border-bottom:1px solid var(--dim2);font-size:9px;}
+    border-bottom:1px solid var(--dim2);font-size:9px;}
 .sr:last-child{border-bottom:none;}
 .sr-l{color:var(--dim);}
 .sr-v{font-weight:bold;}
@@ -2945,24 +3009,24 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 
 /* Servicios */
 #services-pane{padding:4px 8px;border-top:1px solid var(--border);
-              flex-shrink:0;display:flex;gap:3px;}
+               flex-shrink:0;display:flex;gap:3px;}
 .svc-btn{flex:1;background:var(--bg3);border:1px solid var(--border);
-        color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;
-        border-radius:3px;font-family:monospace;text-align:center;
-        display:none;transition:all .15s;}
+         color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;
+         border-radius:3px;font-family:monospace;text-align:center;
+         display:none;transition:all .15s;}
 .svc-btn.visible{display:block;}
 .svc-btn.hosp{border-color:#1a4a1a;color:var(--green);}
 .svc-btn.shop{border-color:#4a3a0a;color:var(--orange);}
 
 /* CENTER */
 #center{background:var(--bg);grid-column:2;grid-row:1;
-       display:flex;flex-direction:column;overflow:hidden;position:relative;}
+        display:flex;flex-direction:column;overflow:hidden;position:relative;}
 #minimap-btn{position:absolute;top:6px;right:6px;width:85px;height:60px;
-            background:var(--bg2);border:1px solid var(--orange);
-            border-radius:3px;cursor:pointer;z-index:10;overflow:hidden;}
+             background:var(--bg2);border:1px solid var(--orange);
+             border-radius:3px;cursor:pointer;z-index:10;overflow:hidden;}
 #minimap-btn:hover{border-color:var(--gold2);}
 #minimap-label{position:absolute;bottom:2px;left:0;right:0;text-align:center;
-              font-size:7px;color:var(--orange);pointer-events:none;}
+               font-size:7px;color:var(--orange);pointer-events:none;}
 #glog{flex:1;overflow-y:auto;padding:7px 10px;font-size:12px;line-height:1.6;padding-right:96px;}
 #glog::-webkit-scrollbar{width:3px;}
 #glog::-webkit-scrollbar-thumb{background:var(--border);}
@@ -2975,21 +3039,21 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .gi{color:var(--teal);}
 .gs{color:var(--dim);font-style:italic;}
 .gl{color:var(--gold);background:#1a1300;border:1px solid var(--gold);
-   padding:2px 5px;border-radius:2px;display:inline-block;margin:2px 0;}
+    padding:2px 5px;border-radius:2px;display:inline-block;margin:2px 0;}
 
 /* RIGHT */
 #right{background:var(--bg2);grid-column:3;grid-row:1;
-      display:flex;flex-direction:column;overflow:hidden;}
+       display:flex;flex-direction:column;overflow:hidden;}
 
 /* Leaderboard */
 #lb-pane{flex:0 0 auto;max-height:45%;display:flex;flex-direction:column;overflow:hidden;
-        border-bottom:1px solid var(--border);}
+         border-bottom:1px solid var(--border);}
 #lb-hdr{padding:4px 8px;font-size:9px;color:var(--gold);text-transform:uppercase;
-       letter-spacing:1px;flex-shrink:0;border-bottom:1px solid var(--border);}
+        letter-spacing:1px;flex-shrink:0;border-bottom:1px solid var(--border);}
 #lb-list{flex:1;overflow-y:auto;padding:3px;}
 #lb-list::-webkit-scrollbar{width:3px;}
 .lbi{display:flex;align-items:center;gap:4px;padding:2px 4px;
-    border-bottom:1px solid var(--dim2);font-size:9px;}
+     border-bottom:1px solid var(--dim2);font-size:9px;}
 .lbi:last-child{border-bottom:none;}
 .lbi-pos{color:var(--dim);width:14px;flex-shrink:0;text-align:right;}
 .lbi-pos.gold{color:#ffd700;font-weight:bold;}
@@ -3004,7 +3068,7 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 #chat-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #chat-tabs{display:flex;padding:3px 5px;gap:2px;border-bottom:1px solid var(--border);flex-shrink:0;}
 .ctab{flex:1;background:none;border:1px solid var(--border);color:var(--dim);
-     padding:2px 3px;border-radius:2px;cursor:pointer;font-size:9px;font-family:monospace;}
+      padding:2px 3px;border-radius:2px;cursor:pointer;font-size:9px;font-family:monospace;}
 .ctab.cs{background:#0d1f0d;color:var(--green);border-color:var(--green);}
 .ctab.cg{background:#1f1500;color:var(--orange);border-color:var(--orange);}
 .ctab.cgr{background:#0d0d1f;color:var(--mana);border-color:var(--mana);}
@@ -3020,20 +3084,20 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .cn-gr{color:var(--mana);}
 #chat-in-row{display:flex;gap:3px;padding:4px 5px;border-top:1px solid var(--border);flex-shrink:0;}
 #chat-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);
-        padding:3px 6px;font-family:monospace;font-size:10px;border-radius:3px;outline:none;}
+         padding:3px 6px;font-family:monospace;font-size:10px;border-radius:3px;outline:none;}
 #chat-in:focus{border-color:var(--gold);}
 #chat-in:disabled{opacity:.4;}
 #chat-send{background:var(--gold);border:none;color:#000;padding:3px 7px;
-          font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:10px;}
+           font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:10px;}
 #chat-send:disabled{opacity:.4;cursor:default;}
 
 /* BOTTOM CONTROLS */
 #controls{background:var(--bg2);grid-column:1/4;grid-row:2;
-         display:flex;align-items:center;gap:2px;padding:0 6px;
-         border-top:1px solid var(--border);}
+          display:flex;align-items:center;gap:2px;padding:0 6px;
+          border-top:1px solid var(--border);}
 .cb{background:var(--bg3);border:1px solid var(--border);color:var(--dim);
-   padding:3px 6px;font-size:9px;cursor:pointer;border-radius:3px;
-   font-family:monospace;white-space:nowrap;flex-shrink:0;}
+    padding:3px 6px;font-size:9px;cursor:pointer;border-radius:3px;
+    font-family:monospace;white-space:nowrap;flex-shrink:0;}
 .cb:hover{color:var(--text);border-color:var(--gold);}
 .cb.dir{border-color:#1a2a3a;color:var(--blue);}
 .cb.dir:hover{background:#08101a;}
@@ -3046,43 +3110,43 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .cb-sep{width:1px;height:16px;background:var(--border);flex-shrink:0;margin:0 1px;}
 #input-bar{display:flex;gap:2px;flex:1;min-width:0;max-width:220px;margin:0 4px;}
 #cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);
-    padding:3px 7px;font-family:"Courier New",monospace;font-size:11px;
-    border-radius:3px;outline:none;min-width:0;}
+     padding:3px 7px;font-family:"Courier New",monospace;font-size:11px;
+     border-radius:3px;outline:none;min-width:0;}
 #cmd:focus{border-color:var(--gold);}
 #cmd:disabled{opacity:.4;}
 #cmd::placeholder{color:var(--dim);}
 #sbtn{background:var(--gold);border:none;color:#000;padding:3px 7px;
-     font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:11px;}
+      font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:11px;}
 #sbtn:disabled{opacity:.4;cursor:default;}
 
 /* MAP MODAL */
 #map-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
-          z-index:500;align-items:center;justify-content:center;}
+           z-index:500;align-items:center;justify-content:center;}
 #map-modal.open{display:flex;}
 #map-inner{background:var(--bg2);border:1px solid var(--gold);border-radius:6px;
-          padding:10px;position:relative;}
+           padding:10px;position:relative;}
 #map-close{position:absolute;top:5px;right:8px;background:none;border:none;
-          color:var(--dim);font-size:15px;cursor:pointer;font-family:monospace;}
+           color:var(--dim);font-size:15px;cursor:pointer;font-family:monospace;}
 #map-close:hover{color:var(--text);}
 
 /* HELP MODAL */
 #help-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
-           z-index:500;align-items:center;justify-content:center;}
+            z-index:500;align-items:center;justify-content:center;}
 #help-modal.open{display:flex;}
 #help-inner{background:var(--bg2);border:1px solid var(--border);border-radius:6px;
-           padding:14px 18px;max-width:460px;width:90%;max-height:80vh;overflow-y:auto;}
+            padding:14px 18px;max-width:460px;width:90%;max-height:80vh;overflow-y:auto;}
 #help-inner h2{color:var(--gold);font-size:12px;margin-bottom:8px;}
 .hr{display:flex;gap:8px;margin-bottom:4px;font-size:10px;}
 .hk{color:var(--gold);width:150px;flex-shrink:0;}
 .hv{color:var(--text);}
 .hclose{margin-top:10px;background:var(--bg3);border:1px solid var(--border);
-       color:var(--dim);padding:4px 10px;cursor:pointer;border-radius:3px;
-       font-family:monospace;font-size:10px;}
+        color:var(--dim);padding:4px 10px;cursor:pointer;border-radius:3px;
+        font-family:monospace;font-size:10px;}
 
 /* COMBAT POPUP */
 #combat-popup{display:none;position:fixed;bottom:50px;left:50%;transform:translateX(-50%);
-             background:var(--bg2);border:1px solid var(--green);border-radius:6px;
-             padding:10px 14px;z-index:400;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.6);}
+              background:var(--bg2);border:1px solid var(--green);border-radius:6px;
+              padding:10px 14px;z-index:400;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.6);}
 #combat-popup.open{display:block;}
 #cp-title{color:var(--green);font-size:11px;font-weight:bold;margin-bottom:6px;text-align:center;}
 #cp-enemies{font-size:10px;color:var(--text);margin-bottom:8px;}
@@ -3090,7 +3154,7 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .cp-enemy:last-child{border-bottom:none;}
 #cp-btns{display:flex;gap:5px;justify-content:center;}
 .cp-btn{padding:5px 12px;border:none;border-radius:4px;cursor:pointer;
-       font-family:monospace;font-size:11px;font-weight:bold;}
+        font-family:monospace;font-size:11px;font-weight:bold;}
 #cp-atk{background:var(--green);color:#000;}
 #cp-esp{background:var(--mana);color:#fff;}
 #cp-pas{background:var(--bg3);color:var(--dim);border:1px solid var(--border);}
@@ -3098,920 +3162,784 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 
 /* PVP CHALLENGE POPUP */
 #pvp-popup{display:none;position:fixed;top:50%;left:50%;
-          transform:translate(-50%,-50%);
-          background:var(--bg2);border:2px solid var(--red);border-radius:8px;
-          padding:20px 24px;z-index:600;min-width:260px;text-align:center;
-          box-shadow:0 6px 30px rgba(0,0,0,.7);}
+           transform:translate(-50%,-50%);
+           background:var(--bg2);border:2px solid var(--red);border-radius:8px;
+           padding:20px 24px;z-index:600;min-width:260px;text-align:center;
+           box-shadow:0 6px 30px rgba(0,0,0,.7);}
 #pvp-popup.open{display:block;}
 #pvp-title{color:var(--red);font-size:14px;font-weight:bold;margin-bottom:6px;}
 #pvp-info{color:var(--text);font-size:11px;margin-bottom:14px;}
 #pvp-btns{display:flex;gap:8px;justify-content:center;}
 #pvp-accept{background:var(--green);color:#000;border:none;padding:7px 18px;
-           border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
+            border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
 #pvp-reject{background:var(--red);color:#fff;border:none;padding:7px 18px;
-           border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
-
-/* ITEM SELECTION POPUP */
-#item-popup{display:none;position:fixed;top:50%;left:50%;
-           transform:translate(-50%,-50%);
-           background:var(--bg2);border:2px solid var(--orange);border-radius:8px;
-           padding:15px 20px;z-index:550;min-width:250px;max-width:300px;
-           box-shadow:0 6px 30px rgba(0,0,0,.7);}
-#item-popup.open{display:block;}
-#item-title{color:var(--orange);font-size:13px;font-weight:bold;margin-bottom:10px;text-align:center;}
-#item-list{max-height:200px;overflow-y:auto;margin-bottom:10px;}
-.item-row{display:flex;justify-content:space-between;align-items:center;
-         padding:5px 8px;border-bottom:1px solid var(--dim2);cursor:pointer;
-         font-size:10px;transition:background .15s;}
-.item-row:hover{background:var(--bg3);}
-.item-row:last-child{border-bottom:none;}
-.item-name{color:var(--text);}
-.item-count{color:var(--dim);}
-.item-cancel{text-align:center;padding:8px;color:var(--dim);cursor:pointer;
-            font-size:10px;border-top:1px solid var(--border);margin-top:5px;}
-.item-cancel:hover{color:var(--text);}
-
-/* Botón de Bug - siempre visible */
-#bug-btn{
-    position:fixed;
-    bottom:45px;
-    right:6px;
-    width:32px;
-    height:32px;
-    background:var(--red);
-    border:2px solid #5a1a1a;
-    border-radius:50%;
-    color:#fff;
-    font-size:16px;
-    cursor:pointer;
-    z-index:1000;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    box-shadow:0 2px 8px rgba(0,0,0,.5);
-    transition:transform .15s,background .15s;
-}
-#bug-btn:hover{
-    transform:scale(1.1);
-    background:var(--red2);
-}
+            border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
 </style>
 </head>
 <body>
 
 <!-- LOGIN -->
 <div id="lo">
- <div id="lb">
-   <h1>⚔ The Return to Highdown</h1>
-   <p>MUD Multiplayer</p>
-   <div class="tabs">
-     <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
-     <button class="tab" onclick="showTab('register')">Crear cuenta</button>
-   </div>
-   <div id="login-p">
-     <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
-     <input class="li" id="lp" type="password" placeholder="Contraseña">
-     <button class="abtn" onclick="doLogin()">ENTRAR</button>
-   </div>
-   <div id="reg-p">
-     <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 chars)" autocomplete="off">
-     <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 chars)">
-     <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
-     <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
-     <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
-   </div>
-   <div id="lerr"></div>
- </div>
+  <div id="lb">
+    <h1>⚔ The Return to Highdown</h1>
+    <p>MUD Multiplayer</p>
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
+      <button class="tab" onclick="showTab('register')">Crear cuenta</button>
+    </div>
+    <div id="login-p">
+      <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
+      <input class="li" id="lp" type="password" placeholder="Contraseña">
+      <button class="abtn" onclick="doLogin()">ENTRAR</button>
+    </div>
+    <div id="reg-p">
+      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 chars)" autocomplete="off">
+      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 chars)">
+      <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
+      <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
+      <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
+    </div>
+    <div id="lerr"></div>
+  </div>
 </div>
 
 <!-- MAP MODAL -->
 <div id="map-modal" onclick="if(event.target===this)closeMapBtn()">
- <div id="map-inner">
-   <button id="map-close" onclick="closeMapBtn()">✕</button>
-   <svg id="map-svg-full" viewBox="0 0 800 900" width="760" height="860" xmlns="http://www.w3.org/2000/svg">
-     <defs><filter id="glowf"><feGaussianBlur stdDeviation="4" result="b"/>
-       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-     
-     <!-- FONDO POR BIOMAS -->
-     <!-- NIEVE (73-148) - Arriba -->
-     <rect x="10" y="10" width="780" height="280" rx="5" fill="#080f14" stroke="#1a3a4a" stroke-width="1"/>
-     <text x="20" y="25" fill="#4a6a7a" font-size="10" font-family="monospace">❄️ NIEVE (Salas 73-148)</text>
-     
-     <!-- MAR (33-72) - Centro -->
-     <rect x="10" y="300" width="780" height="280" rx="5" fill="#060814" stroke="#1a2a4a" stroke-width="1"/>
-     <text x="20" y="315" fill="#1565c0" font-size="10" font-family="monospace">🌊 MAR (Salas 33-72)</text>
-     
-     <!-- OASIS (6) -->
-     <rect x="360" y="590" width="80" height="40" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
-     <text x="400" y="615" fill="#2e7d32" font-size="8" font-family="monospace" text-anchor="middle">🌴 OASIS</text>
-     
-     <!-- DESIERTO (1-32) - Abajo -->
-     <rect x="10" y="640" width="780" height="250" rx="5" fill="#100800" stroke="#302000" stroke-width="1"/>
-     <text x="20" y="655" fill="#8b6914" font-size="10" font-family="monospace">🏜️ DESIERTO (Salas 1-32)</text>
-     
-     <!-- TUTORIAL (0.1-0.4) -->
-     <rect x="650" y="590" width="140" height="40" rx="3" fill="#0d0d0d" stroke="#444" stroke-width="1"/>
-     <text x="720" y="615" fill="#888" font-size="8" font-family="monospace" text-anchor="middle">📚 TUTORIAL</text>
-     
-     <g id="map-conn-full"></g>
-     <g id="map-rooms-full"></g>
-   </svg>
- </div>
+  <div id="map-inner">
+    <button id="map-close" onclick="closeMapBtn()">✕</button>
+    <svg id="map-svg-full" viewBox="0 0 820 910" width="740" height="820" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="glowf"><feGaussianBlur stdDeviation="4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <!-- NIEVE -->
+      <rect x="5" y="5" width="810" height="310" rx="5" fill="#06090f" stroke="#1a3a4a" stroke-width="1"/>
+      <text x="14" y="20" fill="#4a6a7a" font-size="9" font-family="monospace">❄ NIEVE (73–148)</text>
+      <!-- MAR -->
+      <rect x="5" y="320" width="810" height="280" rx="5" fill="#06060f" stroke="#1a2a4a" stroke-width="1"/>
+      <text x="14" y="335" fill="#1565c0" font-size="9" font-family="monospace">🌊 MAR (33–72)</text>
+      <!-- OASIS -->
+      <rect x="360" y="608" width="80" height="38" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
+      <text x="400" y="631" fill="#2e7d32" font-size="8" font-family="monospace" text-anchor="middle">🌴 OASIS</text>
+      <!-- TUTORIAL -->
+      <rect x="650" y="608" width="160" height="38" rx="3" fill="#0d0d0d" stroke="#444" stroke-width="1"/>
+      <text x="730" y="631" fill="#888" font-size="8" font-family="monospace" text-anchor="middle">📚 TUTORIAL</text>
+      <!-- DESIERTO -->
+      <rect x="5" y="650" width="810" height="255" rx="5" fill="#0f0700" stroke="#302000" stroke-width="1"/>
+      <text x="14" y="666" fill="#8b6914" font-size="9" font-family="monospace">🏜 DESIERTO (1–32)</text>
+      <g id="map-conn-full"></g><g id="map-rooms-full"></g>
+    </svg>
+  </div>
 </div>
 
 <!-- HELP MODAL -->
 <div id="help-modal" onclick="if(event.target===this)closeHelpBtn()">
- <div id="help-inner">
-   <h2>❓ Comandos</h2>
-   <div class="hr"><span class="hk">n / s / e / o</span><span class="hv">Moverse</span></div>
-   <div class="hr"><span class="hk">atacar</span><span class="hv">Iniciar combate</span></div>
-   <div class="hr"><span class="hk">1/2/3/4</span><span class="hv">Combate: Atacar/Especial/Pasar/Objeto</span></div>
-   <div class="hr"><span class="hk">mirar</span><span class="hv">Describir sala actual</span></div>
-   <div class="hr"><span class="hk">stats</span><span class="hv">Ver estadísticas</span></div>
-   <div class="hr"><span class="hk">tienda / hospital</span><span class="hv">Servicios (si disponibles)</span></div>
-   <div class="hr"><span class="hk">mochila</span><span class="hv">Ver inventario</span></div>
-   <div class="hr"><span class="hk">usar vida/dano/gema</span><span class="hv">Usar objeto</span></div>
-   <div class="hr"><span class="hk">invitar &lt;nombre&gt;</span><span class="hv">Invitar a grupo</span></div>
-   <div class="hr"><span class="hk">aceptar / rechazar</span><span class="hv">Responder invitación</span></div>
-   <div class="hr"><span class="hk">grupo / salirgrupo</span><span class="hv">Ver/Abandonar grupo</span></div>
-   <div class="hr"><span class="hk">duelo &lt;nombre&gt; [monedas]</span><span class="hv">Retar a PvP</span></div>
-   <div class="hr"><span class="hk">guardar</span><span class="hv">Guardar progreso</span></div>
-   <button class="hclose" onclick="closeHelpBtn()">Cerrar</button>
- </div>
+  <div id="help-inner">
+    <h2>❓ Comandos</h2>
+    <div class="hr"><span class="hk">n / s / e / o</span><span class="hv">Moverse</span></div>
+    <div class="hr"><span class="hk">atacar</span><span class="hv">Iniciar combate</span></div>
+    <div class="hr"><span class="hk">1/2/3/4</span><span class="hv">Combate: Atacar/Especial/Pasar/Objeto</span></div>
+    <div class="hr"><span class="hk">mirar</span><span class="hv">Describir sala actual</span></div>
+    <div class="hr"><span class="hk">stats</span><span class="hv">Ver estadísticas</span></div>
+    <div class="hr"><span class="hk">tienda / hospital</span><span class="hv">Servicios (si disponibles)</span></div>
+    <div class="hr"><span class="hk">mochila</span><span class="hv">Ver inventario</span></div>
+    <div class="hr"><span class="hk">usar vida/dano/gema</span><span class="hv">Usar objeto</span></div>
+    <div class="hr"><span class="hk">invitar &lt;nombre&gt;</span><span class="hv">Invitar a grupo</span></div>
+    <div class="hr"><span class="hk">aceptar / rechazar</span><span class="hv">Responder invitación</span></div>
+    <div class="hr"><span class="hk">grupo / salirgrupo</span><span class="hv">Ver/Abandonar grupo</span></div>
+    <div class="hr"><span class="hk">duelo &lt;nombre&gt; [monedas]</span><span class="hv">Retar a PvP</span></div>
+    <div class="hr"><span class="hk">guardar</span><span class="hv">Guardar progreso</span></div>
+    <button class="hclose" onclick="closeHelpBtn()">Cerrar</button>
+  </div>
 </div>
 
 <!-- COMBAT POPUP -->
 <div id="combat-popup">
- <div id="cp-title">⚔ COMBATE EN CURSO</div>
- <div id="cp-enemies"></div>
- <div id="cp-btns">
-   <button class="cp-btn" id="cp-atk" onclick="send('1')">① Atacar</button>
-   <button class="cp-btn" id="cp-esp" onclick="send('2')">② Especial</button>
-   <button class="cp-btn" id="cp-pas" onclick="send('3')">③ Pasar</button>
-   <button class="cp-btn" id="cp-obj" onclick="openItemPopup()">④ Objeto</button>
- </div>
-</div>
-
-<!-- ITEM SELECTION POPUP -->
-<div id="item-popup">
- <div id="item-title">📦 Seleccionar Objeto</div>
- <div id="item-list"></div>
- <div class="item-cancel" onclick="closeItemPopup()">Cancelar (volver al combate)</div>
+  <div id="cp-title">⚔ COMBATE EN CURSO</div>
+  <div id="cp-enemies"></div>
+  <div id="cp-btns">
+    <button class="cp-btn" id="cp-atk" onclick="send('1')">① Atacar</button>
+    <button class="cp-btn" id="cp-esp" onclick="send('2')">② Especial</button>
+    <button class="cp-btn" id="cp-pas" onclick="send('3')">③ Pasar</button>
+    <button class="cp-btn" id="cp-obj" onclick="send('4')">④ Objeto</button>
+  </div>
 </div>
 
 <!-- PVP CHALLENGE POPUP -->
 <div id="pvp-popup">
- <div id="pvp-title">⚔ RETO A DUELO</div>
- <div id="pvp-info"></div>
- <div id="pvp-btns">
-   <button id="pvp-accept" onclick="acceptDuelo()">✓ Aceptar</button>
-   <button id="pvp-reject" onclick="rejectDuelo()">✗ Rechazar</button>
- </div>
+  <div id="pvp-title">⚔ RETO A DUELO</div>
+  <div id="pvp-info"></div>
+  <div id="pvp-btns">
+    <button id="pvp-accept" onclick="acceptDuelo()">✓ Aceptar</button>
+    <button id="pvp-reject" onclick="rejectDuelo()">✗ Rechazar</button>
+  </div>
 </div>
 
 <!-- TOPBAR -->
 <div id="topbar">
- <div id="tb-title">⚔ MUD</div>
- <div id="tb-player">—</div>
- <div id="cdot"></div>
+  <div id="tb-title">⚔ MUD</div>
+  <div id="tb-player">—</div>
+  <div id="cdot"></div>
 </div>
 
 <!-- APP GRID -->
 <div id="app">
 
- <!-- LEFT -->
- <div id="left">
-   <div id="stats-pane">
-     <div id="char-image">
-       <span class="char-emoji">⚔️</span>
-     </div>
-     <div class="sp-name" id="s-nm">—</div>
-     <div class="sp-cls"  id="s-cl">—</div>
-     <div>
-       <div class="lvr">
-         <span style="color:var(--dim);font-size:9px">Nivel</span>
-         <span class="lvb" id="s-nv">1</span>
-       </div>
-       <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
-       <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
-     </div>
-     <div class="sh">Vida &amp; Mana</div>
-     <div>
-       <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
-       <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
-       <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
-       <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
-     </div>
-     <div class="sh">Combate</div>
-     <div>
-       <div class="sr"><span class="sr-l">Daño</span><span class="sr-v" id="s-dmg">—</span></div>
-       <div class="sr"><span class="sr-l">Ataques</span><span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
-       <div class="sr"><span class="sr-l">Especial</span><span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
-     </div>
-   </div>
-   <div id="bag-pane">
-     <div class="bag-title">🎒 Mochila</div>
-     <div class="bag-coins" id="bag-coins">0 💰</div>
-     <div id="bag-items"><div class="bag-empty">Vacía</div></div>
-   </div>
-   <div id="services-pane">
-     <button class="svc-btn hosp" id="btn-hosp" onclick="send('hospital')">🏥 Hospital</button>
-     <button class="svc-btn shop" id="btn-shop" onclick="send('tienda')">🏪 Tienda</button>
-   </div>
- </div>
+  <!-- LEFT -->
+  <div id="left">
+    <div id="stats-pane">
+      <div class="sp-name" id="s-nm">—</div>
+      <div class="sp-cls"  id="s-cl">—</div>
+      <div>
+        <div class="lvr">
+          <span style="color:var(--dim);font-size:9px">Nivel</span>
+          <span class="lvb" id="s-nv">1</span>
+        </div>
+        <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
+        <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
+      </div>
+      <div class="sh">Vida &amp; Mana</div>
+      <div>
+        <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
+        <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
+        <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
+        <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
+      </div>
+      <div class="sh">Combate</div>
+      <div>
+        <div class="sr"><span class="sr-l">Daño</span><span class="sr-v" id="s-dmg">—</span></div>
+        <div class="sr"><span class="sr-l">Ataques</span><span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
+        <div class="sr"><span class="sr-l">Especial</span><span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
+      </div>
+    </div>
+    <div id="bag-pane">
+      <div class="bag-title">🎒 Mochila</div>
+      <div class="bag-coins" id="bag-coins">0 💰</div>
+      <div id="bag-items"><div class="bag-empty">Vacía</div></div>
+    </div>
+    <div id="services-pane">
+      <button class="svc-btn hosp" id="btn-hosp" onclick="send('hospital')">🏥 Hospital</button>
+      <button class="svc-btn shop" id="btn-shop" onclick="send('tienda')">🏪 Tienda</button>
+    </div>
+  </div>
 
- <!-- CENTER -->
- <div id="center">
-   <div id="minimap-btn" onclick="openMap()" title="Clic para ampliar">
-     <svg id="map-svg-mini" viewBox="0 0 800 900" xmlns="http://www.w3.org/2000/svg">
-       <rect x="10" y="10" width="780" height="280" rx="4" fill="#080f14" stroke="#1a3a4a" stroke-width="2"/>
-       <rect x="10" y="300" width="780" height="280" rx="4" fill="#060814" stroke="#1a2a4a" stroke-width="2"/>
-       <rect x="360" y="590" width="80" height="40" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
-       <rect x="10" y="640" width="780" height="250" rx="4" fill="#100800" stroke="#302000" stroke-width="2"/>
-       <rect x="650" y="590" width="140" height="40" rx="3" fill="#0d0d0d" stroke="#444" stroke-width="1"/>
-       <g id="map-conn-mini"></g>
-       <g id="map-rooms-mini"></g>
-     </svg>
-     <div id="minimap-label">🗺 MAPA</div>
-   </div>
-   <div id="glog"></div>
- </div>
+  <!-- CENTER -->
+  <div id="center">
+    <div id="minimap-btn" onclick="openMap()" title="Clic para ampliar">
+      <svg id="map-svg-mini" viewBox="0 0 820 910" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="5"   width="810" height="310" rx="4" fill="#06090f" stroke="#1a3a4a" stroke-width="1"/>
+        <rect x="5" y="320" width="810" height="280" rx="4" fill="#06060f" stroke="#1a2a4a" stroke-width="1"/>
+        <rect x="360" y="608" width="80"  height="38" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
+        <rect x="650" y="608" width="160" height="38" rx="3" fill="#0d0d0d" stroke="#444"    stroke-width="1"/>
+        <rect x="5" y="650" width="810" height="255" rx="4" fill="#0f0700" stroke="#302000" stroke-width="1"/>
+        <g id="map-conn-mini"></g><g id="map-rooms-mini"></g>
+      </svg>
+      <div id="minimap-label">🗺 MAPA</div>
+    </div>
+    <div id="glog"></div>
+  </div>
 
- <!-- RIGHT -->
- <div id="right">
-   <div id="lb-pane">
-     <div id="lb-hdr">🏆 Ranking Global</div>
-     <div id="lb-list"><div style="color:var(--dim);font-size:9px;padding:5px">Cargando...</div></div>
-   </div>
-   <div id="chat-pane">
-     <div id="chat-tabs">
-       <button class="ctab cs" id="ct-sala"   onclick="setChatTab('sala')">Sala</button>
-       <button class="ctab"    id="ct-global" onclick="setChatTab('global')">Global</button>
-       <button class="ctab"    id="ct-grupo"  onclick="setChatTab('grupo')">Grupo</button>
-     </div>
-     <div id="chat-log"></div>
-     <div id="chat-in-row">
-       <input id="chat-in" type="text" placeholder="Mensaje..." disabled
-              onkeydown="if(event.key==='Enter')sendChat()">
-       <button id="chat-send" onclick="sendChat()" disabled>↵</button>
-     </div>
-   </div>
- </div>
+  <!-- RIGHT -->
+  <div id="right">
+    <div id="lb-pane">
+      <div id="lb-hdr">🏆 Ranking Global</div>
+      <div id="lb-list"><div style="color:var(--dim);font-size:9px;padding:5px">Cargando...</div></div>
+    </div>
+    <div id="chat-pane">
+      <div id="chat-tabs">
+        <button class="ctab cs" id="ct-sala"   onclick="setChatTab('sala')">Sala</button>
+        <button class="ctab"    id="ct-global" onclick="setChatTab('global')">Global</button>
+        <button class="ctab"    id="ct-grupo"  onclick="setChatTab('grupo')">Grupo</button>
+      </div>
+      <div id="chat-log"></div>
+      <div id="chat-in-row">
+        <input id="chat-in" type="text" placeholder="Mensaje..." disabled
+               onkeydown="if(event.key==='Enter')sendChat()">
+        <button id="chat-send" onclick="sendChat()" disabled>↵</button>
+      </div>
+    </div>
+  </div>
 
- <!-- CONTROLS -->
- <div id="controls">
-   <button class="cb dir" onclick="send('n')">N</button>
-   <button class="cb dir" onclick="send('s')">S</button>
-   <button class="cb dir" onclick="send('e')">E</button>
-   <button class="cb dir" onclick="send('o')">O</button>
-   <div class="cb-sep"></div>
-   <button class="cb atk" onclick="send('atacar')">⚔ Atacar</button>
-   <div class="cb-sep"></div>
-   <button class="cb pvp" onclick="promptDuelo()">☠ Duelo</button>
-   <div class="cb-sep"></div>
-   <button class="cb" onclick="send('mirar')">👁</button>
-   <button class="cb" onclick="send('guardar')">💾</button>
-   <button class="cb" onclick="send('stats')">📊</button>
-   <div id="input-bar">
-     <input id="cmd" type="text" placeholder="Comando..." disabled
-            autocomplete="off" spellcheck="false"
-            onkeydown="if(event.key==='Enter')doSend()">
-     <button id="sbtn" onclick="doSend()" disabled>↵</button>
-   </div>
-   <button class="cb gold-btn" onclick="openHelp()">❓</button>
- </div>
+  <!-- CONTROLS -->
+  <div id="controls">
+    <button class="cb dir" onclick="send('n')">N</button>
+    <button class="cb dir" onclick="send('s')">S</button>
+    <button class="cb dir" onclick="send('e')">E</button>
+    <button class="cb dir" onclick="send('o')">O</button>
+    <div class="cb-sep"></div>
+    <button class="cb atk" onclick="send('atacar')">⚔ Atacar</button>
+    <div class="cb-sep"></div>
+    <button class="cb pvp" onclick="promptDuelo()">☠ Duelo</button>
+    <div class="cb-sep"></div>
+    <button class="cb" onclick="send('mirar')">👁</button>
+    <button class="cb" onclick="send('guardar')">💾</button>
+    <button class="cb" onclick="send('stats')">📊</button>
+    <div id="input-bar">
+      <input id="cmd" type="text" placeholder="Comando..." disabled
+             autocomplete="off" spellcheck="false"
+             onkeydown="if(event.key==='Enter')doSend()">
+      <button id="sbtn" onclick="doSend()" disabled>↵</button>
+    </div>
+    <button class="cb gold-btn" onclick="openHelp()">❓</button>
+  </div>
 
 </div>
 
-<!-- BOTÓN BUG - SIEMPRE VISIBLE -->
-<button id="bug-btn" onclick="resetGame()" title="Reiniciar juego (emergencia)">🐛</button>
-
 <script>
-/* MAP DATA - Todas las salas del juego */
+/* MAP */
+/* MAP DATA — 148 salas (Tutorial + Desierto + Mar + Nieve) */
 const RPOS={
- // TUTORIAL (0.1 - 0.4)
- "0.1":{x:720,y:610,n:"Tutorial: Como combatir",b:"tutorial"},
- "0.2":{x:680,y:610,n:"Tutorial: Objetos",b:"tutorial"},
- "0.3":{x:720,y:570,n:"Tutorial: Estructuras",b:"tutorial"},
- "0.4":{x:760,y:570,n:"Tutorial: UI",b:"tutorial"},
- 
- // DESIERTO - Zona Sur (1-32)
- 1:{x:100,y:860,n:"North Mass",b:"desierto"},
- 2:{x:100,y:820,n:"Dunas del Norte",b:"desierto"},
- 3:{x:140,y:780,n:"Ruinas del Desierto",b:"desierto"},
- 4:{x:60,y:780,n:"Ciudad abrasada",b:"desierto",boss:true},
- 5:{x:180,y:740,n:"Valle muerto",b:"desierto"},
- 6:{x:400,y:610,n:"Oasis",b:"safe"},
- 7:{x:360,y:780,n:"Sala del Viento",b:"desierto"},
- 8:{x:320,y:820,n:"Camara del Oasis",b:"desierto"},
- 9:{x:360,y:820,n:"Salon del Sol",b:"desierto"},
- 10:{x:400,y:780,n:"Cripta de las Dunas",b:"desierto"},
- 11:{x:440,y:820,n:"Caravana fantasma",b:"desierto"},
- 12:{x:480,y:780,n:"Fosa de Titanes",b:"desierto"},
- 13:{x:520,y:740,n:"Altar del Soberano",b:"desierto",boss:true},
- 14:{x:560,y:780,n:"Extension de Azhar",b:"desierto"},
- 15:{x:600,y:740,n:"Mar de Dunas",b:"desierto"},
- 16:{x:640,y:780,n:"Vestigios Enterrados",b:"desierto"},
- 17:{x:680,y:740,n:"Santuario Carmesi",b:"desierto"},
- 18:{x:720,y:780,n:"Sepulcro de Colosos",b:"desierto"},
- 19:{x:760,y:740,n:"Trono del Abismo",b:"desierto"},
- 20:{x:100,y:700,n:"Llanura de Fuego Blanco",b:"desierto"},
- 21:{x:140,y:660,n:"Dunas del Murmullo",b:"desierto"},
- 22:{x:180,y:700,n:"Columnas del Olvido",b:"desierto"},
- 23:{x:220,y:660,n:"Templo de Sangre",b:"desierto"},
- 24:{x:260,y:700,n:"Abismo de los Caidos",b:"desierto"},
- 25:{x:300,y:660,n:"Trono del Devastador",b:"desierto",boss:true},
- 26:{x:340,y:700,n:"Horizonte Quebrado",b:"desierto"},
- 27:{x:380,y:660,n:"Dunas del Hambre",b:"desierto"},
- 28:{x:420,y:700,n:"Ruinas del Eco Silente",b:"desierto"},
- 29:{x:460,y:660,n:"Santuario de la Marca",b:"desierto"},
- 30:{x:500,y:700,n:"Campos de Huesos",b:"desierto"},
- 31:{x:540,y:660,n:"Trono del Ultimo Señor",b:"desierto",boss:true},
- 32:{x:580,y:700,n:"Falla de los Antiguos",b:"desierto"},
- 
- // MAR - Zona Centro (33-72)
- 33:{x:100,y:540,n:"Embarcadero 1",b:"mar"},
- 34:{x:140,y:500,n:"Abismo Coralino",b:"mar"},
- 35:{x:180,y:540,n:"Trono del Oceano",b:"mar",boss:true},
- 36:{x:220,y:500,n:"Cripta de las Algas",b:"mar"},
- 37:{x:260,y:540,n:"Embarcadero 2",b:"mar"},
- 38:{x:300,y:500,n:"Fosa de Sombras",b:"mar"},
- 39:{x:340,y:540,n:"Arrecife Susurrante",b:"mar"},
- 40:{x:380,y:500,n:"Caverna de la Bruma",b:"mar"},
- 41:{x:420,y:540,n:"Templo de las Olas",b:"mar"},
- 42:{x:460,y:500,n:"Laguna de los Naufragos",b:"mar"},
- 43:{x:500,y:540,n:"Pantano del Silencio",b:"mar"},
- 44:{x:540,y:500,n:"Refugio de las Medusas",b:"mar"},
- 45:{x:580,y:540,n:"Camara del Pulpo",b:"mar"},
- 46:{x:620,y:500,n:"Bosque de Manglares",b:"mar"},
- 47:{x:660,y:540,n:"Isla de la Lluvia",b:"mar"},
- 48:{x:700,y:500,n:"Grieta Abisal",b:"mar"},
- 49:{x:740,y:540,n:"Playa de los Ecos",b:"mar"},
- 50:{x:100,y:460,n:"Torre del Vigia",b:"mar"},
- 51:{x:140,y:420,n:"Gruta de las Mareas",b:"mar"},
- 52:{x:180,y:460,n:"Pantano de las Raices",b:"mar"},
- 53:{x:220,y:420,n:"Caverna del Coral",b:"mar"},
- 54:{x:260,y:460,n:"Estuario del Viento",b:"mar"},
- 55:{x:300,y:420,n:"Pozo de Agua Estancada",b:"mar"},
- 56:{x:340,y:460,n:"Acantilado de la Lluvia",b:"mar"},
- 57:{x:380,y:420,n:"Laguna de las Sombras",b:"mar"},
- 58:{x:420,y:460,n:"Bosque Inundado",b:"mar"},
- 59:{x:460,y:420,n:"Camara de las Corrientes",b:"mar"},
- 60:{x:500,y:460,n:"Isla del Horizonte",b:"mar"},
- 61:{x:540,y:420,n:"Fosa de la Marea Negra",b:"mar"},
- 62:{x:580,y:460,n:"Playa de Arena Humeda",b:"mar"},
- 63:{x:620,y:420,n:"Gruta del Agua",b:"mar"},
- 64:{x:660,y:460,n:"Delta de los Canales",b:"mar"},
- 65:{x:700,y:420,n:"Arrecife de las Espinas",b:"mar"},
- 66:{x:740,y:460,n:"Pantano de Lluvia Eterna",b:"mar"},
- 67:{x:100,y:380,n:"Caverna del Vapor",b:"mar"},
- 68:{x:140,y:340,n:"Laguna de los Reflejos",b:"mar"},
- 69:{x:180,y:380,n:"Sendero del Lodo",b:"mar"},
- 70:{x:220,y:340,n:"Bahia de la Niebla",b:"mar"},
- 71:{x:260,y:380,n:"Cumbre del Leviatan",b:"mar",boss:true},
- 72:{x:300,y:340,n:"Cumbre del Kraken",b:"mar",boss:true},
- 
- // NIEVE - Zona Norte (73-148)
- 73:{x:100,y:260,n:"Ventisca Eterna",b:"nieve"},
- 74:{x:140,y:220,n:"Bosque de Hielo Negro",b:"nieve"},
- 75:{x:180,y:260,n:"Grieta del Frio Abisal",b:"nieve"},
- 76:{x:220,y:220,n:"Llanura del Silencio",b:"nieve"},
- 77:{x:260,y:260,n:"Cementerio Congelado",b:"nieve"},
- 78:{x:300,y:220,n:"Tormenta Errante",b:"nieve"},
- 79:{x:340,y:260,n:"Picos del Desgarro",b:"nieve"},
- 80:{x:380,y:220,n:"Hondonada del Eco",b:"nieve"},
- 81:{x:420,y:260,n:"Rio de Hielo Muerto",b:"nieve"},
- 82:{x:460,y:220,n:"Fauces de la Tormenta",b:"nieve"},
- 83:{x:500,y:260,n:"Campo de Estatuas",b:"nieve"},
- 84:{x:540,y:220,n:"Abismo Nevado",b:"nieve"},
- 85:{x:580,y:260,n:"Cumbre del Viento",b:"nieve"},
- 86:{x:620,y:220,n:"Valle de las Sombras",b:"nieve"},
- 87:{x:660,y:260,n:"Ruinas Congeladas",b:"nieve"},
- 88:{x:700,y:220,n:"Paso del Susurro",b:"nieve"},
- 89:{x:740,y:260,n:"Glaciar Viviente",b:"nieve"},
- 90:{x:100,y:180,n:"Fosa del Olvido",b:"nieve"},
- 91:{x:140,y:140,n:"Torres de Escarcha",b:"nieve"},
- 92:{x:180,y:180,n:"Velo de Nieve",b:"nieve"},
- 93:{x:220,y:140,n:"Lago de Cristal",b:"nieve"},
- 94:{x:260,y:180,n:"Bosque de Agujas",b:"nieve"},
- 95:{x:300,y:140,n:"Furia Blanca",b:"nieve"},
- 96:{x:340,y:180,n:"Caverna de Escarcha",b:"nieve"},
- 97:{x:380,y:140,n:"Paso del Ultimo Aliento",b:"nieve"},
- 98:{x:420,y:180,n:"Colmillos del Invierno",b:"nieve"},
- 99:{x:460,y:140,n:"Valle del Sueño",b:"nieve"},
- 100:{x:500,y:180,n:"Niebla Blanca",b:"nieve"},
- 101:{x:540,y:140,n:"Cumbre Quebrada",b:"nieve"},
- 102:{x:580,y:180,n:"Territorio del Frio",b:"nieve"},
- 103:{x:620,y:140,n:"Sendero del Hielo",b:"nieve"},
- 104:{x:660,y:180,n:"Vigilantes de Escarcha",b:"nieve"},
- 105:{x:700,y:140,n:"Desierto Blanco",b:"nieve"},
- 106:{x:740,y:180,n:"Garganta del Viento",b:"nieve"},
- 107:{x:100,y:100,n:"Ruinas del Invierno",b:"nieve"},
- 108:{x:140,y:60,n:"Campo de Fragmentos",b:"nieve"},
- 109:{x:180,y:100,n:"Pozo de Escarcha",b:"nieve"},
- 110:{x:220,y:60,n:"Travesia del Frio",b:"nieve"},
- 111:{x:260,y:100,n:"Tormenta Estatica",b:"nieve"},
- 112:{x:300,y:60,n:"Cascada Congelada",b:"nieve"},
- 113:{x:340,y:100,n:"Circulo de Hielo",b:"nieve"},
- 114:{x:380,y:60,n:"Bosque de Sombras",b:"nieve"},
- 115:{x:420,y:100,n:"Frontera del Frio",b:"nieve"},
- 116:{x:460,y:60,n:"Vertice Nevado",b:"nieve"},
- 117:{x:500,y:100,n:"Hogar de la Escarcha",b:"nieve"},
- 118:{x:540,y:60,n:"Sendero de los Perdidos",b:"nieve"},
- 119:{x:580,y:100,n:"Falla Glacial",b:"nieve"},
- 120:{x:620,y:60,n:"Campo de Huesos",b:"nieve"},
- 121:{x:660,y:100,n:"Tormenta Silenciosa",b:"nieve"},
- 122:{x:700,y:60,n:"Nucleo de Hielo",b:"nieve"},
- 123:{x:740,y:100,n:"Paso de los Colosos",b:"nieve"},
- 124:{x:100,y:20,n:"Mar de Escarcha",b:"nieve"},
- 125:{x:140,y:60,n:"Colina del Ultimo Suspiro",b:"nieve"},
- 126:{x:180,y:20,n:"Catedral de Hielo",b:"nieve"},
- 127:{x:220,y:60,n:"Velo del Olvido",b:"nieve"},
- 128:{x:260,y:20,n:"Fauces Heladas",b:"nieve"},
- 129:{x:300,y:60,n:"Bosque del Frio",b:"nieve"},
- 130:{x:340,y:20,n:"Campo de Escarcha",b:"nieve"},
- 131:{x:380,y:60,n:"Trampa de Nieve",b:"nieve"},
- 132:{x:420,y:20,n:"Cumbre del Olvido",b:"nieve"},
- 133:{x:460,y:60,n:"Rugido Blanco",b:"nieve"},
- 134:{x:500,y:20,n:"Valle del Frio Eterno",b:"nieve"},
- 135:{x:540,y:60,n:"Sombras Bajo el Hielo",b:"nieve"},
- 136:{x:580,y:20,n:"Paso de la Escarcha",b:"nieve"},
- 137:{x:620,y:60,n:"Caverna del Viento",b:"nieve"},
- 138:{x:660,y:20,n:"Campos del Silencio",b:"nieve"},
- 139:{x:700,y:60,n:"Colapso Glacial",b:"nieve"},
- 140:{x:740,y:20,n:"Tormenta del Norte",b:"nieve"},
- 141:{x:340,y:140,n:"Grieta del Ultimo Invierno",b:"nieve"},
- 142:{x:380,y:180,n:"Altar de Hielo",b:"nieve"},
- 143:{x:420,y:140,n:"Sendero del Frio Infinito",b:"nieve"},
- 144:{x:460,y:180,n:"Cupula de Escarcha",b:"nieve"},
- 145:{x:500,y:140,n:"Ruinas del Viento",b:"nieve"},
- 146:{x:540,y:180,n:"Frontera del Vacio",b:"nieve"},
- 147:{x:580,y:140,n:"Crater de Hielo",b:"nieve"},
- 148:{x:620,y:180,n:"Trono del Invierno",b:"nieve",boss:true},
+ /* TUTORIAL */
+ "0.1":{x:720,y:850,n:"Tutorial: Combate",b:"tutorial"},
+ "0.2":{x:680,y:820,n:"Tutorial: Objetos",b:"tutorial"},
+ "0.3":{x:720,y:790,n:"Tutorial: Estructuras",b:"tutorial"},
+ "0.4":{x:760,y:820,n:"Tutorial: UI",b:"tutorial"},
+ /* DESIERTO */
+ 1:{x:100,y:870,n:"North Mass",b:"desierto"},
+ 2:{x:100,y:840,n:"Dunas del Norte",b:"desierto"},
+ 3:{x:140,y:810,n:"Ruinas del Desierto",b:"desierto"},
+ 4:{x:60,y:810,n:"Ciudad Abrasada",b:"desierto",boss:true},
+ 5:{x:180,y:780,n:"Valle Muerto",b:"desierto"},
+ 6:{x:400,y:860,n:"Oasis",b:"safe"},
+ 7:{x:360,y:810,n:"Sala del Viento",b:"desierto"},
+ 8:{x:320,y:840,n:"Camara del Oasis",b:"desierto"},
+ 9:{x:360,y:840,n:"Salon del Sol",b:"desierto"},
+ 10:{x:400,y:810,n:"Cripta de las Dunas",b:"desierto"},
+ 11:{x:440,y:840,n:"Caravana Fantasma",b:"desierto"},
+ 12:{x:480,y:810,n:"Fosa de Titanes",b:"desierto"},
+ 13:{x:520,y:780,n:"Altar del Soberano",b:"desierto",boss:true},
+ 14:{x:560,y:810,n:"Extension de Azhar",b:"desierto"},
+ 15:{x:600,y:780,n:"Mar de Dunas",b:"desierto"},
+ 16:{x:640,y:810,n:"Vestigios Enterrados",b:"desierto"},
+ 17:{x:680,y:780,n:"Santuario Carmesi",b:"desierto"},
+ 18:{x:720,y:810,n:"Sepulcro de Colosos",b:"desierto"},
+ 19:{x:760,y:780,n:"Trono del Abismo",b:"desierto"},
+ 20:{x:100,y:750,n:"Llanura de Fuego",b:"desierto"},
+ 21:{x:140,y:720,n:"Dunas del Murmullo",b:"desierto"},
+ 22:{x:180,y:750,n:"Columnas del Olvido",b:"desierto"},
+ 23:{x:220,y:720,n:"Templo de Sangre",b:"desierto"},
+ 24:{x:260,y:750,n:"Abismo de los Caidos",b:"desierto"},
+ 25:{x:300,y:720,n:"Trono del Devastador",b:"desierto",boss:true},
+ 26:{x:340,y:750,n:"Horizonte Quebrado",b:"desierto"},
+ 27:{x:380,y:720,n:"Dunas del Hambre",b:"desierto"},
+ 28:{x:420,y:750,n:"Ruinas del Eco",b:"desierto"},
+ 29:{x:460,y:720,n:"Santuario de la Marca",b:"desierto"},
+ 30:{x:500,y:750,n:"Campos de Huesos",b:"desierto"},
+ 31:{x:540,y:720,n:"Trono Ultimo Senor",b:"desierto",boss:true},
+ 32:{x:580,y:750,n:"Falla de los Antiguos",b:"desierto"},
+ /* MAR */
+ 33:{x:100,y:560,n:"Embarcadero 1",b:"mar"},
+ 34:{x:140,y:530,n:"Abismo Coralino",b:"mar"},
+ 35:{x:180,y:560,n:"Trono del Oceano",b:"mar",boss:true},
+ 36:{x:220,y:530,n:"Cripta de las Algas",b:"mar"},
+ 37:{x:260,y:560,n:"Embarcadero 2",b:"mar"},
+ 38:{x:300,y:530,n:"Fosa de Sombras",b:"mar"},
+ 39:{x:340,y:560,n:"Arrecife Susurrante",b:"mar"},
+ 40:{x:380,y:530,n:"Caverna de la Bruma",b:"mar"},
+ 41:{x:420,y:560,n:"Templo de las Olas",b:"mar"},
+ 42:{x:460,y:530,n:"Laguna Naufragos",b:"mar"},
+ 43:{x:500,y:560,n:"Pantano del Silencio",b:"mar"},
+ 44:{x:540,y:530,n:"Refugio Medusas",b:"mar"},
+ 45:{x:580,y:560,n:"Camara del Pulpo",b:"mar"},
+ 46:{x:620,y:530,n:"Bosque Manglares",b:"mar"},
+ 47:{x:660,y:560,n:"Isla de la Lluvia",b:"mar"},
+ 48:{x:700,y:530,n:"Grieta Abisal",b:"mar"},
+ 49:{x:740,y:560,n:"Playa de los Ecos",b:"mar"},
+ 50:{x:100,y:500,n:"Torre del Vigia",b:"mar"},
+ 51:{x:140,y:470,n:"Gruta de las Mareas",b:"mar"},
+ 52:{x:180,y:500,n:"Pantano de las Raices",b:"mar"},
+ 53:{x:220,y:470,n:"Caverna del Coral",b:"mar"},
+ 54:{x:260,y:500,n:"Estuario del Viento",b:"mar"},
+ 55:{x:300,y:470,n:"Pozo de Agua",b:"mar"},
+ 56:{x:340,y:500,n:"Acantilado Lluvia",b:"mar"},
+ 57:{x:380,y:470,n:"Laguna de Sombras",b:"mar"},
+ 58:{x:420,y:500,n:"Bosque Inundado",b:"mar"},
+ 59:{x:460,y:470,n:"Camara Corrientes",b:"mar"},
+ 60:{x:500,y:500,n:"Isla del Horizonte",b:"mar"},
+ 61:{x:540,y:470,n:"Fosa Marea Negra",b:"mar"},
+ 62:{x:580,y:500,n:"Playa Arena Humeda",b:"mar"},
+ 63:{x:620,y:470,n:"Gruta del Agua",b:"mar"},
+ 64:{x:660,y:500,n:"Delta de Canales",b:"mar"},
+ 65:{x:700,y:470,n:"Arrecife Espinas",b:"mar"},
+ 66:{x:740,y:500,n:"Pantano Lluvia Eterna",b:"mar"},
+ 67:{x:100,y:440,n:"Caverna del Vapor",b:"mar"},
+ 68:{x:140,y:410,n:"Laguna Reflejos",b:"mar"},
+ 69:{x:180,y:440,n:"Sendero del Lodo",b:"mar"},
+ 70:{x:220,y:410,n:"Bahia de la Niebla",b:"mar"},
+ 71:{x:260,y:440,n:"Cumbre del Leviatan",b:"mar",boss:true},
+ 72:{x:300,y:410,n:"Cumbre del Kraken",b:"mar",boss:true},
+ /* NIEVE */
+ 73:{x:100,y:300,n:"Ventisca Eterna",b:"nieve"},
+ 74:{x:140,y:270,n:"Bosque Hielo Negro",b:"nieve"},
+ 75:{x:180,y:300,n:"Grieta Frio Abisal",b:"nieve"},
+ 76:{x:220,y:270,n:"Llanura Silencio",b:"nieve"},
+ 77:{x:260,y:300,n:"Cementerio Congelado",b:"nieve"},
+ 78:{x:300,y:270,n:"Tormenta Errante",b:"nieve"},
+ 79:{x:340,y:300,n:"Picos del Desgarro",b:"nieve"},
+ 80:{x:380,y:270,n:"Hondonada del Eco",b:"nieve"},
+ 81:{x:420,y:300,n:"Rio de Hielo",b:"nieve"},
+ 82:{x:460,y:270,n:"Fauces Tormenta",b:"nieve"},
+ 83:{x:500,y:300,n:"Campo de Estatuas",b:"nieve"},
+ 84:{x:540,y:270,n:"Abismo Nevado",b:"nieve"},
+ 85:{x:580,y:300,n:"Cumbre Viento",b:"nieve"},
+ 86:{x:620,y:270,n:"Valle Sombras Blancas",b:"nieve"},
+ 87:{x:660,y:300,n:"Ruinas Congeladas",b:"nieve"},
+ 88:{x:700,y:270,n:"Paso del Susurro",b:"nieve"},
+ 89:{x:740,y:300,n:"Glaciar Viviente",b:"nieve"},
+ 90:{x:100,y:240,n:"Fosa del Olvido",b:"nieve"},
+ 91:{x:140,y:210,n:"Torres de Escarcha",b:"nieve"},
+ 92:{x:180,y:240,n:"Velo de Nieve",b:"nieve"},
+ 93:{x:220,y:210,n:"Lago de Cristal",b:"nieve"},
+ 94:{x:260,y:240,n:"Bosque de Agujas",b:"nieve"},
+ 95:{x:300,y:210,n:"Furia Blanca",b:"nieve"},
+ 96:{x:340,y:240,n:"Caverna de Escarcha",b:"nieve"},
+ 97:{x:380,y:210,n:"Paso Ultimo Aliento",b:"nieve"},
+ 98:{x:420,y:240,n:"Colmillos Invierno",b:"nieve"},
+ 99:{x:460,y:210,n:"Valle del Sueno",b:"nieve"},
+ 100:{x:500,y:240,n:"Niebla Blanca",b:"nieve"},
+ 101:{x:540,y:210,n:"Cumbre Quebrada",b:"nieve"},
+ 102:{x:580,y:240,n:"Territorio del Frio",b:"nieve"},
+ 103:{x:620,y:210,n:"Sendero Hielo Negro",b:"nieve"},
+ 104:{x:660,y:240,n:"Vigilantes Escarcha",b:"nieve"},
+ 105:{x:700,y:210,n:"Desierto Blanco",b:"nieve"},
+ 106:{x:740,y:240,n:"Garganta Viento",b:"nieve"},
+ 107:{x:100,y:180,n:"Ruinas del Invierno",b:"nieve"},
+ 108:{x:140,y:150,n:"Campo de Fragmentos",b:"nieve"},
+ 109:{x:180,y:180,n:"Pozo de Escarcha",b:"nieve"},
+ 110:{x:220,y:150,n:"Travesia del Frio",b:"nieve"},
+ 111:{x:260,y:180,n:"Tormenta Estatica",b:"nieve"},
+ 112:{x:300,y:150,n:"Cascada Congelada",b:"nieve"},
+ 113:{x:340,y:180,n:"Circulo de Hielo",b:"nieve"},
+ 114:{x:380,y:150,n:"Bosque de Sombras",b:"nieve"},
+ 115:{x:420,y:180,n:"Frontera del Frio",b:"nieve"},
+ 116:{x:460,y:150,n:"Vertice Nevado",b:"nieve"},
+ 117:{x:500,y:180,n:"Hogar de la Escarcha",b:"nieve"},
+ 118:{x:540,y:150,n:"Sendero Perdidos",b:"nieve"},
+ 119:{x:580,y:180,n:"Falla Glacial",b:"nieve"},
+ 120:{x:620,y:150,n:"Campo de Huesos",b:"nieve"},
+ 121:{x:660,y:180,n:"Tormenta Silenciosa",b:"nieve"},
+ 122:{x:700,y:150,n:"Nucleo de Hielo",b:"nieve"},
+ 123:{x:740,y:180,n:"Paso de los Colosos",b:"nieve"},
+ 124:{x:100,y:120,n:"Mar de Escarcha",b:"nieve"},
+ 125:{x:140,y:90,n:"Colina Ultimo Suspiro",b:"nieve"},
+ 126:{x:180,y:120,n:"Catedral de Hielo",b:"nieve"},
+ 127:{x:220,y:90,n:"Velo del Olvido",b:"nieve"},
+ 128:{x:260,y:120,n:"Fauces Heladas",b:"nieve"},
+ 129:{x:300,y:90,n:"Bosque del Frio",b:"nieve"},
+ 130:{x:340,y:120,n:"Campo Escarcha Oscura",b:"nieve"},
+ 131:{x:380,y:90,n:"Trampa de Nieve",b:"nieve"},
+ 132:{x:420,y:120,n:"Cumbre del Olvido",b:"nieve"},
+ 133:{x:460,y:90,n:"Rugido Blanco",b:"nieve"},
+ 134:{x:500,y:120,n:"Valle Frio Eterno",b:"nieve"},
+ 135:{x:540,y:90,n:"Sombras Bajo el Hielo",b:"nieve"},
+ 136:{x:580,y:120,n:"Paso Escarcha Mortal",b:"nieve"},
+ 137:{x:620,y:90,n:"Caverna Viento Helado",b:"nieve"},
+ 138:{x:660,y:120,n:"Campos del Silencio",b:"nieve"},
+ 139:{x:700,y:90,n:"Colapso Glacial",b:"nieve"},
+ 140:{x:740,y:120,n:"Tormenta del Norte",b:"nieve"},
+ 141:{x:340,y:180,n:"Grieta Ultimo Invierno",b:"nieve"},
+ 142:{x:380,y:210,n:"Altar de Hielo",b:"nieve"},
+ 143:{x:420,y:180,n:"Sendero Frio Infinito",b:"nieve"},
+ 144:{x:460,y:210,n:"Cupula de Escarcha",b:"nieve"},
+ 145:{x:500,y:180,n:"Ruinas Viento Blanco",b:"nieve"},
+ 146:{x:540,y:210,n:"Frontera Vacio Helado",b:"nieve"},
+ 147:{x:580,y:180,n:"Crater de Hielo",b:"nieve"},
+ 148:{x:620,y:210,n:"Trono del Invierno",b:"nieve",boss:true},
 };
 
-/* Conexiones entre salas - basadas en el diccionario SALAS del servidor */
 const CONNS=[
- // Tutorial
+ /* Tutorial */
  ["0.1","0.2"],["0.2","0.3"],["0.3","0.4"],
- 
- // Desierto principal
- [1,2],[1,6],[1,13],[2,3],[3,4],[3,16],[4,5],[5,6],[6,7],[7,8],[7,9],[8,9],[10,11],[10,6],[11,12],[11,17],[12,13],[12,18],[13,14],[13,19],[14,15],[15,16],[16,22],[17,18],[18,27],[19,20],[20,21],[20,25],[21,22],[22,23],[23,24],[24,30],[24,32],[25,26],[26,19],[27,28],[28,29],[29,30],[30,31],[31,32],
- 
- // Conexiones Desierto-Mar (32-33, 6-37)
+ /* Desierto */
+ [1,2],[1,6],[1,13],[2,3],[3,4],[3,16],[4,5],[5,6],[6,7],[7,8],[7,9],[8,9],[10,11],[10,6],
+ [11,12],[11,17],[12,13],[12,18],[13,14],[13,19],[14,15],[15,16],[16,22],[17,18],[18,27],
+ [19,20],[20,21],[20,25],[21,22],[22,23],[23,24],[24,30],[24,32],[25,26],[26,19],[27,28],
+ [28,29],[29,30],[30,31],[31,32],
+ /* Desierto -> Mar */
  [32,33],[6,37],
- 
- // Mar
- [33,34],[33,38],[33,39],[34,35],[35,36],[36,37],[36,41],[37,38],[37,42],[38,39],[38,44],[39,40],[39,44],[40,41],[41,46],[42,43],[42,52],[43,44],[43,51],[44,45],[44,50],[45,44],[46,47],[46,48],[47,48],[48,59],[49,50],[49,56],[50,44],[50,51],[50,55],[51,52],[51,54],[52,53],[53,54],[54,55],[55,54],[56,49],[57,58],[57,59],[58,60],[59,60],[59,62],[60,61],[61,62],[61,64],[62,63],[63,66],[64,65],[65,66],[65,67],[66,68],[68,69],[69,70],[70,71],[71,72],
- 
- // Conexiones Mar-Nieve (72-73)
+ /* Mar */
+ [33,34],[33,38],[33,39],[34,35],[35,36],[36,37],[36,41],[37,38],[37,42],[38,39],[38,44],
+ [39,40],[39,44],[40,41],[41,46],[42,43],[42,52],[43,44],[43,51],[44,45],[44,50],[46,47],
+ [46,48],[47,48],[48,59],[49,50],[49,56],[50,51],[50,55],[51,52],[51,54],[52,53],[53,54],
+ [54,55],[56,49],[57,58],[57,59],[58,60],[59,60],[59,62],[60,61],[61,62],[61,64],[62,63],
+ [63,66],[64,65],[65,66],[66,68],[68,69],[69,70],[70,71],[71,72],
+ /* Mar -> Nieve */
  [72,73],
- 
- // Nieve
- [73,74],[74,75],[74,76],[75,76],[76,77],[77,78],[77,83],[78,79],[79,80],[79,98],[80,83],[81,82],[82,83],[83,84],[83,96],[84,85],[84,95],[85,86],[86,87],[86,89],[88,89],[89,86],[90,91],[91,92],[92,93],[92,101],[93,102],[94,95],[94,103],[95,96],[95,104],[96,97],[96,105],[97,96],[98,99],[98,107],[99,108],[100,109],[101,118],[102,117],[103,104],[104,105],[104,115],[105,106],[106,107],[107,112],[108,109],[108,111],[109,110],[110,111],[111,112],[112,125],[113,114],[113,124],[114,123],[115,116],[115,122],[116,121],[117,120],[118,119],[119,128],[120,121],[120,129],[121,122],[122,123],[122,132],[123,124],[123,133],[124,125],[124,133],[125,134],[126,127],[126,135],[127,136],[128,145],[129,144],[130,143],[131,142],[132,133],[132,141],[133,140],[134,135],[134,139],[137,138],[138,139],[139,140],[140,141],[141,142],[141,146],[142,143],[144,145],[145,146],[146,147],[146,148],[147,148]
+ /* Nieve */
+ [73,74],[74,75],[74,76],[75,76],[76,77],[77,78],[77,83],[78,79],[79,80],[79,98],[80,83],
+ [81,82],[82,83],[83,84],[83,96],[84,85],[84,95],[85,86],[86,87],[86,89],[88,89],[90,91],
+ [91,92],[92,93],[92,101],[93,102],[94,95],[94,103],[95,96],[95,104],[96,97],[96,105],
+ [98,99],[98,107],[99,108],[100,109],[101,118],[102,117],[103,104],[104,105],[104,115],
+ [105,106],[106,107],[107,112],[108,109],[108,111],[109,110],[110,111],[111,112],[112,125],
+ [113,114],[113,124],[114,123],[115,116],[115,122],[116,121],[117,120],[118,119],[119,128],
+ [120,121],[120,129],[121,122],[122,123],[122,132],[123,133],[124,125],[125,134],[126,127],
+ [126,135],[127,136],[128,145],[129,144],[130,143],[131,142],[132,141],[133,140],[134,135],
+ [134,139],[137,138],[138,139],[139,140],[140,141],[141,142],[141,146],[142,143],[144,145],
+ [145,146],[146,147],[146,148],[147,148]
 ];
 
-const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32",tutorial:"#888"};
+const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32",tutorial:"#555"};
+
 const SNAMES={
- 1:"North Mass",2:"Dunas del Norte",3:"Ruinas del Desierto",4:"Ciudad abrasada",
- 5:"Valle muerto",6:"Oasis",7:"Sala del Viento",8:"Camara del Oasis",9:"Salon del Sol",
- 10:"Cripta de las Dunas",11:"Caravana fantasma",12:"Fosa de Titanes",13:"Altar del Soberano",
- 14:"Extension de Azhar",15:"Mar de Dunas",16:"Vestigios Enterrados",17:"Santuario Carmesi",
- 18:"Sepulcro de Colosos",19:"Trono del Abismo",20:"Llanura de Fuego",21:"Dunas del Murmullo",
- 22:"Columnas del Olvido",23:"Templo de Sangre",24:"Abismo de los Caidos",25:"Trono del Devastador",
- 26:"Horizonte Quebrado",27:"Dunas del Hambre",28:"Ruinas del Eco",29:"Santuario de la Marca",
- 30:"Campos de Huesos",31:"Trono del Ultimo Señor",32:"Falla de los Antiguos",
- 33:"Embarcadero 1",34:"Abismo Coralino",35:"Trono del Oceano",36:"Cripta de las Algas",
- 37:"Embarcadero 2",38:"Fosa de Sombras",39:"Arrecife Susurrante",40:"Caverna de la Bruma",
- 41:"Templo de las Olas",42:"Laguna de los Naufragos",43:"Pantano del Silencio",
+ 1:"North Mass",2:"Dunas del Norte",3:"Ruinas del Desierto",4:"Ciudad Abrasada",
+ 5:"Valle Muerto",6:"Oasis",7:"Sala del Viento",8:"Camara del Oasis",
+ 9:"Salon del Sol",10:"Cripta de las Dunas",11:"Caravana Fantasma",12:"Fosa de Titanes",
+ 13:"Altar del Soberano",14:"Extension de Azhar",15:"Mar de Dunas",16:"Vestigios Enterrados",
+ 17:"Santuario Carmesi",18:"Sepulcro de Colosos",19:"Trono del Abismo",
+ 20:"Llanura de Fuego",21:"Dunas del Murmullo",22:"Columnas del Olvido",
+ 23:"Templo de Sangre",24:"Abismo de los Caidos",25:"Trono del Devastador",
+ 26:"Horizonte Quebrado",27:"Dunas del Hambre",28:"Ruinas del Eco",
+ 29:"Santuario de la Marca",30:"Campos de Huesos",31:"Trono del Ultimo Senor",
+ 32:"Falla de los Antiguos",33:"Embarcadero 1",34:"Abismo Coralino",
+ 35:"Trono del Oceano",36:"Cripta de las Algas",37:"Embarcadero 2",
+ 38:"Fosa de Sombras",39:"Arrecife Susurrante",40:"Caverna de la Bruma",
+ 41:"Templo de las Olas",42:"Laguna de Naufragos",43:"Pantano del Silencio",
  44:"Refugio de las Medusas",45:"Camara del Pulpo",46:"Bosque de Manglares",
- 47:"Isla de la Lluvia",48:"Grieta Abisal",49:"Playa de los Ecos",50:"Torre del Vigia",
- 51:"Gruta de las Mareas",52:"Pantano de las Raices",53:"Caverna del Coral",
- 54:"Estuario del Viento",55:"Pozo de Agua",56:"Acantilado de la Lluvia",
- 57:"Laguna de las Sombras",58:"Bosque Inundado",59:"Camara de las Corrientes",
- 60:"Isla del Horizonte",61:"Fosa de la Marea",62:"Playa de Arena Humeda",
- 63:"Gruta del Agua",64:"Delta de los Canales",65:"Arrecife de las Espinas",
- 66:"Pantano de Lluvia",67:"Caverna del Vapor",68:"Laguna de los Reflejos",
- 69:"Sendero del Lodo",70:"Bahia de la Niebla",71:"Cumbre del Leviatan",72:"Cumbre del Kraken",
- 73:"Ventisca Eterna",74:"Bosque de Hielo Negro",75:"Grieta del Frio",
- 76:"Llanura del Silencio",77:"Cementerio Congelado",78:"Tormenta Errante",
- 79:"Picos del Desgarro",80:"Hondonada del Eco",81:"Rio de Hielo Muerto",
- 82:"Fauces de la Tormenta",83:"Campo de Estatuas",84:"Abismo Nevado",
- 85:"Cumbre del Viento",86:"Valle de las Sombras",87:"Ruinas Congeladas",
- 88:"Paso del Susurro",89:"Glaciar Viviente",90:"Fosa del Olvido",
- 91:"Torres de Escarcha",92:"Velo de Nieve",93:"Lago de Cristal",
- 94:"Bosque de Agujas",95:"Furia Blanca",96:"Caverna de Escarcha",
- 97:"Paso del Ultimo Aliento",98:"Colmillos del Invierno",99:"Valle del Sueño",
- 100:"Niebla Blanca",101:"Cumbre Quebrada",102:"Territorio del Frio",
- 103:"Sendero del Hielo",104:"Vigilantes de Escarcha",105:"Desierto Blanco",
- 106:"Garganta del Viento",107:"Ruinas del Invierno",108:"Campo de Fragmentos",
- 109:"Pozo de Escarcha",110:"Travesia del Frio",111:"Tormenta Estatica",
- 112:"Cascada Congelada",113:"Circulo de Hielo",114:"Bosque de Sombras",
- 115:"Frontera del Frio",116:"Vertice Nevado",117:"Hogar de la Escarcha",
- 118:"Sendero de los Perdidos",119:"Falla Glacial",120:"Campo de Huesos",
- 121:"Tormenta Silenciosa",122:"Nucleo de Hielo",123:"Paso de los Colosos",
- 124:"Mar de Escarcha",125:"Colina del Ultimo Suspiro",126:"Catedral de Hielo",
- 127:"Velo del Olvido",128:"Fauces Heladas",129:"Bosque del Frio",
- 130:"Campo de Escarcha",131:"Trampa de Nieve",132:"Cumbre del Olvido",
- 133:"Rugido Blanco",134:"Valle del Frio Eterno",135:"Sombras Bajo el Hielo",
- 136:"Paso de la Escarcha",137:"Caverna del Viento",138:"Campos del Silencio",
- 139:"Colapso Glacial",140:"Tormenta del Norte",141:"Grieta del Ultimo Invierno",
- 142:"Altar de Hielo",143:"Sendero del Frio Infinito",144:"Cupula de Escarcha",
- 145:"Ruinas del Viento",146:"Frontera del Vacio",147:"Crater de Hielo",148:"Trono del Invierno"
+ 47:"Isla de la Lluvia",48:"Grieta Abisal",49:"Playa de los Ecos",
+ 50:"Torre del Vigia",51:"Gruta de las Mareas",52:"Pantano de las Raices",
+ 53:"Caverna del Coral",54:"Estuario del Viento",55:"Pozo de Agua",
+ 56:"Acantilado de la Lluvia",57:"Laguna de Sombras",58:"Bosque Inundado",
+ 59:"Camara de Corrientes",60:"Isla del Horizonte",61:"Fosa de la Marea",
+ 62:"Playa de Arena Humeda",63:"Gruta del Agua",64:"Delta de Canales",
+ 65:"Arrecife de Espinas",66:"Pantano de Lluvia",67:"Caverna del Vapor",
+ 68:"Laguna de Reflejos",69:"Sendero del Lodo",70:"Bahia de la Niebla",
+ 71:"Cumbre del Leviatan",72:"Cumbre del Kraken",73:"Ventisca Eterna",
+ 74:"Bosque de Hielo Negro",75:"Grieta del Frio",76:"Llanura del Silencio",
+ 77:"Cementerio Congelado",78:"Tormenta Errante",79:"Picos del Desgarro",
+ 80:"Hondonada del Eco",81:"Rio de Hielo",82:"Fauces de la Tormenta",
+ 83:"Campo de Estatuas",84:"Abismo Nevado",85:"Cumbre del Viento",
+ 86:"Valle de Sombras",87:"Ruinas Congeladas",88:"Paso del Susurro",
+ 89:"Glaciar Viviente",90:"Fosa del Olvido",91:"Torres de Escarcha",
+ 92:"Velo de Nieve",93:"Lago de Cristal",94:"Bosque de Agujas",
+ 95:"Furia Blanca",96:"Caverna de Escarcha",97:"Paso del Ultimo Aliento",
+ 98:"Colmillos del Invierno",99:"Valle del Sueno",100:"Niebla Blanca",
+ 101:"Cumbre Quebrada",102:"Territorio del Frio",103:"Sendero del Hielo",
+ 104:"Vigilantes de Escarcha",105:"Desierto Blanco",106:"Garganta del Viento",
+ 107:"Ruinas del Invierno",108:"Campo de Fragmentos",109:"Pozo de Escarcha",
+ 110:"Travesia del Frio",111:"Tormenta Estatica",112:"Cascada Congelada",
+ 113:"Circulo de Hielo",114:"Bosque de Sombras",115:"Frontera del Frio",
+ 116:"Vertice Nevado",117:"Hogar de la Escarcha",118:"Sendero de los Perdidos",
+ 119:"Falla Glacial",120:"Campo de Huesos",121:"Tormenta Silenciosa",
+ 122:"Nucleo de Hielo",123:"Paso de los Colosos",124:"Mar de Escarcha",
+ 125:"Colina del Ultimo Suspiro",126:"Catedral de Hielo",127:"Velo del Olvido",
+ 128:"Fauces Heladas",129:"Bosque del Frio",130:"Campo de Escarcha",
+ 131:"Trampa de Nieve",132:"Cumbre del Olvido",133:"Rugido Blanco",
+ 134:"Valle del Frio Eterno",135:"Sombras Bajo el Hielo",136:"Paso de la Escarcha",
+ 137:"Caverna del Viento",138:"Campos del Silencio",139:"Colapso Glacial",
+ 140:"Tormenta del Norte",141:"Grieta del Ultimo Invierno",142:"Altar de Hielo",
+ 143:"Sendero del Frio Infinito",144:"Cupula de Escarcha",145:"Ruinas del Viento",
+ 146:"Frontera del Vacio",147:"Crater de Hielo",148:"Trono del Invierno"
 };
 
 function buildMap(connId,roomId){
- const ns="http://www.w3.org/2000/svg";
- const cg=document.getElementById(connId),rg=document.getElementById(roomId);
- if(!cg||!rg)return;
- 
- // Limpiar grupos existentes
- while(cg.firstChild)cg.removeChild(cg.firstChild);
- while(rg.firstChild)rg.removeChild(rg.firstChild);
- 
- CONNS.forEach(([a,b])=>{
-   const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
-   const l=document.createElementNS(ns,"line");
-   l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
-   l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
-   l.setAttribute("stroke","#252525");l.setAttribute("stroke-width","2");
-   cg.appendChild(l);
- });
- 
- Object.entries(RPOS).forEach(([id,r])=>{
-   const g=document.createElementNS(ns,"g");
-   g.setAttribute("id",roomId+"-r"+id.replace(".","_"));g.setAttribute("data-sid",id);
-   const W=r.boss?56:48,H=18;
-   const rect=document.createElementNS(ns,"rect");
-   rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
-   rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",2);
-   rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
-   rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
-   rect.setAttribute("stroke-width","1");
-   const txt=document.createElementNS(ns,"text");
-   txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
-   txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
-   txt.setAttribute("fill",r.boss?"#cc3333":(BC[r.b]||"#555"));
-   txt.setAttribute("font-size","7");txt.setAttribute("font-family","monospace");
-   txt.textContent=id;
-   g.appendChild(rect);g.appendChild(txt);
-   
-   if(roomId==="map-rooms-full"){
-     let tt=null;
-     g.addEventListener("mouseenter",e=>{
-       tt=document.createElement("div");
-       tt.style.cssText="position:fixed;background:#1a1a1a;border:1px solid #444;padding:3px 7px;border-radius:3px;font-size:10px;color:#ccc;pointer-events:none;z-index:600;white-space:nowrap;font-family:monospace";
-       tt.textContent="["+id+"] "+r.n;document.body.appendChild(tt);
-     });
-     g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-5)+"px";}});
-     g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
-   }
-   rg.appendChild(g);
- });
+  const ns="http://www.w3.org/2000/svg";
+  const cg=document.getElementById(connId),rg=document.getElementById(roomId);
+  if(!cg||!rg)return;
+  while(cg.firstChild)cg.removeChild(cg.firstChild);
+  while(rg.firstChild)rg.removeChild(rg.firstChild);
+  CONNS.forEach(([a,b])=>{
+    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
+    const l=document.createElementNS(ns,"line");
+    l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
+    l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
+    l.setAttribute("stroke","#252525");l.setAttribute("stroke-width","1");
+    cg.appendChild(l);
+  });
+  Object.entries(RPOS).forEach(([id,r])=>{
+    const safeId=String(id).replace(".","_");
+    const g=document.createElementNS(ns,"g");
+    g.setAttribute("id",roomId+"-r"+safeId);g.setAttribute("data-sid",id);
+    const W=r.boss?40:32,H=14;
+    const rect=document.createElementNS(ns,"rect");
+    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
+    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",2);
+    rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
+    rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
+    rect.setAttribute("stroke-width","1");
+    const txt=document.createElementNS(ns,"text");
+    txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
+    txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
+    txt.setAttribute("fill",r.boss?"#cc3333":(BC[r.b]||"#555"));
+    txt.setAttribute("font-size","6");txt.setAttribute("font-family","monospace");
+    txt.textContent=id;
+    g.appendChild(rect);g.appendChild(txt);
+    if(roomId==="map-rooms-full"){
+      let tt=null;
+      g.addEventListener("mouseenter",e=>{
+        tt=document.createElement("div");
+        tt.style.cssText="position:fixed;background:#1a1a1a;border:1px solid #444;padding:3px 7px;border-radius:3px;font-size:10px;color:#ccc;pointer-events:none;z-index:600;white-space:nowrap;font-family:monospace";
+        tt.textContent="["+id+"] "+(SNAMES[id]||r.n);document.body.appendChild(tt);
+      });
+      g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-5)+"px";}});
+      g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
+    }
+    rg.appendChild(g);
+  });
 }
 
 function highlightRoom(id){
- const safeId=String(id).replace(".","_");
- ["mini","full"].forEach(suf=>{
-   const pfx=suf==="mini"?"map-rooms-mini":"map-rooms-full";
-   document.querySelectorAll("[id^='"+pfx+"-r']").forEach(g=>{
-     const rid=g.getAttribute("data-sid"),r=RPOS[rid];if(!r)return;
-     const rect=g.querySelector("rect");if(!rect)return;
-     rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
-     rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
-     rect.setAttribute("stroke-width","1");rect.removeAttribute("filter");
-   });
-   const g=document.getElementById(pfx+"-r"+safeId);
-   if(g){const rect=g.querySelector("rect");if(rect){
-     rect.setAttribute("fill","#1f1200");rect.setAttribute("stroke","#c9a84c");
-     rect.setAttribute("stroke-width","2");
-     if(suf==="full")rect.setAttribute("filter","url(#glowf)");
-   }}
- });
+  const safeId=String(id).replace(".","_");
+  ["mini","full"].forEach(suf=>{
+    const pfx=suf==="mini"?"map-rooms-mini":"map-rooms-full";
+    document.querySelectorAll("[id^='"+pfx+"-r']").forEach(g=>{
+      const rid=g.getAttribute("data-sid");
+      const r=RPOS[rid]||RPOS[String(rid)];if(!r)return;
+      const rect=g.querySelector("rect");if(!rect)return;
+      rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
+      rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
+      rect.setAttribute("stroke-width","1");rect.removeAttribute("filter");
+    });
+    const g=document.getElementById(pfx+"-r"+safeId);
+    if(g){const rect=g.querySelector("rect");if(rect){
+      rect.setAttribute("fill","#1f1200");rect.setAttribute("stroke","#c9a84c");
+      rect.setAttribute("stroke-width","2");
+      if(suf==="full")rect.setAttribute("filter","url(#glowf)");
+    }}
+  });
 }
 
 /* STATE */
-let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,currentEnemies=[];
-
-/* Reiniciar juego (botón bug) */
-function resetGame(){
-    if(confirm("¿Estás seguro de que quieres reiniciar el juego?\n\nSe recargará la página y perderás cualquier progreso no guardado.")){
-        location.reload();
-    }
-}
+let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null;
 
 /* LOGIN */
 function showTab(t){
- document.getElementById("login-p").style.display=t==="login"?"block":"none";
- document.getElementById("reg-p").style.display=t==="register"?"block":"none";
- document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
+  document.getElementById("login-p").style.display=t==="login"?"block":"none";
+  document.getElementById("reg-p").style.display=t==="register"?"block":"none";
+  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
 }
 showTab("login");
 
 function getWsUrl(){const l=window.location;return(l.protocol==="https:"?"wss:":"ws:")+"//"+l.host+"/ws";}
 
 function doLogin(){
- const u=document.getElementById("lu").value.trim();
- const p=document.getElementById("lp").value;
- const err=document.getElementById("lerr");
- if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
- err.textContent="Conectando...";
- connect({type:"game_auth",usuario:u,password:p});
+  const u=document.getElementById("lu").value.trim();
+  const p=document.getElementById("lp").value;
+  const err=document.getElementById("lerr");
+  if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
+  err.textContent="Conectando...";
+  connect({type:"game_auth",usuario:u,password:p});
 }
 function doRegister(){
- const u=document.getElementById("ru").value.trim();
- const p1=document.getElementById("rp1").value;
- const p2=document.getElementById("rp2").value;
- const nom=document.getElementById("rn").value.trim()||u;
- const err=document.getElementById("lerr");
- if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
- if(u.length<3){err.textContent="Usuario: mín 3 chars.";return;}
- if(p1.length<4){err.textContent="Contraseña: mín 4 chars.";return;}
- if(p1!==p2){err.textContent="Contraseñas no coinciden.";return;}
- err.textContent="Creando...";
- connect({type:"game_register",usuario:u,password:p1,nombre:nom});
+  const u=document.getElementById("ru").value.trim();
+  const p1=document.getElementById("rp1").value;
+  const p2=document.getElementById("rp2").value;
+  const nom=document.getElementById("rn").value.trim()||u;
+  const err=document.getElementById("lerr");
+  if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
+  if(u.length<3){err.textContent="Usuario: mín 3 chars.";return;}
+  if(p1.length<4){err.textContent="Contraseña: mín 4 chars.";return;}
+  if(p1!==p2){err.textContent="Contraseñas no coinciden.";return;}
+  err.textContent="Creando...";
+  connect({type:"game_register",usuario:u,password:p1,nombre:nom});
 }
 function connect(authMsg){
- ws=new WebSocket(getWsUrl());
- ws.onopen=()=>ws.send(JSON.stringify(authMsg));
- ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
- ws.onclose=()=>{setConn(false);appendLog("Conexión cerrada.","gd");disableUI();};
- ws.onerror=()=>{document.getElementById("lerr").textContent="No se pudo conectar.";ws=null;};
+  ws=new WebSocket(getWsUrl());
+  ws.onopen=()=>ws.send(JSON.stringify(authMsg));
+  ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
+  ws.onclose=()=>{setConn(false);appendLog("Conexión cerrada.","gd");disableUI();};
+  ws.onerror=()=>{document.getElementById("lerr").textContent="No se pudo conectar.";ws=null;};
 }
 ["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
-["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).add
-EventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
+["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
 
 /* MSG HANDLER */
 function handle(m){
- if(m.type==="auth_ok"){
-   document.getElementById("lo").style.display="none";
-   setConn(true);enableUI();
-   if(m.stats)updateStats(m.stats);
-   document.getElementById("cmd").focus();
- } else if(m.type==="auth_fail"){
-   document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
- } else if(m.type==="game"){
-   appendLog(m.text,classify(m.text));
- } else if(m.type==="prompt"){
-   appendLog(m.text,"gp2");
- } else if(m.type==="levelup"){
-   appendLog(m.text,"gl");
- } else if(m.type==="status"||m.type==="stats"){
-   updateStats(m);
- } else if(m.type==="chat"){
-   const tag=m.scope==="sala"?"[Sala]":m.scope==="global"?"[Global]":"[Grupo]";
-   appendLog(tag+" "+(m.nombre||"")+(m.nombre?": ":"")+(m.text||m.mensaje||""),"gi");
-   appendChat(m.nombre,m.scope,m.text||m.mensaje||"");
- } else if(m.type==="leaderboard"){
-   renderLeaderboard(m.ranking);
- } else if(m.type==="combat_start"){
-   currentEnemies=m.enemigos||[];
-   openCombatPopup(m.enemigos);
- } else if(m.type==="combat_end"){
-   closeCombatPopup();
-   currentEnemies=[];
- } else if(m.type==="combat_update"){
-   if(m.enemigos)currentEnemies=m.enemigos;
-   updateCombatPopup();
- } else if(m.type==="pvp_challenge"){
-   openPvpPopup(m.retador,m.monedas);
- }
+  if(m.type==="auth_ok"){
+    document.getElementById("lo").style.display="none";
+    setConn(true);enableUI();
+    if(m.stats)updateStats(m.stats);
+    document.getElementById("cmd").focus();
+  } else if(m.type==="auth_fail"){
+    document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
+  } else if(m.type==="game"){
+    appendLog(m.text,classify(m.text));
+  } else if(m.type==="prompt"){
+    appendLog(m.text,"gp2");
+  } else if(m.type==="levelup"){
+    appendLog(m.text,"gl");
+  } else if(m.type==="status"||m.type==="stats"){
+    updateStats(m);
+  } else if(m.type==="chat"){
+    const tag=m.scope==="sala"?"[Sala]":m.scope==="global"?"[Global]":"[Grupo]";
+    appendLog(tag+" "+(m.nombre||"")+(m.nombre?": ":"")+(m.text||m.mensaje||""),"gi");
+    appendChat(m.nombre,m.scope,m.text||m.mensaje||"");
+  } else if(m.type==="leaderboard"){
+    renderLeaderboard(m.ranking);
+  } else if(m.type==="combat_start"){
+    openCombatPopup(m.enemigos);
+  } else if(m.type==="combat_end"){
+    closeCombatPopup();
+  } else if(m.type==="pvp_challenge"){
+    openPvpPopup(m.retador,m.monedas);
+  }
 }
 
 function classify(t){
- if(!t)return "gg";
- const l=t.toLowerCase();
- if(l.includes("victoria")||l.includes("🏆"))return "gv";
- if(l.includes("caido")||l.includes("derrota")||l.includes("muerto")||l.includes("💀"))return "gd";
- if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
- if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
- if(l.includes("╔")||l.includes("║")||l.includes("╚"))return "gl";
- return "gg";
+  if(!t)return "gg";
+  const l=t.toLowerCase();
+  if(l.includes("victoria")||l.includes("🏆"))return "gv";
+  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto")||l.includes("💀"))return "gd";
+  if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
+  if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
+  if(l.includes("╔")||l.includes("║")||l.includes("╚"))return "gl";
+  return "gg";
 }
 
 /* GAME LOG */
 function appendLog(text,cls){
- if(!text)return;
- const log=document.getElementById("glog");
- text.split("\n").forEach(line=>{
-   const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
- });
- log.scrollTop=log.scrollHeight;
+  if(!text)return;
+  const log=document.getElementById("glog");
+  text.split("\n").forEach(line=>{
+    const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
+  });
+  log.scrollTop=log.scrollHeight;
 }
 
 /* STATS — actualización en tiempo real */
 function updateStats(s){
- myStats=s;
- 
- // Actualizar imagen del personaje según clase
- const charImgDiv=document.getElementById("char-image");
- if(s.imagenClase){
-   charImgDiv.innerHTML=`<img src="${esc(s.imagenClase)}" alt="${esc(s.clase)}" onerror="this.style.display='none';this.parentElement.innerHTML='<span class=\'char-emoji\'>⚔️</span>';">`;
- }else{
-   // Emoji por defecto según clase
-   const emojis={
-     guerrero:"⚔️",mago:"🔮",arquero:"🏹",curandero:"✨",
-     nigromante:"💀",hechicero:"🔥",caballero:"🛡️",cazador:"🐺",
-     asesino:"🗡️",barbaro:"🪓"
-   };
-   charImgDiv.innerHTML=`<span class="char-emoji">${emojis[s.clase]||"⚔️"}</span>`;
- }
- 
- set("s-nm",s.nombre||"—");
- set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
- set("s-nv","Nv."+s.nivel);
- document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
+  myStats=s;
+  set("s-nm",s.nombre||"—");
+  set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  set("s-nv","Nv."+s.nivel);
+  document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
 
- /* XP */
- const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
- document.getElementById("b-xp").style.width=xpPct+"%";
- set("s-xp",s.xp+"/"+s.xpMax);
+  /* XP */
+  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
+  document.getElementById("b-xp").style.width=xpPct+"%";
+  set("s-xp",s.xp+"/"+s.xpMax);
 
- /* HP */
- const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
- const bh=document.getElementById("b-hp");
- bh.style.width=hpPct+"%";
- bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#e67e22":"var(--red)";
- set("s-hp",s.hp+"/"+s.hpMax);
+  /* HP */
+  const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
+  const bh=document.getElementById("b-hp");
+  bh.style.width=hpPct+"%";
+  bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#e67e22":"var(--red)";
+  set("s-hp",s.hp+"/"+s.hpMax);
 
- /* Mana */
- const mpPct=s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0;
- document.getElementById("b-mp").style.width=mpPct+"%";
- set("s-mp",s.mana+"/"+s.manaMax);
+  /* Mana */
+  const mpPct=s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0;
+  document.getElementById("b-mp").style.width=mpPct+"%";
+  set("s-mp",s.mana+"/"+s.manaMax);
 
- /* Combate */
- const atqs=s.ataquesTurno;
- set("s-dmg",s.danioBase||"—");
- set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
- set("s-mc",(s.costoEspecial||0)+" mana");
+  /* Combate */
+  const atqs=s.ataquesTurno;
+  set("s-dmg",s.danioBase||"—");
+  set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
+  set("s-mc",(s.costoEspecial||0)+" mana");
 
- /* Mochila */
- set("bag-coins",(s.monedas||0)+" 💰");
- if(s.inventario!==undefined)renderBag(s.inventario);
+  /* Mochila */
+  set("bag-coins",(s.monedas||0)+" 💰");
+  if(s.inventario!==undefined)renderBag(s.inventario);
 
- /* Servicios */
- if(s.sala_id!==undefined)updateServices(s.sala_id);
+  /* Servicios */
+  if(s.sala_id!==undefined)updateServices(s.sala_id);
 
- /* Mapa */
- if(s.sala_id)highlightRoom(s.sala_id);
+  /* Mapa */
+  if(s.sala_id)highlightRoom(s.sala_id);
 }
 
 function renderBag(inv){
- const N={"pocion_vida":"🧪 Poción Vida","pocion_danio":"⚗️ Poc. Daño","gema_teleporte":"💎 Gema Tele."};
- const div=document.getElementById("bag-items");
- const items=Object.entries(inv||{}).filter(([k,v])=>v>0);
- if(!items.length){div.innerHTML='<div class="bag-empty">Vacía</div>';return;}
- div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
+  const N={"pocion_vida":"🧪 Poción Vida","pocion_danio":"⚗️ Poc. Daño","gema_teleporte":"💎 Gema Tele."};
+  const div=document.getElementById("bag-items");
+  const items=Object.entries(inv||{}).filter(([k,v])=>v>0);
+  if(!items.length){div.innerHTML='<div class="bag-empty">Vacía</div>';return;}
+  div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
 const SALAS_SVC={
- 0.3:{h:true,s:true},0.4:{h:false,s:false},
- 4:{h:true,s:false},6:{h:true,s:true},8:{h:true,s:true},
- 15:{h:true,s:true},17:{h:true,s:false},21:{h:true,s:true},
- 33:{h:true,s:false},34:{h:true,s:false},37:{h:false,s:false},
- 38:{h:true,s:false},39:{h:false,s:true},44:{h:true,s:true},
- 53:{h:true,s:false},58:{h:false,s:true},70:{h:true,s:false}
+ "0.3":{h:true,s:true},
+ 4:{h:true,s:false},5:{h:true,s:false},6:{h:true,s:true},
+ 8:{h:true,s:true},13:{h:false,s:true},17:{h:false,s:false},
+ 21:{h:true,s:true},25:{h:true,s:true},
+ 34:{h:true,s:false},38:{h:true,s:false},39:{h:false,s:true},
+ 44:{h:true,s:true},53:{h:true,s:false},58:{h:false,s:true},70:{h:true,s:false},
+ 87:{h:true,s:false},94:{h:true,s:false},105:{h:true,s:false},
+ 131:{h:true,s:false},142:{h:true,s:false},147:{h:true,s:true}
 };
 function updateServices(sid){
- const sv=SALAS_SVC[sid]||{};
- document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
- document.getElementById("btn-shop").classList.toggle("visible",!!sv.s);
+  const sv=SALAS_SVC[sid]||{};
+  document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
+  document.getElementById("btn-shop").classList.toggle("visible",!!sv.s);
 }
 
 /* LEADERBOARD */
 function renderLeaderboard(ranking){
- const div=document.getElementById("lb-list");
- if(!ranking||!ranking.length){div.innerHTML='<div style="color:var(--dim);font-size:9px;padding:5px">Sin datos</div>';return;}
- const myName=myStats?myStats.nombre:"";
- div.innerHTML=ranking.map((p,i)=>{
-   const pos=i+1;
-   const pc=pos===1?"gold":pos===2?"silver":pos===3?"bronze":"";
-   const medal=pos===1?"🥇":pos===2?"🥈":pos===3?"🥉":"";
-   const isMe=p.nombre===myName;
-   // Emoji de clase
-   const emojis={guerrero:"⚔️",mago:"🔮",arquero:"🏹",curandero:"✨",nigromante:"💀",hechicero:"🔥",caballero:"🛡️",cazador:"🐺",asesino:"🗡️",barbaro:"🪓"};
-   const clsEmoji=emojis[p.clase]||"⚔️";
-   return `<div class="lbi" ${isMe?"style='background:#1a1500'":''}>`+
-     `<span class="lbi-pos ${pc}">${medal||pos}</span>`+
-     `<span class="lbi-name ${isMe?"me":""}">${clsEmoji} ${esc(p.nombre)}</span>`+
-     `<span class="lbi-info">${esc(p.clase||"?")}</span>`+
-     `<span class="lbi-lvl">Nv.${p.nivel}</span>`+
-     `</div>`;
- }).join("");
+  const div=document.getElementById("lb-list");
+  if(!ranking||!ranking.length){div.innerHTML='<div style="color:var(--dim);font-size:9px;padding:5px">Sin datos</div>';return;}
+  const myName=myStats?myStats.nombre:"";
+  div.innerHTML=ranking.map((p,i)=>{
+    const pos=i+1;
+    const pc=pos===1?"gold":pos===2?"silver":pos===3?"bronze":"";
+    const medal=pos===1?"🥇":pos===2?"🥈":pos===3?"🥉":"";
+    const isMe=p.nombre===myName;
+    return `<div class="lbi" ${isMe?"style='background:#1a1500'":''}>`+
+      `<span class="lbi-pos ${pc}">${medal||pos}</span>`+
+      `<span class="lbi-name ${isMe?"me":""}">${esc(p.nombre)}</span>`+
+      `<span class="lbi-info">${esc(p.clase||"?")}</span>`+
+      `<span class="lbi-lvl">Nv.${p.nivel}</span>`+
+      `</div>`;
+  }).join("");
 }
 
 /* CHAT */
 function setChatTab(t){
- chatTab=t;
- document.getElementById("ct-sala").className  ="ctab"+(t==="sala"  ?" cs":"");
- document.getElementById("ct-global").className="ctab"+(t==="global"?" cg":"");
- document.getElementById("ct-grupo").className ="ctab"+(t==="grupo" ?" cgr":"");
- const el=document.getElementById("ct-"+t);if(el)el.style.boxShadow="";
+  chatTab=t;
+  document.getElementById("ct-sala").className  ="ctab"+(t==="sala"  ?" cs":"");
+  document.getElementById("ct-global").className="ctab"+(t==="global"?" cg":"");
+  document.getElementById("ct-grupo").className ="ctab"+(t==="grupo" ?" cgr":"");
+  const el=document.getElementById("ct-"+t);if(el)el.style.boxShadow="";
 }
 function appendChat(nombre,scope,texto){
- const log=document.getElementById("chat-log");
- const now=new Date();
- const t=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
- const nc=scope==="sala"?"cn-s":scope==="global"?"cn-g":"cn-gr";
- const d=document.createElement("div");d.className="cm";
- d.innerHTML=`<span class="cm-t">${t}</span><span class="cm-n ${nc}">${esc(nombre||"")}</span><span class="cm-tx">${esc(texto)}</span>`;
- log.appendChild(d);log.scrollTop=log.scrollHeight;
- if(scope!==chatTab){const el=document.getElementById("ct-"+scope);if(el)el.style.boxShadow="0 0 0 1px var(--gold)";}
+  const log=document.getElementById("chat-log");
+  const now=new Date();
+  const t=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
+  const nc=scope==="sala"?"cn-s":scope==="global"?"cn-g":"cn-gr";
+  const d=document.createElement("div");d.className="cm";
+  d.innerHTML=`<span class="cm-t">${t}</span><span class="cm-n ${nc}">${esc(nombre||"")}</span><span class="cm-tx">${esc(texto)}</span>`;
+  log.appendChild(d);log.scrollTop=log.scrollHeight;
+  if(scope!==chatTab){const el=document.getElementById("ct-"+scope);if(el)el.style.boxShadow="0 0 0 1px var(--gold)";}
 }
 function sendChat(){
- const inp=document.getElementById("chat-in");
- const msg=inp.value.trim();
- if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
- const cmd=chatTab==="sala"?"decir "+msg:chatTab==="global"?"g "+msg:"gc "+msg;
- ws.send(cmd);
- appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
- inp.value="";
- const el=document.getElementById("ct-"+chatTab);if(el)el.style.boxShadow="";
+  const inp=document.getElementById("chat-in");
+  const msg=inp.value.trim();
+  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
+  const cmd=chatTab==="sala"?"decir "+msg:chatTab==="global"?"g "+msg:"gc "+msg;
+  ws.send(cmd);
+  appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
+  inp.value="";
+  const el=document.getElementById("ct-"+chatTab);if(el)el.style.boxShadow="";
 }
 
 /* COMBAT POPUP */
 function openCombatPopup(enemigos){
- const popup=document.getElementById("combat-popup");
- updateCombatPopupContent(enemigos);
- popup.classList.add("open");
-}
-function updateCombatPopup(){
- updateCombatPopupContent(currentEnemies);
-}
-function updateCombatPopupContent(enemigos){
- const div=document.getElementById("cp-enemies");
- if(!enemigos||!enemigos.length){
-   div.innerHTML='<div style="color:var(--dim);font-size:10px;">Cargando enemigos...</div>';
-   return;
- }
- div.innerHTML=enemigos.map(e=>`<div class="cp-enemy"><span>${esc(e.nombre)}</span><span style="color:var(${e.hp/e.hpMax<0.3?'--red':'--green'})">${e.hp}/${e.hpMax} HP</span></div>`).join("");
+  const popup=document.getElementById("combat-popup");
+  const div=document.getElementById("cp-enemies");
+  div.innerHTML=(enemigos||[]).map(e=>`<div class="cp-enemy"><span>${esc(e.nombre)}</span><span style="color:var(--red)">${e.hp}/${e.hpMax} HP</span></div>`).join("");
+  popup.classList.add("open");
 }
 function closeCombatPopup(){
- document.getElementById("combat-popup").classList.remove("open");
- closeItemPopup();
-}
-
-/* ITEM POPUP */
-function openItemPopup(){
- if(!myStats||!myStats.inventario){
-   send('4');
-   return;
- }
- 
- const inv=myStats.inventario;
- const items=[];
- const N={"pocion_vida":"🧪 Poción de Vida","pocion_danio":"⚗️ Poción de Daño","gema_teleporte":"💎 Gema de Teletransporte"};
- 
- for(const[k,v]of Object.entries(inv)){
-   if(v>0&&N[k]){
-     items.push({id:k,name:N[k],count:v});
-   }
- }
- 
- if(items.length===0){
-   send('4');
-   return;
- }
- 
- const list=document.getElementById("item-list");
- list.innerHTML=items.map((it,idx)=>`<div class="item-row" onclick="selectItem('${it.id}')"><span class="item-name">${it.name}</span><span class="item-count">x${it.count}</span></div>`).join("");
- 
- document.getElementById("item-popup").classList.add("open");
-}
-function closeItemPopup(){
- document.getElementById("item-popup").classList.remove("open");
-}
-function selectItem(itemId){
- closeItemPopup();
- const itemMap={"pocion_vida":"1","pocion_danio":"2","gema_teleporte":"3"};
- const num=itemMap[itemId]||"1";
- send('4');
- setTimeout(()=>send(num),50);
+  document.getElementById("combat-popup").classList.remove("open");
 }
 
 /* PVP POPUP */
 function openPvpPopup(retador,monedas){
- document.getElementById("pvp-info").textContent=
-   retador+" te reta a duelo"+(monedas?" - Apuesta: "+monedas+" monedas":"")+". Aceptas?";
- document.getElementById("pvp-popup").classList.add("open");
+  document.getElementById("pvp-info").textContent=
+    retador+" te reta a duelo"+(monedas?" - Apuesta: "+monedas+" monedas":"")+". Aceptas?";
+  document.getElementById("pvp-popup").classList.add("open");
 }
 function acceptDuelo(){
- send("aceptar_duelo");
- document.getElementById("pvp-popup").classList.remove("open");
+  send("aceptar_duelo");
+  document.getElementById("pvp-popup").classList.remove("open");
 }
 function rejectDuelo(){
- send("rechazar_duelo");
- document.getElementById("pvp-popup").classList.remove("open");
+  send("rechazar_duelo");
+  document.getElementById("pvp-popup").classList.remove("open");
 }
 
 /* PVP PROMPT */
 function promptDuelo(){
- const nom=prompt("Nombre del jugador a retar:");
- if(!nom)return;
- const mon=prompt("Monedas a apostar (0 = sin apuesta):");
- if(mon===null)return;
- send("duelo "+nom+" "+(parseInt(mon)||0));
+  const nom=prompt("Nombre del jugador a retar:");
+  if(!nom)return;
+  const mon=prompt("Monedas a apostar (0 = sin apuesta):");
+  if(mon===null)return;
+  send("duelo "+nom+" "+(parseInt(mon)||0));
 }
 
 /* MAP */
@@ -4023,42 +3951,38 @@ function closeHelpBtn(){document.getElementById("help-modal").classList.remove("
 /* SEND */
 function send(text){if(!ws||ws.readyState!==WebSocket.OPEN)return;ws.send(text);}
 function doSend(){
- const inp=document.getElementById("cmd");
- const cmd=inp.value.trim();
- if(!cmd)return;
- hist.unshift(cmd);if(hist.length>60)hist.pop();hidx=-1;
- send(cmd);appendLog("> "+cmd,"gs");inp.value="";
+  const inp=document.getElementById("cmd");
+  const cmd=inp.value.trim();
+  if(!cmd)return;
+  hist.unshift(cmd);if(hist.length>60)hist.pop();hidx=-1;
+  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
 }
 document.addEventListener("DOMContentLoaded",()=>{
- document.getElementById("cmd").addEventListener("keydown",e=>{
-   if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
-   else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
- });
+  document.getElementById("cmd").addEventListener("keydown",e=>{
+    if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
+    else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
+  });
 });
 
 /* UI */
 function enableUI(){
- ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
- ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
+  ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
+  ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
 }
 function disableUI(){
- ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
- ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
- closeCombatPopup();
+  ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+  ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+  closeCombatPopup();
 }
 function setConn(on){document.getElementById("cdot").className=on?"on":"";}
 function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 
-// Inicializar mapas al cargar
-document.addEventListener("DOMContentLoaded",()=>{
- buildMap("map-conn-mini","map-rooms-mini");
- buildMap("map-conn-full","map-rooms-full");
-});
+buildMap("map-conn-mini","map-rooms-mini");
+buildMap("map-conn-full","map-rooms-full");
 </script>
 </body>
-</html>
-"""
+</html>"""
 
 async def http_handler(request: web.Request) -> web.Response:
     """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
@@ -4078,6 +4002,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     print(f"[WS] Conexion: {request.remote}")
 
     try:
+        # Primer mensaje: auth
         msg = await asyncio.wait_for(ws.__anext__(), timeout=30)
     except (asyncio.TimeoutError, StopAsyncIteration):
         return ws
@@ -4094,8 +4019,10 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     usuario  = data.get("usuario", "").strip().lower()
     password = data.get("password", "").strip()
 
+    # ── Auth ──────────────────────────────────────────────────
     if msg_type == "game_register":
-        nombre = data.get("nombre", "").strip() or usuario
+        # Registro nuevo
+        nombre   = data.get("nombre", "").strip() or usuario
         if len(usuario) < 3:
             await ws.send_json({"type": "auth_fail", "msg": "Usuario: minimo 3 caracteres."})
             return ws
@@ -4109,7 +4036,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         await crear_cuenta_async(usuario, password)
         tmp = Player(ws)
         tmp.usuario = usuario
-        tmp.nombre = nombre
+        tmp.nombre  = nombre
 
         async def reg_reader():
             try:
