@@ -313,6 +313,7 @@ SALAS = {
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
          "conexiones": {"norte": 2, "este": 13, "sur": 6},
          "bioma": "desierto", "cantidad": 1},
+         "hospital": True},
 
     2:  {"nombre": "Dunas del Norte",
          "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
@@ -337,6 +338,7 @@ SALAS = {
          "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
          "conexiones": {"sur": 3},
          "bioma": "desierto", "cantidad": 2},
+         "hospital": True},
 
     6:  {"nombre": "Sala del Viento Susurrante",
          "descripcion": "Columnas de arena giran lentamente y traen voces del pasado.",
@@ -373,6 +375,7 @@ SALAS = {
          "descripcion": "Un trono oscuro tallado en huesos ennegrecidos irradia una presencia opresiva.",
          "conexiones": {"sur": 11, "este": 18, "norte": 13},
          "encuentros": [("reyEsqueleto", 1)]},
+         "tienda"; True},
 
     13: {"nombre": "Extensión de Azhar",
          "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla por el calor.",
@@ -393,6 +396,7 @@ SALAS = {
          "descripcion": "Muros cubiertos de símbolos sangrientos laten con una energía inquietante.",
          "conexiones": {"sur": 15, "este": 22, "oeste": 3},
          "encuentros": [("demonioInferior", 2)]},
+         "tienda": True},
 
     17: {"nombre": "Sepulcro de Colosos",
          "descripcion": "Huesos gigantescos yacen dispersos, devorados lentamente por el desierto.",
@@ -441,6 +445,8 @@ SALAS = {
          "descripcion": "El aire distorsiona la vista, haciendo que la distancia pierda todo sentido.",
          "conexiones": {"oeste": 20, "sur": 26},
          "bioma": "desierto", "cantidad": 1},
+         "tienda": True},
+         "hospital": True},
 
     26: {"nombre": "Dunas del Hambre",
          "descripcion": "La arena se mueve de forma antinatural, como si buscara devorar a los vivos.",
@@ -456,6 +462,7 @@ SALAS = {
          "descripcion": "Antiguos rituales dejaron su huella, aún palpable en el aire seco.",
          "conexiones": {"oeste": 27, "norte": 29},
          "encuentros": [("demonioInferior", 2)]},
+         "tesoro": True},
 
     29: {"nombre": "Campos de Huesos Errantes",
          "descripcion": "Restos que cambian de lugar con el tiempo, formando patrones desconocidos.",
@@ -471,6 +478,7 @@ SALAS = {
          "descripcion": "Una grieta llena de restos y reliquias de una civilización olvidada.",
          "conexiones": {"sur": 30},
          "bioma": "desierto", "cantidad": 2},
+         "hospital": True}
 
     32: {"nombre": "Trono de Ceniza Viva",
          "descripcion": "El asiento aún desprende calor, como si su antiguo rey no se hubiera ido del todo.",
@@ -766,6 +774,7 @@ SALAS = {
           "descripcion": "Estructuras antiguas atrapadas en hielo eterno.",
           "conexiones": {"sur": 86},
           "bioma": "nieve", "cantidad": 2},
+          "hospital": True},
 
     88:  {"nombre": "Paso del Susurro Gélido",
           "descripcion": "Voces heladas parecen guiarte… o perderte.",
@@ -801,6 +810,7 @@ SALAS = {
           "descripcion": "Espinas de hielo sobresalen del suelo como trampas.",
           "conexiones": {"oeste": 95, "norte": 103},
           "bioma": "nieve", "cantidad": 2},
+          "hospital": True},
 
     95:  {"nombre": "Furia Blanca",
           "descripcion": "Una tormenta que parece tener voluntad propia.",
@@ -856,6 +866,7 @@ SALAS = {
           "descripcion": "Dunas de nieve reemplazan a la arena.",
           "conexiones": {"sur": 96, "este": 104, "oeste": 106},
           "bioma": "nieve", "cantidad": 1},
+          "hospital": True},
 
     106: {"nombre": "Garganta del Viento Helado",
           "descripcion": "Corrientes de aire atraviesan como cuchillas.",
@@ -901,6 +912,7 @@ SALAS = {
           "descripcion": "Sombras que no pertenecen a nada visible.",
           "conexiones": {"oeste": 113, "norte": 123},
           "bioma": "nieve", "cantidad": 2},
+          "hospital": True},
 
     115: {"nombre": "Frontera del Frío Absoluto",
           "descripcion": "Más allá de este punto, nada sobrevive.",
@@ -986,6 +998,7 @@ SALAS = {
           "descripcion": "El suelo cede bajo el peso sin aviso.",
           "conexiones": {"sur": 122, "norte": 142},
           "bioma": "nieve", "cantidad": 1},
+          "hospital": True},
 
     132: {"nombre": "Cumbre del Olvido",
           "descripcion": "Quienes llegan aquí olvidan por qué vinieron.",
@@ -1041,6 +1054,7 @@ SALAS = {
           "descripcion": "Un lugar olvidado donde el frío es venerado.",
           "conexiones": {"sur": 131, "oeste": 141, "este": 143},
           "bioma": "nieve", "cantidad": 2},
+          "hospital": True},
 
     143: {"nombre": "Sendero del Frío Infinito",
           "descripcion": "Un camino que parece no tener final.",
@@ -1066,6 +1080,8 @@ SALAS = {
           "descripcion": "Un impacto antiguo que aún emana energía.",
           "conexiones": {"este": 146, "norte": 148},
           "bioma": "nieve", "cantidad": 2},
+          "hospital": True},
+          "tienda": True},
 
     148: {"nombre": "Trono del Invierno",
           "descripcion": "Un asiento de poder donde el frío gobierna todo.",
