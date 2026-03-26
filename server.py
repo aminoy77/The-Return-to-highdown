@@ -507,7 +507,7 @@ SALAS = {
 
     38: {"nombre": "Fosa de las Sombras Marinas",
          "descripcion": "Una profundidad oscura donde nada debería sobrevivir.",
-         "conexiones": {"oeste": 37, "norte": 44, "este": 39, "sur": 33},
+         "conexiones": {"oeste": 37, "norte": 43, "este": 39, "sur": 33},
          "bioma": "mar", "cantidad": 2,
          "hospital": True},
 
@@ -519,7 +519,7 @@ SALAS = {
 
     40: {"nombre": "Caverna de la Bruma Salina",
          "descripcion": "Una cueva húmeda llena de niebla con olor a sal.",
-         "conexiones": {},
+         "conexiones": {"oeste": 39, "este": 41, "sur": 36},
          "bioma": "mar", "cantidad": 2},
 
     41: {"nombre": "Templo de las Olas Eternas",
