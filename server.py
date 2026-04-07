@@ -293,19 +293,30 @@ BIOMAS = {
 SALAS = {
     # ── TUTORIAL (salas 010-050) ──────────────────────────────────
     0.1: {"nombre": "Como combatir",
-          "descripcion": "Usa los comandos que aparecen para atacar",
+          "descripcion": "Hace ya 15 años de la gran tragedia. Ya habían pasado 15 años de la masacre del pueblo de Highdown.",
+          "descripcion": "Highdown era un pueblo conocido por que todos los nacidos ahí poseían habilidades sobrehumanas.",
+          "descripcion": "Eso no contentaba a Alpha, el actual rey de la destrucción. Todo lo que encontraba a su paso, ardía en un mar de llamas y sangre.",
+          "descripcion": "Por miedo a que le destronaran de ser el rey de la destrucción, decidió hacer una masacre.",
+          "descripcion": "Alpha esperó a la noche, que todos estuvieran durmiendo, reunió a sus mejores hombres y aniquiló a todos sus habitantes.",
+          "descripcion": "O eso pensaba él, pues uno de los soldados del pueblo pudo salvar a algunos de los niños con futuros más prometedores",
+          "descripcion": "El soldado les dijo: Huid lejos de aquí y vengad a vuestro pueblo.",
+          "descripcion": "Tras decir eso, el soldado los escoltó a la salida y les indicó el camino al pueblo al que tenian que ir, fuera del terrirorio de Alpha.",
+          "descripcion": "Después, el soldado volvió a la ciudad para intentar aniquilar a las tropas restantes junto a sus compañeros.",
+          "descripcion":  "Nunca se volvió a saber nada de él. ",
+          "descripcion": "Ha aparecido un bandido. El bandido blande su espada manchada de sangre. Serás su proxima presa.",
+          "descripcion": "Usa los comandos que aparecen para atacar para luchar contra el bandido",
           "conexiones": {"norte": 0.2},
           "encuentros": [("bandido", 1)] },
  
-    0.2: {"nombre": "Objetos",
-          "descripcion": "Como usar objetos",
-          "conexiones": {"sur": 0.1, "norte": 0.3},
-          "encuentros": [("duende", 1)] },
- 
-    0.3: {"nombre": "estructuras basicas",
+    0.2: {"nombre": "estructuras basicas",
           "descripcion": "hospital y tienda",
           "conexiones": {"sur": 0.2, "norte": 0.40},
          "hospital": True, "tienda": True},
+
+    0.3: {"nombre": "Objetos",
+          "descripcion": "Como usar objetos",
+          "conexiones": {"sur": 0.1, "norte": 0.3},
+          "encuentros": [("duende", 1)] },
  
     0.4: {"nombre": "Como funciona UI",
           "descripcion": "UI",
