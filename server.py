@@ -451,7 +451,7 @@ SALAS = {
 
     24: {"nombre": "Trono del Devastador",
          "descripcion": "Un asiento de poder olvidado, rodeado de una oscuridad que respira.",
-         "conexiones": {"sur": 30, "norte": 23, "este": 32},
+         "conexiones": {"sur": 30, "norte": 23, "este": 32, "oeste": 149},
          "bioma": "desierto", "cantidad": 4,
          "tesoro": True},
 
@@ -1100,7 +1100,19 @@ SALAS = {
     148: {"nombre": "Trono del Invierno",
           "descripcion": "Un asiento de poder donde el frío gobierna todo.",
           "conexiones": {"sur": 146, "oeste": 147},
-          "encuentros": [("alpha", 1)]}, 
+          "encuentros": [("alpha", 1)]},
+
+    149: {"nombre": "Oasis tranquilo",
+          "descripcion": "Un sitio en el que descansar, prepàrate para la batalla final.",
+          "conexiones": {"sur": 24, "oeste": 32},
+          "hospital": True},
+          "tienda": True},
+
+    150: {"nombre": "Trono del Invierno",
+          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
+          "conexiones": {"sur": 146, "norte": 32},
+          "hospital": True},
+          "tienda": True},
 }
 
 
