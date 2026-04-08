@@ -2987,98 +2987,106 @@ async def handle_game_ws(ws, usuario: str):
 # HANDLE DASHBOARD WS
 # ============================================================
 
-async def handle_dashboard_ws(ws, usuario: str):
-    chat_ws_clients.add(ws)
-    web_sessions[usuario] = ws
-    print(f"[DASH] {usuario} conectado")
+
+async def handle_game_ws(ws, usuario: str):
+    player = Player(ws)
+    player.usuario = usuario
+
+    if len(jugadores_conectados) >= MAX_JUGADORES:
+        await player.send("Servidor lleno (max 5 jugadores).")
+        return
+
+    jugadores_conectados.append(player)
+
+    # Task para leer mensajes del WebSocket
+    async def reader_task():
+        try:
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    await player.input_queue.put(msg.data)
+                elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+                    break
+        except Exception:
+            pass
+        finally:
+            await player.input_queue.put(None)
+
+    rt = asyncio.create_task(reader_task())
 
     try:
-        player_online = next((p for p in jugadores_conectados if p.usuario == usuario), None)
-        if player_online and player_online.personaje:
-            p = player_online.personaje
-            stats = {
-                "hp": p["vidaActual"],        "hpMax":         p["vidaMax"],
-                "mana": p["manaActual"],      "manaMax":       p["manaMax"],
-                "nivel": player_online.nivel, "xp":            player_online.xp,
-                "xpMax": xp_para_subir(player_online.nivel), "monedas": player_online.monedas,
-                "clase": p["nombreClase"],    "nombre":        player_online.nombre,
-                "sala_id": player_online.sala_id,
-                "danioBase": p["danioBase"],
-                "ataquesTurno": p.get("ataquesTurno", 1),
-                "costoEspecial": p.get("costoEspecial", 0),
-                "inventario": player_online.inventario,
-                "online": True,
-            }
-        else:
-            # Cargar desde Supabase o fichero local
-            if USAR_SUPABASE:
-                row = await _sb_get(usuario)
-                save_raw = row or {}
-                save = save_raw.get("data", save_raw) or {}
-            else:
-                save_raw = _leer_fichero(usuario) or {}
-                save = save_raw.get("data", save_raw) or {}
-            p_save = save.get("personaje", {})
-            clase  = p_save.get("nombreClase", "guerrero")
-            base_c = CLASES.get(clase, {})
-            stats = {
-                "hp": p_save.get("vidaActual", 0),   "hpMax":   p_save.get("vidaMax", 0),
-                "mana": p_save.get("manaActual", 0), "manaMax": p_save.get("manaMax", 0),
-                "nivel": save.get("nivel", 1),        "xp":     save.get("xp", 0),
-                "xpMax": xp_para_subir(save.get("nivel",1)), "monedas":save.get("monedas", 0),
-                "clase": clase,                        "nombre": save.get("nombre", usuario),
-                "sala_id": save.get("sala_id", 1),
-                "danioBase": p_save.get("danioBase", 0),
-                "ataquesTurno": base_c.get("ataquesTurno", 1),
-                "costoEspecial": base_c.get("costoEspecial", 0),
-                "inventario": save.get("inventario", {}),
-                "online": False,
-            }
+        await cargar_cuenta_async(player, usuario)
+    except ValueError as e:
+        print(f"[GAME] Error cargando cuenta {usuario}: {e}")
+        await player.send(f" Error cargando tu cuenta: {e}\n Contacta con el administrador.")
+        jugadores_conectados.remove(player)
+        rt.cancel()
+        return
 
-        await ws.send_json({"type": "auth_ok", "stats": stats})
+    # Mensaje de bienvenida
+    await player.send(
+        f"\n Bienvenido de vuelta, {player.nombre}!\n"
+        f" Nivel {player.nivel} XP:{player.xp}/{xp_para_subir(player.nivel)} Monedas:{player.monedas}\n"
+        f" HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']} "
+        f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
+    )
 
-        map_data = {}
-        for s_id, s in SALAS.items():
-            tiene_boss = any(
-                ENEMIGOS.get(tipo, {}).get("tier") in ("Boss", "Elite")
-                for tipo, _ in s.get("encuentros", [])
-            )
-            es_acertijos = s.get("acertijos", False)
-            map_data[str(s_id)] = {
-                "nombre": s["nombre"],    "bioma":    s.get("bioma"),
-                "tienda": s.get("tienda", False),
-                "hospital": s.get("hospital", False),
-                "boss": tiene_boss,
-                "acertijos": es_acertijos,
-                "segura": not ("bioma" in s or bool(s.get("encuentros")) or es_acertijos),
-            }
-        await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
-        await broadcast_players_to_web()
+    await player.send_status()
 
-        async for msg in ws:
-            if msg.type == aiohttp.WSMsgType.TEXT:
-                try:
-                    d = json.loads(msg.data)
-                    if d.get("type") == "chat":
-                        mensaje = d.get("mensaje", "").strip()
-                        scope   = d.get("scope", "global")
-                        nombre  = stats["nombre"]
-                        if not mensaje:
-                            continue
-                        await broadcast_chat_ws(scope, nombre, mensaje)
-                        tag = "[Global-Web]" if scope == "global" else "[Web-Sala]"
-                        await broadcast_todos(f"  {tag} {nombre}: {mensaje}")
-                except json.JSONDecodeError:
-                    pass
-            elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+    # Enviar leaderboard global
+    lb = await get_leaderboard_async()
+    try:
+        await player.ws.send_json({"type": "leaderboard", "ranking": lb})
+    except Exception:
+        pass
+
+    await broadcast_todos(f"\n {player.nombre} se unio al dungeon!")
+    await broadcast_players_to_web()
+    await describir_sala(player)
+
+    # ==================== BUCLE PRINCIPAL ====================
+    try:
+        while True:
+            if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
+                await asyncio.sleep(0.05)
+                continue
+
+            raw = await player.recv()
+            if raw is None:
                 break
+            if not raw.strip():
+                continue
+
+            await procesar_comando(player, raw.strip())
 
     except Exception as e:
-        print(f"[DASH] Error: {e}")
+        print(f"[GAME] Error en handle_game_ws ({usuario}): {e}")
+        import traceback
+        traceback.print_exc()
+
     finally:
-        chat_ws_clients.discard(ws)
-        web_sessions.pop(usuario, None)
-        print(f"[DASH] {usuario} desconectado")
+        # Limpieza siempre se ejecuta
+        if player.usuario and player.personaje:
+            await guardar_cuenta_async(player)
+            print(f"[SAVE] {player.usuario}")
+
+        if player.grupo:
+            asyncio.create_task(cmd_salirgrupo(player))
+
+        for p in jugadores_conectados:
+            if p.invitacion_de == player:
+                p.invitacion_de = None
+                asyncio.create_task(p.send(f" La invitacion de {player.nombre} expiro."))
+
+        rt.cancel()
+
+        if player in jugadores_conectados:
+            jugadores_conectados.remove(player)
+
+        if player.nombre:
+            await broadcast_todos(f"\n {player.nombre} abandono el dungeon.")
+            await broadcast_players_to_web()
+
+        print(f"[GAME] Desconectado: {usuario}")
 
 
 # ============================================================
