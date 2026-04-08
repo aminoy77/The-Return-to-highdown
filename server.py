@@ -704,12 +704,12 @@ SALAS = {
 
     71: {"nombre": "Cumbre del Leviatan",
          "descripcion": "Un acantilado imposible desde donde emerge el eco de una bestia ancestral.",
-         "conexiones": {"oeste": 70, "este": 72},
+         "conexiones": {"oeste": 70, "este": 72, "norte": 150},
          "bioma": "mar", "cantidad": 1},
 
     72: {"nombre": "Cumbre del Kraken",
          "descripcion": "Un pico rocoso azotado por tormentas donde una sombra colosal se agita bajo las olas.",
-         "conexiones": {"oeste": 71, "este": 73},
+         "conexiones": {"oeste": 71, "este": 73, "sur": 150},
          "bioma": "mar", "cantidad": 1,
          "encuentros": [("kraken", 1)]},
 
@@ -1110,7 +1110,7 @@ SALAS = {
 
     150: {"nombre": "Trono del Invierno",
           "descripcion": "Un asiento de poder donde el frío gobierna todo.",
-          "conexiones": {"sur": 146, "norte": 32},
+          "conexiones": {"sur": 71, "norte": 72},
           "hospital": True},
           "tienda": True},
 }
