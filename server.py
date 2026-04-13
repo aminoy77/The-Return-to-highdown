@@ -1,16 +1,14 @@
 """
 server.py — MUD Multiplayer
 ============================
-- TCP  puerto 4000  → terminal (client.py)
-- WS   puerto 4001  → chat en navegador
-- HTTP puerto 8080  → sirve chat.html
+- WS   /ws?u=<user>  → joc WebSocket (navegador + client.py)
+- HTTP /             → serveix la interfície HTML del joc
 
 Uso:
-  pip install websockets
+  pip install aiohttp
   python3 server.py
 
-Jugar:   python3 client.py <IP>
-Chat UI: http://<IP>:8080/chat.html
+Jugar (navegador): http://<IP>:PORT/
 """
 
 import asyncio
@@ -40,22 +38,37 @@ def _sb_headers():
         "Prefer":        "return=representation",
     }
 
+# Sessió global reutilitzable (evita crear/destruir una sessió per cada petició)
+_sb_session: aiohttp.ClientSession | None = None
+
+def _get_sb_session() -> aiohttp.ClientSession:
+    global _sb_session
+    if _sb_session is None or _sb_session.closed:
+        _sb_session = aiohttp.ClientSession()
+    return _sb_session
+
 async def _sb_get(usuario: str) -> dict | None:
     """Lee una fila de Supabase. Devuelve el dict o None si no existe."""
     url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
-    async with aiohttp.ClientSession() as s:
+    try:
+        s = _get_sb_session()
         async with s.get(url, headers=_sb_headers()) as r:
             if r.status == 200:
                 rows = await r.json()
                 return rows[0] if rows else None
+    except Exception as e:
+        print(f"[SB] Error _sb_get({usuario}): {e}")
     return None
 
 async def _sb_upsert(row: dict):
     """Inserta o actualiza una fila en Supabase."""
     url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
     headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
-    async with aiohttp.ClientSession() as s:
+    try:
+        s = _get_sb_session()
         await s.post(url, headers=headers, json=row)
+    except Exception as e:
+        print(f"[SB] Error _sb_upsert: {e}")
 
 
 async def get_leaderboard_async(limit: int = 20) -> list:
@@ -65,8 +78,8 @@ async def get_leaderboard_async(limit: int = 20) -> list:
         # (ordenar por campo JSONB anidado no es directo en PostgREST)
         url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=200"
         try:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url, headers=_sb_headers()) as r:
+            s = _get_sb_session()
+            async with s.get(url, headers=_sb_headers()) as r:
                     if r.status == 200:
                         rows = await r.json()
                         result = []
@@ -2575,6 +2588,14 @@ async def cmd_duelo(player: Player, args: str):
         return
 
     objetivo.duelo_pendiente = {"retador": player, "monedas": monedas_apuesta}
+    # Auto-cancelar el duelo si no es respon en 60s
+    async def _timeout_duelo():
+        await asyncio.sleep(60)
+        if objetivo.duelo_pendiente and objetivo.duelo_pendiente.get("retador") is player:
+            objetivo.duelo_pendiente = None
+            asyncio.create_task(player.send(f"  El duelo con {objetivo.nombre} expiró (sin respuesta)."))
+            asyncio.create_task(objetivo.send(f"  La invitación de duelo de {player.nombre} expiró."))
+    asyncio.create_task(_timeout_duelo())
 
     apuesta_txt = f" — Apuesta: {monedas_apuesta} 💰" if monedas_apuesta else ""
     await player.send(f"  Reto enviado a {objetivo.nombre}{apuesta_txt}. Esperando respuesta...")
@@ -2951,16 +2972,17 @@ async def handle_game_ws(ws, usuario: str):
     await broadcast_players_to_web()
     await describir_sala(player)
 
-    while True:
-        if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
-            await asyncio.sleep(0.05)
-            continue
-        raw = await player.recv()
-        if raw is None:
-            break
-        if not raw.strip():
-            continue
-        await procesar_comando(player, raw.strip())
+    try:
+        while True:
+            if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
+                await asyncio.sleep(0.05)
+                continue
+            raw = await player.recv()
+            if raw is None:
+                break
+            if not raw.strip():
+                continue
+            await procesar_comando(player, raw.strip())
 
     except Exception as e:
         print(f"[GAME] Error: {e}")
@@ -3476,6 +3498,7 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
   <!-- LEFT -->
   <div id="left">
     <div id="stats-pane">
+      <div class="sp-emoji" id="s-emoji" style="font-size:28px;text-align:center;margin-bottom:4px">⚔️</div>
       <div class="sp-name" id="s-nm">—</div>
       <div class="sp-cls"  id="s-cl">—</div>
       <div>
@@ -4000,10 +4023,17 @@ function appendLog(text,cls){
 }
 
 /* STATS */
+const CLASE_EMOJI={
+  "guerrero":"🛡️","mago":"🔥","arquero":"🏹","curandero":"💚",
+  "nigromante":"💀","hechicero":"👁️","caballero":"⚔️","cazador":"🎯",
+  "asesino":"🗡️","bárbaro":"🪓","barbaro":"🪓"
+};
 function updateStats(s){
   myStats=s;
   set("s-nm",s.nombre||"—");
   set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
+  const emojiEl=document.getElementById("s-emoji");
+  if(emojiEl)emojiEl.textContent=CLASE_EMOJI[(s.clase||"").toLowerCase()]||"⚔️";
   set("s-nv","Nv."+s.nivel);
   document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
 
@@ -4358,3 +4388,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
