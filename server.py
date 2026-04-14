@@ -1,14 +1,16 @@
 """
 server.py — MUD Multiplayer
 ============================
-- WS   /ws?u=<user>  → joc WebSocket (navegador + client.py)
-- HTTP /             → serveix la interfície HTML del joc
+- TCP  puerto 4000  → terminal (client.py)
+- WS   puerto 4001  → chat en navegador
+- HTTP puerto 8080  → sirve chat.html
 
 Uso:
-  pip install aiohttp
+  pip install websockets
   python3 server.py
 
-Jugar (navegador): http://<IP>:PORT/
+Jugar:   python3 client.py <IP>
+Chat UI: http://<IP>:8080/chat.html
 """
 
 import asyncio
@@ -38,37 +40,22 @@ def _sb_headers():
         "Prefer":        "return=representation",
     }
 
-# Sessió global reutilitzable (evita crear/destruir una sessió per cada petició)
-_sb_session: aiohttp.ClientSession | None = None
-
-def _get_sb_session() -> aiohttp.ClientSession:
-    global _sb_session
-    if _sb_session is None or _sb_session.closed:
-        _sb_session = aiohttp.ClientSession()
-    return _sb_session
-
 async def _sb_get(usuario: str) -> dict | None:
     """Lee una fila de Supabase. Devuelve el dict o None si no existe."""
     url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
-    try:
-        s = _get_sb_session()
+    async with aiohttp.ClientSession() as s:
         async with s.get(url, headers=_sb_headers()) as r:
             if r.status == 200:
                 rows = await r.json()
                 return rows[0] if rows else None
-    except Exception as e:
-        print(f"[SB] Error _sb_get({usuario}): {e}")
     return None
 
 async def _sb_upsert(row: dict):
     """Inserta o actualiza una fila en Supabase."""
     url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
     headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
-    try:
-        s = _get_sb_session()
+    async with aiohttp.ClientSession() as s:
         await s.post(url, headers=headers, json=row)
-    except Exception as e:
-        print(f"[SB] Error _sb_upsert: {e}")
 
 
 async def get_leaderboard_async(limit: int = 20) -> list:
@@ -78,8 +65,8 @@ async def get_leaderboard_async(limit: int = 20) -> list:
         # (ordenar por campo JSONB anidado no es directo en PostgREST)
         url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=200"
         try:
-            s = _get_sb_session()
-            async with s.get(url, headers=_sb_headers()) as r:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, headers=_sb_headers()) as r:
                     if r.status == 200:
                         rows = await r.json()
                         result = []
@@ -265,6 +252,11 @@ ALIAS_ITEMS = {
 
 # ============================================================
 # BIOMAS
+# Cada bioma define un pool de enemigos aleatorios.
+# Desierto = fácil (Base/Especial)
+# Mar      = medio (Especial/Superior)
+# Nieve    = difícil (Superior/Elite)
+# Los bosses siempre van como encuentros fijos.
 # ============================================================
 BIOMAS = {
     "desierto": {
@@ -285,76 +277,61 @@ BIOMAS = {
 }
 
 # ============================================================
-# ACERTIJOS
+# ACERTIJOS — Enigmas que bloquean el paso en salas especiales
+# C) Acertijo: sala con "acertijos": True → no hay combate, hay puzzle
+#    El jugador debe resolver 3 acertijos en orden para avanzar
 # ============================================================
 ACERTIJOS = [
     {
         "pregunta": "Si me nombras, desaparezco. ¿Qué soy?",
         "opciones": ["A) El secreto", "B) El silencio", "C) La sombra", "D) El pensamiento"],
         "respuesta": "b",
-        "letra_correcta": "B"
     },
     {
-        "pregunta": "¿Qué número falta en la serie? 2 – 6 – 7 – 21 – 22 – 66 – ?",
+        "pregunta": "¿Qué número falta en la serie?  2 – 6 – 7 – 21 – 22 – 66 – ?",
         "opciones": ["A) 67", "B) 132", "C) 198", "D) 68"],
         "respuesta": "a",
-        "letra_correcta": "A"
     },
     {
-        "pregunta": "Un monje copia manuscritos. Un día escribe: 11/11/1111. ¿Dice la verdad que es la primera vez con todos los números iguales?",
+        "pregunta": (
+            "Un monje copia manuscritos día y noche. Un día escribe la fecha: 11/11/1111.\n"
+            "Dice que es la primera vez que escribe una fecha con todos los números iguales.\n"
+            "¿Dice la verdad?"
+        ),
         "opciones": ["A) Sí", "B) No", "C) Solo en calendario juliano", "D) Solo si cuenta los ceros"],
         "respuesta": "b",
-        "letra_correcta": "B"
     },
     {
-        "pregunta": "3 interruptores, 3 bombillas, 1 solo intento. ¿Cómo saber cuál controla cada una?",
+        "pregunta": (
+            "Un hombre tiene 3 interruptores (cuarto A) y 3 bombillas (cuarto B, sin ver desde A).\n"
+            "Solo puede entrar una vez al cuarto B. ¿Cómo identifica qué interruptor es cada bombilla?"
+        ),
         "opciones": [
-            "A) Enciende uno, espera, cambia al segundo y entra",
-            "B) Enciende dos, espera, apaga uno y entra",
-            "C) Enciende uno, espera, luego enciende el segundo y entra",
-            "D) No hay manera"
+            "A) Enciende uno, espera, cambia al segundo y entra.",
+            "B) Enciende dos, espera, apaga uno y entra.",
+            "C) Enciende uno, espera, enciende el segundo y entra.",
+            "D) No hay manera de saberlo.",
         ],
         "respuesta": "b",
-        "letra_correcta": "B"
-    }
+    },
 ]
-
-# Salas con acertijos: 33 y 37 (3 acertijos cada una, diferentes)
-SALAS_ACERTIJOS = {
-    33: [0, 1, 2],  # Primeros 3 acertijos
-    37: [1, 2, 3]   # Últimos 3 acertijos (solapamiento para variación)
-}
+SALAS_CON_ACERTIJOS = {33, 37}   # salas donde se usan los acertijos
 
 # ============================================================
 # SALAS
 # ============================================================
+# Tres sintaxis disponibles:
+#   A) Enemigos fijos:      "encuentros": [("bandido", 2)]
+#   B) Bioma aleatorio:     "bioma": "desierto", "cantidad": 2
+#   C) Acertijo:            sala_id in SALAS_CON_ACERTIJOS  (no bioma/encuentros)
+#   Sala segura: ninguno de los anteriores → sin combate ni acertijo
+# ============================================================
 SALAS = {
-    # ── TUTORIAL (salas 0.1-0.4) ──────────────────────────────────
-    0.1: {"nombre": "Como combatir",
-          "descripcion": "Hace ya 15 años de la gran tragedia. Ya habían pasado 15 años de la masacre del pueblo de Highdown.",
-          "conexiones": {"norte": 0.2},
-          "encuentros": [("bandido", 1)]},
- 
-    0.2: {"nombre": "estructuras basicas",
-          "descripcion": "hospital y tienda",
-          "conexiones": {"sur": 0.1, "norte": 0.3},
-         "hospital": True, "tienda": True},
-
-    0.3: {"nombre": "Objetos",
-          "descripcion": "Como usar objetos",
-          "conexiones": {"sur": 0.2, "norte": 0.4},
-          "encuentros": [("duende", 1)]},
- 
-    0.4: {"nombre": "Como funciona UI",
-          "descripcion": "UI",
-          "conexiones": {"sur": 0.3, "norte": 1}},
-
-    # ── DESIERTO (salas 1-32) ──────────────────────────────────
+    # ── DESIERTO (salas 1-13) ──────────────────────────────────
     1:  {"nombre": "North Mass",
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
          "conexiones": {"norte": 2, "este": 13, "sur": 6},
-         "bioma": "desierto", "cantidad": 1,
-         "hospital": True},
+         "bioma": "desierto", "cantidad": 1},
 
     2:  {"nombre": "Dunas del Norte",
          "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
@@ -366,207 +343,205 @@ SALAS = {
          "conexiones": {"oeste": 4, "norte": 5, "este": 16},
          "bioma": "desierto", "cantidad": 2},
 
-    4:  {"nombre": "Ciudad abrasada",
-         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas...",
+    4:  {"nombre": "Ciudad Abrasada",
+         "descripcion": "Una ciudad abrasada. Sus torres negras susurran historias de un fuego que nunca se apaga.",
          "conexiones": {"este": 3},
          "encuentros": [("demonioSuperior", 1)],
          "hospital": True},
 
-    5:  {"nombre": "Valle muerto",
-         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
+    5:  {"nombre": "Valle Muerto",
+         "descripcion": "Centenares de esqueletos más grandes que buques navales.",
          "conexiones": {"sur": 3},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True},
 
-    6:  {"nombre": "Oasis tranquilo",
-         "descripcion": "Un pequeño oasis en medio del desierto. Aquí puedes descansar.",
-         "conexiones": {"sur": 10, "oeste": 7, "norte": 1},
-         "hospital": True, "tienda": True},
+    6:  {"nombre": "Oasis",
+         "descripcion": "Agua fresca y palmeras. Un respiro en el desierto.",
+         "conexiones": {"sur": 1, "norte": 33},
+         "tienda": True, "hospital": True},
 
     7:  {"nombre": "Sala del Viento Susurrante",
          "descripcion": "Columnas de arena giran lentamente y traen voces del pasado.",
-         "conexiones": {"oeste": 8, "este": 6, "sur": 9},
+         "conexiones": {"sur": 10, "oeste": 8, "norte": 1},
          "encuentros": [("elfoOscuro", 1)]},
 
-    8:  {"nombre": "Cámara del Oasis Oculto",
-         "descripcion": "Un pequeño lago mágico que concede visiones o recuerdos.",
-         "conexiones": {"oeste": 9, "este": 7},
-         "bioma": "desierto", "cantidad": 1},
-
-    9:  {"nombre": "Salón del Sol Eterno",
-         "descripcion": "Un techo abierto donde un sol artificial quema sin piedad.",
-         "conexiones": {"sur": 8, "este": 7},
+    8:  {"nombre": "Salon del Sol Eterno",
+         "descripcion": "Un sol artificial quema sin piedad.",
+         "conexiones": {"sur": 9, "este": 7},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True, "tienda": True},
 
-    10: {"nombre": "Cripta de las Dunas Vivas",
+    9:  {"nombre": "Cripta de las Dunas Vivas",
          "descripcion": "Personas enterradas que se mueven bajo la arena.",
          "conexiones": {"norte": 7},
          "bioma": "desierto", "cantidad": 2},
 
-    11: {"nombre": "Caravana fantasma",
-         "descripcion": "Viajeros espectrales repiten eternamente su última travesía.",
-         "conexiones": {"este": 12, "norte": 6},
+    10: {"nombre": "Caravana Fantasma",
+         "descripcion": "Viajeros espectrales repiten eternamente su ultima travesia.",
+         "conexiones": {"este": 11, "norte": 7},
          "encuentros": [("demonioInferior", 2)]},
 
-    12: {"nombre": "Fosa de Titanes",
-         "descripcion": "Restos colosales emergen de la arena, como si antiguos gigantes hubieran caído aquí.",
-         "conexiones": {"norte": 13, "oeste": 11, "este": 17},
+    11: {"nombre": "Fosa de Titanes",
+         "descripcion": "Restos colosales emergen de la arena.",
+         "conexiones": {"norte": 12, "oeste": 10, "este": 17},
          "bioma": "desierto", "cantidad": 2},
 
-    13: {"nombre": "Altar del Soberano Abisal",
-         "descripcion": "Un trono oscuro tallado en huesos ennegrecidos irradia una presencia opresiva.",
-         "conexiones": {"sur": 12, "este": 18, "norte": 14},
+    12: {"nombre": "Altar del Soberano Abisal",
+         "descripcion": "Un trono oscuro tallado en huesos ennegrecidos.",
+         "conexiones": {"sur": 11, "este": 18, "norte": 13},
          "encuentros": [("reyEsqueleto", 1)],
          "tienda": True},
 
-    14: {"nombre": "Extensión de Azhar",
-         "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla por el calor.",
-         "conexiones": {"norte": 15, "este": 19, "oeste": 1},
+    13: {"nombre": "Extension de Azhar",
+         "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla.",
+         "conexiones": {"norte": 14, "este": 19, "oeste": 1},
          "bioma": "desierto", "cantidad": 1},
 
-    15: {"nombre": "Mar de Dunas Susurrantes",
-         "descripcion": "Las dunas se extienden sin fin, emitiendo murmullos cuando el viento las roza.",
-         "conexiones": {"norte": 16, "sur": 14},
+    14: {"nombre": "Mar de Dunas Susurrantes",
+         "descripcion": "Las dunas emiten murmullos cuando el viento las roza.",
+         "conexiones": {"norte": 15, "sur": 13},
          "bioma": "desierto", "cantidad": 2},
 
-    16: {"nombre": "Vestigios Enterrados",
-         "descripcion": "Ruinas antiguas asoman entre la arena, como recuerdos que se niegan a desaparecer.",
-         "conexiones": {"norte": 17, "sur": 15},
+    15: {"nombre": "Vestigios Enterrados",
+         "descripcion": "Ruinas antiguas asoman entre la arena.",
+         "conexiones": {"norte": 16, "sur": 14},
          "bioma": "desierto", "cantidad": 1},
 
-    17: {"nombre": "Santuario Carmesí",
-         "descripcion": "Muros cubiertos de símbolos sangrientos laten con una energía inquietante.",
-         "conexiones": {"sur": 16, "este": 22, "oeste": 3},
+    16: {"nombre": "Santuario Carmesi",
+         "descripcion": "Muros cubiertos de simbolos sangrientos.",
+         "conexiones": {"sur": 15, "este": 22, "oeste": 3},
          "encuentros": [("demonioInferior", 2)],
          "tienda": True},
 
-    18: {"nombre": "Sepulcro de Colosos",
-         "descripcion": "Huesos gigantescos yacen dispersos, devorados lentamente por el desierto.",
+    17: {"nombre": "Sepulcro de Colosos",
+         "descripcion": "Huesos gigantescos yacen dispersos.",
          "conexiones": {"oeste": 11},
          "bioma": "desierto", "cantidad": 2,
          "tienda": True},
 
-    19: {"nombre": "Trono del Abismo",
-         "descripcion": "Una estructura de hueso y sombra domina el lugar, como si aún esperara a su dueño.",
+    18: {"nombre": "Trono del Abismo",
+         "descripcion": "Una estructura de hueso y sombra domina el lugar.",
          "conexiones": {"oeste": 12, "este": 27},
          "bioma": "desierto", "cantidad": 1},
 
-    20: {"nombre": "Llanura de Fuego Blanco",
-         "descripcion": "La luz del sol es tan intensa que todo parece arder en un resplandor pálido.",
-         "conexiones": {"norte": 21, "este": 26, "oeste": 13},
+    19: {"nombre": "Llanura de Fuego Blanco",
+         "descripcion": "Todo parece arder en un resplandor palido.",
+         "conexiones": {"norte": 20, "este": 26, "oeste": 13},
          "bioma": "desierto", "cantidad": 1},
 
-    21: {"nombre": "Dunas del Murmullo Eterno",
-         "descripcion": "Algo invisible se desliza bajo la arena, siguiendo cada paso que das.",
-         "conexiones": {"sur": 20, "este": 25},
+    20: {"nombre": "Dunas del Murmullo Eterno",
+         "descripcion": "Algo invisible se desliza bajo la arena.",
+         "conexiones": {"sur": 19, "este": 25},
          "bioma": "desierto", "cantidad": 2},
 
-    22: {"nombre": "Columnas del Olvido",
-         "descripcion": "Pilares erosionados se alzan torcidos, marcando un lugar que el tiempo quiso borrar.",
+    21: {"nombre": "Columnas del Olvido",
+         "descripcion": "Pilares erosionados marcando un lugar que el tiempo quiso borrar.",
          "conexiones": {"este": 15},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True, "tienda": True},
 
-    23: {"nombre": "Templo de la Sangre Antigua",
-         "descripcion": "Inscripciones vivas recorren las paredes, como si observaran a los intrusos.",
-         "conexiones": {"este": 24, "oeste": 16},
+    22: {"nombre": "Templo de la Sangre Antigua",
+         "descripcion": "Inscripciones vivas recorren las paredes.",
+         "conexiones": {"este": 23, "oeste": 16},
          "encuentros": [("demonioInferior", 2)]},
 
-    24: {"nombre": "Abismo de los Caídos",
-         "descripcion": "Un campo de restos antiguos donde incluso el viento parece evitar pasar.",
-         "conexiones": {"sur": 25, "norte": 23, "este": 32, "oeste": 149},
+    23: {"nombre": "Abismo de los Caidos",
+         "descripcion": "Un campo donde incluso el viento parece evitar pasar.",
+         "conexiones": {"sur": 24, "oeste": 22},
          "bioma": "desierto", "cantidad": 2},
 
-    25: {"nombre": "Trono del Devastador",
-         "descripcion": "Un asiento de poder olvidado, rodeado de una oscuridad que respira.",
-         "conexiones": {"sur": 30, "norte": 23, "este": 32, "oeste": 149},
-         "bioma": "desierto", "cantidad": 4,
-         "tesoro": True},
+    24: {"nombre": "Trono del Devastador",
+         "descripcion": "Un asiento de poder olvidado, rodeado de oscuridad.",
+         "conexiones": {"sur": 30, "norte": 23, "este": 32},
+         "bioma": "desierto", "cantidad": 4},
 
-    26: {"nombre": "Horizonte Quebrado",
-         "descripcion": "El aire distorsiona la vista, haciendo que la distancia pierda todo sentido.",
-         "conexiones": {"oeste": 20, "sur": 27},
+    25: {"nombre": "Horizonte Quebrado",
+         "descripcion": "El aire distorsiona la vista.",
+         "conexiones": {"oeste": 20, "sur": 26},
          "bioma": "desierto", "cantidad": 1,
-         "tienda": True,
-         "hospital": True},
+         "tienda": True, "hospital": True},
 
-    27: {"nombre": "Dunas del Hambre",
-         "descripcion": "La arena se mueve de forma antinatural, como si buscara devorar a los vivos.",
+    26: {"nombre": "Dunas del Hambre",
+         "descripcion": "La arena se mueve de forma antinatural.",
          "conexiones": {"oeste": 19, "norte": 25},
          "bioma": "desierto", "cantidad": 2},
 
-    28: {"nombre": "Ruinas del Eco Silente",
-         "descripcion": "Cada paso resuena demasiado fuerte, como si algo escuchara desde abajo.",
-         "conexiones": {"oeste": 18, "este": 29},
+    27: {"nombre": "Ruinas del Eco Silente",
+         "descripcion": "Cada paso resuena demasiado fuerte.",
+         "conexiones": {"oeste": 18, "este": 28},
          "bioma": "desierto", "cantidad": 2},
 
-    29: {"nombre": "Santuario de la Marca Roja",
-         "descripcion": "Antiguos rituales dejaron su huella, aún palpable en el aire seco.",
-         "conexiones": {"oeste": 28, "norte": 30},
-         "encuentros": [("demonioInferior", 2)],
-         "tesoro": True},
+    28: {"nombre": "Santuario de la Marca Roja",
+         "descripcion": "Antiguos rituales dejaron su huella.",
+         "conexiones": {"oeste": 27, "norte": 29},
+         "encuentros": [("demonioInferior", 2)]},
 
-    30: {"nombre": "Campos de Huesos Errantes",
-         "descripcion": "Restos que cambian de lugar con el tiempo, formando patrones desconocidos.",
-         "conexiones": {"sur": 29, "norte": 31},
+    29: {"nombre": "Campos de Huesos Errantes",
+         "descripcion": "Restos que cambian de lugar con el tiempo.",
+         "conexiones": {"sur": 28, "norte": 30},
          "bioma": "desierto", "cantidad": 2},
 
-    31: {"nombre": "Trono del Último Señor",
-         "descripcion": "Un lugar de dominio absoluto, ahora envuelto en un silencio antinatural.",
-         "conexiones": {"oeste": 25, "norte": 32},
+    30: {"nombre": "Trono del Ultimo Senor",
+         "descripcion": "Un lugar de dominio absoluto en silencio antinatural.",
+         "conexiones": {"oeste": 24, "norte": 31},
          "encuentros": [("reyEsqueleto", 1)]},
 
-    32: {"nombre": "Falla de los Antiguos",
-         "descripcion": "Una grieta llena de restos y reliquias de una civilización olvidada.",
-         "conexiones": {"sur": 31},
+    31: {"nombre": "Falla de los Antiguos",
+         "descripcion": "Una grieta llena de restos de una civilizacion olvidada.",
+         "conexiones": {"sur": 30},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True},
 
-    33: {"nombre": "Trono de Ceniza Viva",
-         "descripcion": "El asiento aún desprende calor, como si su antiguo rey no se hubiera ido del todo.",
-         "conexiones": {"oeste": 24, "este": 34, "norte": 37},
-         "encuentros": [("reyDemonio", 1)],
-         "acertijos": True},  # ← NUEVO: Sala de acertijos
+    32: {"nombre": "Trono de Ceniza Viva",
+         "descripcion": "El asiento aun desprende calor como si su rey no se hubiera ido del todo.",
+         "conexiones": {"oeste": 24, "este": 33, "norte": 37},
+         "encuentros": [("reyDemonio", 1)]},
 
-    # ── Mar (salas 33-72) ──────────────────────────────────
-    34: {"nombre": "Embarcadero 1",
-         "descripcion": "La marea está calmada y la gente emocionada.",
-         "conexiones": {"oeste": 32, "norte": 38, "este": 39, "sur": 35},
-         "bioma": "mar"},
+    # ── MAR (salas 33-72) ──────────────────────────────────────────────────────
+    # Salas 33 y 37: ACERTIJO — no hay combate, hay puzzle
+    33: {"nombre": "Embarcadero 1",
+         "descripcion": (
+             "La marea esta calmada. Un guardian antiguo custodia el paso.\n"
+             "Dice: Solo los sabios pueden cruzar. Responde mis tres enigmas o no avanzaras."
+         ),
+         "conexiones": {"oeste": 32, "norte": 38, "este": 39, "sur": 34}},
 
-    35: {"nombre": "Abismo Coralino",
-         "descripcion": "Corales brillantes cubren una grieta que parece no tener fin.",
-         "conexiones": {"oeste": 33, "este": 36},
+    34: {"nombre": "Abismo Coralino",
+         "descripcion": "Corales brillantes cubren una grieta que no tiene fin.",
+         "conexiones": {"norte": 33, "este": 35},
          "bioma": "mar", "cantidad": 1,
          "hospital": True},
 
-    36: {"nombre": "Trono del Oceano",
+    35: {"nombre": "Trono del Oceano",
          "descripcion": "Un trono erosionado por el tiempo, rodeado de corrientes poderosas.",
-         "conexiones": {"oeste": 34, "este": 37},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
+         "conexiones": {"oeste": 34, "este": 36},
+         "bioma": "mar", "cantidad": 2},
+
+    36: {"nombre": "Cripta de las Algas",
+         "descripcion": "Columnas cubiertas de algas esconden secretos olvidados.",
+         "conexiones": {"sur": 35, "norte": 41, "oeste": 40},
+         "bioma": "mar", "cantidad": 1},
 
     37: {"nombre": "Embarcadero 2",
-         "descripcion": "El puerto de embarcación esta rebosante de gente.",
-         "conexiones": {"sur": 32, "este": 38, "norte": 42},
-         "bioma": "mar",
-         "acertijos": True},  # ← NUEVO: Sala de acertijos
+         "descripcion": (
+             "El puerto rebosante de gente. Otro guardian bloquea el camino.\n"
+             "Voz grave: Solo el que piensa puede pasar. Demuestra tu ingenio."
+         ),
+         "conexiones": {"sur": 32, "este": 38, "norte": 42}},
 
     38: {"nombre": "Fosa de las Sombras Marinas",
-         "descripcion": "Una profundidad oscura donde nada debería sobrevivir.",
+         "descripcion": "Una profundidad oscura donde nada deberia sobrevivir.",
          "conexiones": {"oeste": 37, "norte": 43, "este": 39, "sur": 33},
          "bioma": "mar", "cantidad": 2,
          "hospital": True},
 
     39: {"nombre": "Arrecife Susurrante",
-         "descripcion": "El coral emite sonidos extraños al moverse con la corriente.",
+         "descripcion": "El coral emite sonidos extranos al moverse con la corriente.",
          "conexiones": {"norte": 44, "sur": 33, "oeste": 38, "este": 40},
-         "bioma": "mar", "cantidad": 1,
-         "tesoro": True},
+         "bioma": "mar", "cantidad": 1},
 
     40: {"nombre": "Caverna de la Bruma Salina",
-         "descripcion": "Una cueva húmeda llena de niebla con olor a sal.",
+         "descripcion": "Una cueva humeda llena de niebla con olor a sal.",
          "conexiones": {"oeste": 39, "este": 41, "sur": 36},
          "bioma": "mar", "cantidad": 2},
 
@@ -581,23 +556,23 @@ SALAS = {
          "bioma": "mar", "cantidad": 1},
 
     43: {"nombre": "Pantano del Silencio",
-         "descripcion": "Un pantano inmóvil donde ni los insectos se atreven a sonar.",
+         "descripcion": "Un pantano donde ni los insectos se atreven a sonar.",
          "conexiones": {"oeste": 42, "norte": 51, "este": 44, "sur": 39},
          "bioma": "mar", "cantidad": 2},
 
     44: {"nombre": "Refugio de las Medusas",
-         "descripcion": "Criaturas translúcidas iluminan la oscuridad acuática.",
+         "descripcion": "Criaturas translucidas iluminan la oscuridad acuatica.",
          "conexiones": {"norte": 50, "sur": 39, "oeste": 43, "este": 45},
          "bioma": "mar", "cantidad": 3,
          "hospital": True, "tienda": True},
 
     45: {"nombre": "Camara del Pulpo Antiguo",
-         "descripcion": "Tentáculos gigantes dejaron marcas en las paredes.",
+         "descripcion": "Tentaculos gigantes dejaron marcas en las paredes.",
          "conexiones": {"oeste": 44},
          "bioma": "mar", "cantidad": 1},
 
     46: {"nombre": "Bosque de Manglares Oscuros",
-         "descripcion": "Raíces retorcidas emergen del agua turbia.",
+         "descripcion": "Raices retorcidas emergen del agua turbia.",
          "conexiones": {"sur": 41, "este": 47, "norte": 48},
          "bioma": "mar", "cantidad": 2},
 
@@ -607,7 +582,7 @@ SALAS = {
          "bioma": "mar", "cantidad": 3},
 
     48: {"nombre": "Grieta Abisal",
-         "descripcion": "Una fisura profunda que emite un frío inquietante.",
+         "descripcion": "Una fisura profunda que emite un frio inquietante.",
          "conexiones": {"oeste": 46, "sur": 47, "norte": 59},
          "bioma": "mar", "cantidad": 1},
 
@@ -622,10 +597,9 @@ SALAS = {
          "bioma": "mar", "cantidad": 1},
 
     51: {"nombre": "Gruta de las Mareas Silentes",
-         "descripcion": "El agua entra y sale sin hacer ruido, como si el sonido estuviera prohibido.",
+         "descripcion": "El agua entra y sale sin hacer ruido.",
          "conexiones": {"norte": 54, "sur": 43, "oeste": 52, "este": 50},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
+         "bioma": "mar", "cantidad": 2},
 
     52: {"nombre": "Pantano de las Raices Hundidas",
          "descripcion": "Raices gigantes se entrelazan bajo aguas oscuras.",
@@ -641,11 +615,10 @@ SALAS = {
     54: {"nombre": "Estuario del Viento Humedo",
          "descripcion": "El aire cargado de humedad sopla con fuerza constante.",
          "conexiones": {"oeste": 53, "este": 55, "sur": 50},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
+         "bioma": "mar", "cantidad": 2},
 
     55: {"nombre": "Pozo de Agua Estancada",
-         "descripcion": "Un pozo profundo donde el agua no se mueve desde hace siglos.",
+         "descripcion": "Un pozo donde el agua no se mueve desde hace siglos.",
          "conexiones": {"oeste": 54, "sur": 50},
          "bioma": "mar", "cantidad": 1},
 
@@ -663,7 +636,7 @@ SALAS = {
          "descripcion": "Arboles muertos sobresalen de aguas tranquilas.",
          "conexiones": {"sur": 57, "este": 60},
          "bioma": "mar", "cantidad": 1,
-         "tienda": True, "tesoro": True},
+         "tienda": True},
 
     59: {"nombre": "Camara de las Corrientes Ocultas",
          "descripcion": "El agua fluye por caminos invisibles bajo tus pies.",
@@ -680,22 +653,20 @@ SALAS = {
          "conexiones": {"oeste": 60, "sur": 62, "este": 64},
          "bioma": "mar", "cantidad": 1},
 
-    62: {"nombre": "Playa de la Arena Humeda",
-         "descripcion": "La arena nunca llega a secarse, incluso bajo el sol.",
+    62: {"nombre": "Playa de Arena Humeda",
+         "descripcion": "La arena nunca llega a secarse.",
          "conexiones": {"oeste": 59, "norte": 61, "este": 63},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
+         "bioma": "mar", "cantidad": 2},
 
     63: {"nombre": "Gruta del Agua Resonante",
-         "descripcion": "Cada gota crea ecos prolongados en la cueva.",
+         "descripcion": "Cada gota crea ecos prolongados.",
          "conexiones": {"oeste": 62, "este": 66},
          "bioma": "mar", "cantidad": 3},
 
     64: {"nombre": "Delta de los Canales Perdidos",
          "descripcion": "Un laberinto de agua donde es facil desorientarse.",
          "conexiones": {"oeste": 61, "este": 65},
-         "bioma": "mar", "cantidad": 1,
-         "tesoro": True},
+         "bioma": "mar", "cantidad": 1},
 
     65: {"nombre": "Arrecife de las Espinas Blancas",
          "descripcion": "Formaciones afiladas sobresalen entre las olas.",
@@ -730,48 +701,47 @@ SALAS = {
 
     71: {"nombre": "Cumbre del Leviatan",
          "descripcion": "Un acantilado imposible desde donde emerge el eco de una bestia ancestral.",
-         "conexiones": {"oeste": 70, "este": 72, "norte": 150},
+         "conexiones": {"oeste": 70, "este": 72},
          "bioma": "mar", "cantidad": 1},
 
     72: {"nombre": "Cumbre del Kraken",
-         "descripcion": "Un pico rocoso azotado por tormentas donde una sombra colosal se agita bajo las olas.",
-         "conexiones": {"oeste": 71, "este": 73, "sur": 150},
-         "bioma": "mar", "cantidad": 1,
+         "descripcion": "Un pico rocoso azotado por tormentas donde una sombra colosal se agita.",
+         "conexiones": {"oeste": 71, "este": 73},
          "encuentros": [("kraken", 1)]},
 
-    # ── NIEVE (salas 73-149) ──────────────────────────────────
+    # ── NIEVE (salas 73-148) ──────────────────────────────────
     73:  {"nombre": "Ventisca Eterna",
-          "descripcion": "El viento ruge sin descanso, levantando cuchillas de nieve que desgarran la piel.",
+          "descripcion": "El viento ruge sin descanso, cuchillas de nieve que desgarran la piel.",
           "conexiones": {"este": 74, "oeste": 72},
           "bioma": "nieve", "cantidad": 1},
 
     74:  {"nombre": "Bosque de Hielo Negro",
-          "descripcion": "Árboles oscuros cubiertos de escarcha absorben la luz y el calor.",
-          "conexiones": {"oeste": 76, "sur": 75, "este": 76},
+          "descripcion": "Arboles oscuros cubiertos de escarcha absorben la luz y el calor.",
+          "conexiones": {"oeste": 74, "sur": 75, "este": 76},
           "bioma": "nieve", "cantidad": 2},
 
-    75:  {"nombre": "Grieta del Frío Abisal",
-          "descripcion": "Una fisura profunda exhala un aire tan frío que quema.",
+    75:  {"nombre": "Grieta del Frio Abisal",
+          "descripcion": "Una fisura profunda exhala un aire tan frio que quema.",
           "conexiones": {"norte": 74},
           "bioma": "nieve", "cantidad": 2},
 
     76:  {"nombre": "Llanura del Silencio Blanco",
-          "descripcion": "Una extensión infinita donde ningún sonido logra sobrevivir.",
+          "descripcion": "Una extension infinita donde ningun sonido logra sobrevivir.",
           "conexiones": {"sur": 77, "oeste": 74},
           "bioma": "nieve", "cantidad": 1},
 
     77:  {"nombre": "Cementerio Congelado",
           "descripcion": "Cuerpos atrapados en hielo parecen observar a los vivos.",
-          "conexiones": {"NORTE": 76, "este": 78},
+          "conexiones": {"norte": 76, "este": 78},
           "bioma": "nieve", "cantidad": 2},
 
     78:  {"nombre": "Tormenta Errante",
-          "descripcion": "Una ventisca viva se desplaza sin rumbo, devorando todo a su paso.",
+          "descripcion": "Una ventisca viva se desplaza sin rumbo.",
           "conexiones": {"sur": 77, "norte": 79},
           "bioma": "nieve", "cantidad": 2},
 
     79:  {"nombre": "Picos del Desgarro",
-          "descripcion": "Montañas afiladas como cuchillas sobresalen entre la nieve.",
+          "descripcion": "Montanas afiladas como cuchillas sobresalen entre la nieve.",
           "conexiones": {"sur": 78, "norte": 98, "este": 80},
           "bioma": "nieve", "cantidad": 2},
 
@@ -780,8 +750,8 @@ SALAS = {
           "conexiones": {"oeste": 79, "norte": 97},
           "bioma": "nieve", "cantidad": 1},
 
-    81:  {"nombre": "Río de Hielo Muerto",
-          "descripcion": "Un río congelado bajo el cual algo se mueve lentamente.",
+    81:  {"nombre": "Rio de Hielo Muerto",
+          "descripcion": "Un rio congelado bajo el cual algo se mueve lentamente.",
           "conexiones": {"este": 82},
           "bioma": "nieve", "cantidad": 2},
 
@@ -796,7 +766,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     84:  {"nombre": "Abismo Nevado",
-          "descripcion": "Un vacío oculto bajo la nieve, listo para tragar incautos.",
+          "descripcion": "Un vacio oculto bajo la nieve, listo para tragar incautos.",
           "conexiones": {"sur": 85, "norte": 95, "oeste": 83},
           "bioma": "nieve", "cantidad": 1},
 
@@ -816,8 +786,8 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2,
           "hospital": True},
 
-    88:  {"nombre": "Paso del Susurro Gélido",
-          "descripcion": "Voces heladas parecen guiarte… o perderte.",
+    88:  {"nombre": "Paso del Susurro Gelido",
+          "descripcion": "Voces heladas parecen guiarte... o perderte.",
           "conexiones": {"sur": 89},
           "bioma": "nieve", "cantidad": 1},
 
@@ -827,7 +797,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     90:  {"nombre": "Fosa del Olvido Blanco",
-          "descripcion": "Quienes caen aquí desaparecen sin dejar rastro.",
+          "descripcion": "Quienes caen aqui desaparecen sin dejar rastro.",
           "conexiones": {"norte": 91},
           "bioma": "nieve", "cantidad": 2},
 
@@ -846,7 +816,7 @@ SALAS = {
           "conexiones": {"este": 92, "norte": 102},
           "bioma": "nieve", "cantidad": 2},
 
-    94:  {"nombre": "Bosque de Agujas Gélidas",
+    94:  {"nombre": "Bosque de Agujas Gelidas",
           "descripcion": "Espinas de hielo sobresalen del suelo como trampas.",
           "conexiones": {"oeste": 95, "norte": 103},
           "bioma": "nieve", "cantidad": 2,
@@ -858,12 +828,12 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     96:  {"nombre": "Caverna de Escarcha Viva",
-          "descripcion": "El hielo late con una energía inquietante.",
+          "descripcion": "El hielo late con una energia inquietante.",
           "conexiones": {"sur": 83, "norte": 105, "oeste": 97},
           "bioma": "nieve", "cantidad": 2},
 
-    97:  {"nombre": "Paso del Último Aliento",
-          "descripcion": "El aire es tan frío que respirar duele.",
+    97:  {"nombre": "Paso del Ultimo Aliento",
+          "descripcion": "El aire es tan frio que respirar duele.",
           "conexiones": {"sur": 80, "este": 96},
           "bioma": "nieve", "cantidad": 1},
 
@@ -872,8 +842,8 @@ SALAS = {
           "conexiones": {"sur": 79, "norte": 107, "oeste": 99},
           "bioma": "nieve", "cantidad": 2},
 
-    99:  {"nombre": "Valle del Sueño Helado",
-          "descripcion": "Un frío que induce un sueño mortal.",
+    99:  {"nombre": "Valle del Sueno Helado",
+          "descripcion": "Un frio que induce un sueno mortal.",
           "conexiones": {"este": 98, "norte": 108},
           "bioma": "nieve", "cantidad": 2},
 
@@ -887,8 +857,8 @@ SALAS = {
           "conexiones": {"sur": 92, "norte": 118},
           "bioma": "nieve", "cantidad": 2},
 
-    102: {"nombre": "Territorio del Frío Antiguo",
-          "descripcion": "Una energía ancestral congela todo lo que toca.",
+    102: {"nombre": "Territorio del Frio Antiguo",
+          "descripcion": "Una energia ancestral congela todo lo que toca.",
           "conexiones": {"sur": 93, "norte": 117},
           "bioma": "nieve", "cantidad": 2},
 
@@ -898,7 +868,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     104: {"nombre": "Vigilantes de Escarcha",
-          "descripcion": "Figuras inmóviles parecen seguir cada movimiento.",
+          "descripcion": "Figuras inmoviles parecen seguir cada movimiento.",
           "conexiones": {"sur": 95, "norte": 115, "este": 103, "oeste": 105},
           "bioma": "nieve", "cantidad": 2},
 
@@ -914,37 +884,37 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     107: {"nombre": "Ruinas del Invierno Eterno",
-          "descripcion": "Restos de una civilización atrapada en hielo.",
+          "descripcion": "Restos de una civilizacion atrapada en hielo.",
           "conexiones": {"sur": 98, "norte": 112, "este": 106, "oeste": 108},
           "bioma": "nieve", "cantidad": 2},
 
-    108: {"nombre": "Campo de Fragmentos Gélidos",
-          "descripcion": "El suelo está cubierto de cristales afilados.",
+    108: {"nombre": "Campo de Fragmentos Gelidos",
+          "descripcion": "El suelo esta cubierto de cristales afilados.",
           "conexiones": {"sur": 99, "norte": 111, "este": 107, "oeste": 109},
           "bioma": "nieve", "cantidad": 2},
 
     109: {"nombre": "Pozo de Escarcha",
-          "descripcion": "Un agujero profundo que emana frío absoluto.",
+          "descripcion": "Un agujero profundo que emana frio absoluto.",
           "conexiones": {"sur": 100, "norte": 110, "este": 108},
           "bioma": "nieve", "cantidad": 1},
 
-    110: {"nombre": "Travesía del Frío Mortal",
+    110: {"nombre": "Travesia del Frio Mortal",
           "descripcion": "Cada paso drena lentamente la vida.",
           "conexiones": {"sur": 109, "norte": 111},
           "bioma": "nieve", "cantidad": 2},
 
-    111: {"nombre": "Tormenta Estática",
-          "descripcion": "El aire está cargado de energía helada.",
+    111: {"nombre": "Tormenta Estatica",
+          "descripcion": "El aire esta cargado de energia helada.",
           "conexiones": {"sur": 108, "este": 112},
           "bioma": "nieve", "cantidad": 2},
 
     112: {"nombre": "Cascada Congelada",
-          "descripcion": "El agua quedó atrapada en pleno descenso.",
+          "descripcion": "El agua quedo atrapada en pleno descenso.",
           "conexiones": {"sur": 107, "norte": 125, "oeste": 111},
           "bioma": "nieve", "cantidad": 1},
 
-    113: {"nombre": "Círculo de Hielo Antiguo",
-          "descripcion": "Formaciones perfectas rodean un centro vacío.",
+    113: {"nombre": "Circulo de Hielo Antiguo",
+          "descripcion": "Formaciones perfectas rodean un centro vacio.",
           "conexiones": {"sur": 124, "este": 114},
           "bioma": "nieve", "cantidad": 2},
 
@@ -954,18 +924,18 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2,
           "hospital": True},
 
-    115: {"nombre": "Frontera del Frío Absoluto",
-          "descripcion": "Más allá de este punto, nada sobrevive.",
+    115: {"nombre": "Frontera del Frio Absoluto",
+          "descripcion": "Mas alla de este punto, nada sobrevive.",
           "conexiones": {"sur": 104, "norte": 122, "este": 116},
           "bioma": "nieve", "cantidad": 2},
 
-    116: {"nombre": "Vértice Nevado",
+    116: {"nombre": "Vertice Nevado",
           "descripcion": "Un punto donde el viento converge violentamente.",
           "conexiones": {"oeste": 115, "norte": 121},
           "bioma": "nieve", "cantidad": 2},
 
     117: {"nombre": "Hogar de la Escarcha",
-          "descripcion": "El frío parece originarse aquí.",
+          "descripcion": "El frio parece originarse aqui.",
           "conexiones": {"sur": 102, "norte": 120},
           "bioma": "nieve", "cantidad": 1},
 
@@ -985,12 +955,12 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     121: {"nombre": "Tormenta Silenciosa",
-          "descripcion": "La nieve cae sin hacer ningún sonido.",
+          "descripcion": "La nieve cae sin hacer ningun sonido.",
           "conexiones": {"sur": 116, "norte": 130, "oeste": 122, "este": 120},
           "bioma": "nieve", "cantidad": 1},
 
-    122: {"nombre": "Núcleo de Hielo Vivo",
-          "descripcion": "Una fuente de energía helada palpita.",
+    122: {"nombre": "Nucleo de Hielo Vivo",
+          "descripcion": "Una fuente de energia helada palpita.",
           "conexiones": {"sur": 115, "norte": 131, "oeste": 123, "este": 121},
           "bioma": "nieve", "cantidad": 2},
 
@@ -1000,12 +970,12 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     124: {"nombre": "Mar de Escarcha",
-          "descripcion": "Una extensión ondulante de hielo sólido.",
+          "descripcion": "Una extension ondulante de hielo solido.",
           "conexiones": {"sur": 113, "norte": 133, "oeste": 125, "este": 123},
           "bioma": "nieve", "cantidad": 2},
 
-    125: {"nombre": "Colina del Último Suspiro",
-          "descripcion": "El frío roba el aliento lentamente.",
+    125: {"nombre": "Colina del Ultimo Suspiro",
+          "descripcion": "El frio roba el aliento lentamente.",
           "conexiones": {"este": 124, "norte": 134},
           "bioma": "nieve", "cantidad": 1},
 
@@ -1024,7 +994,7 @@ SALAS = {
           "conexiones": {"sur": 119, "norte": 145},
           "bioma": "nieve", "cantidad": 2},
 
-    129: {"nombre": "Bosque del Frío Susurrante",
+    129: {"nombre": "Bosque del Frio Susurrante",
           "descripcion": "El viento parece hablar entre las ramas congeladas.",
           "conexiones": {"sur": 120, "norte": 144},
           "bioma": "nieve", "cantidad": 2},
@@ -1041,8 +1011,8 @@ SALAS = {
           "hospital": True},
 
     132: {"nombre": "Cumbre del Olvido",
-          "descripcion": "Quienes llegan aquí olvidan por qué vinieron.",
-          "conexiones": {"sur": 122, "norte": 142, "oeste": 133},
+          "descripcion": "Quienes llegan aqui olvidan por que vinieron.",
+          "conexiones": {"sur": 123, "norte": 142, "oeste": 133},
           "bioma": "nieve", "cantidad": 2},
 
     133: {"nombre": "Rugido Blanco",
@@ -1050,7 +1020,7 @@ SALAS = {
           "conexiones": {"sur": 124, "norte": 140, "este": 132},
           "bioma": "nieve", "cantidad": 2},
 
-    134: {"nombre": "Valle del Frío Eterno",
+    134: {"nombre": "Valle del Frio Eterno",
           "descripcion": "Nunca deja de nevar en este lugar.",
           "conexiones": {"sur": 125, "norte": 139, "oeste": 135},
           "bioma": "nieve", "cantidad": 2},
@@ -1071,7 +1041,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     138: {"nombre": "Campos del Silencio",
-          "descripcion": "El mundo parece detenido aquí.",
+          "descripcion": "El mundo parece detenido aqui.",
           "conexiones": {"oeste": 137, "este": 139},
           "bioma": "nieve", "cantidad": 1},
 
@@ -1085,24 +1055,24 @@ SALAS = {
           "conexiones": {"sur": 133, "oeste": 139, "este": 141},
           "bioma": "nieve", "cantidad": 2},
 
-    141: {"nombre": "Grieta del Último Invierno",
-          "descripcion": "Un frío ancestral emana desde lo profundo.",
+    141: {"nombre": "Grieta del Ultimo Invierno",
+          "descripcion": "Un frio ancestral emana desde lo profundo.",
           "conexiones": {"sur": 132, "norte": 146, "este": 142, "oeste": 140},
           "bioma": "nieve", "cantidad": 2},
 
     142: {"nombre": "Altar de Hielo Antiguo",
-          "descripcion": "Un lugar olvidado donde el frío es venerado.",
+          "descripcion": "Un lugar olvidado donde el frio es venerado.",
           "conexiones": {"sur": 131, "oeste": 141, "este": 143},
           "bioma": "nieve", "cantidad": 2,
           "hospital": True},
 
-    143: {"nombre": "Sendero del Frío Infinito",
+    143: {"nombre": "Sendero del Frio Infinito",
           "descripcion": "Un camino que parece no tener final.",
-          "conexiones": {"sur":    130, "oeste": 142},
+          "conexiones": {"sur": 130, "oeste": 142},
           "bioma": "nieve", "cantidad": 2},
 
-    144: {"nombre": "Cúpula de Escarcha",
-          "descripcion": "Una formación cerrada de hielo perfecto.",
+    144: {"nombre": "Cupula de Escarcha",
+          "descripcion": "Una formacion cerrada de hielo perfecto.",
           "conexiones": {"sur": 129, "este": 145},
           "bioma": "nieve", "cantidad": 1},
 
@@ -1111,36 +1081,22 @@ SALAS = {
           "conexiones": {"sur": 128, "norte": 146, "oeste": 144},
           "bioma": "nieve", "cantidad": 2},
 
-    146: {"nombre": "Frontera del Vacío Helado",
-          "descripcion": "Más allá solo hay frío y nada más.",
+    146: {"nombre": "Frontera del Vacio Helado",
+          "descripcion": "Mas alla solo hay frio y nada mas.",
           "conexiones": {"sur": 141, "norte": 148, "este": 145, "oeste": 147},
           "bioma": "nieve", "cantidad": 2},
 
-    147: {"nombre": "Cráter de Hielo Vivo",
-          "descripcion": "Un impacto antiguo que aún emana energía.",
+    147: {"nombre": "Crater de Hielo Vivo",
+          "descripcion": "Un impacto antiguo que aun emana energia.",
           "conexiones": {"este": 146, "norte": 148},
           "bioma": "nieve", "cantidad": 2,
-          "hospital": True,
-          "tienda": True},
+          "hospital": True, "tienda": True},
 
     148: {"nombre": "Trono del Invierno",
-          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
+          "descripcion": "Un asiento de poder donde el frio gobierna todo.",
           "conexiones": {"sur": 146, "oeste": 147},
           "encuentros": [("alpha", 1)]},
-
-    149: {"nombre": "Oasis tranquilo",
-          "descripcion": "Un sitio en el que descansar, prepàrate para la batalla final.",
-         "conexiones": {"sur": 24, "oeste": 32},
-         "hospital": True,
-         "tienda": True},
-
-    150: {"nombre": "Trono del Invierno",
-          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
-          "conexiones": {"sur": 71, "norte": 72},
-          "hospital": True,
-          "tienda": True},
 }
-
 
 # ============================================================
 # ESTADO GLOBAL
@@ -1258,8 +1214,7 @@ class Player:
         self.invitacion_de    = None
         self.salas_limpias    = set()   # salas donde el jugador ya derrotó a los enemigos
         self.duelo_pendiente  = None    # {"retador": Player, "monedas": int} — duelo recibido pendiente
-        self.acertijos_completados = set()  # salas con acertijos completados
-        self.acertijo_actual = 0  # índice del acertijo actual en la sala
+        self.en_acertijo      = False   # True mientras resuelve acertijos
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
@@ -1882,111 +1837,6 @@ async def setup_personaje(player: "Player") -> bool:
 
 
 # ============================================================
-# SISTEMA DE ACERTIJOS
-# ============================================================
-
-async def iniciar_acertijos(player: Player):
-    """Inicia la secuencia de acertijos para el jugador en su sala actual."""
-    sala_id = player.sala_id
-    
-    if sala_id not in SALAS_ACERTIJOS:
-        return False
-    
-    # Verificar si ya completó esta sala de acertijos
-    if sala_id in player.acertijos_completados:
-        return False
-    
-    indices_acertijos = SALAS_ACERTIJOS[sala_id]
-    player.acertijo_actual = 0
-    
-    await player.send("\n  🧩 Has entrado en una sala de acertijos!")
-    await player.send("  Debes responder correctamente 3 acertijos para avanzar.")
-    await player.send("  Si fallas, deberás volver a empezar desde el primero.\n")
-    
-    # Iniciar primer acertijo
-    await mostrar_acertijo(player, indices_acertijos[0])
-    return True
-
-
-async def mostrar_acertijo(player: Player, indice_acertijo: int):
-    """Muestra un acertijo específico al jugador vía popup."""
-    acertijo = ACERTIJOS[indice_acertijo]
-    
-    # Enviar popup de acertijo al cliente
-    try:
-        await player.ws.send_json({
-            "type": "acertijo",
-            "pregunta": acertijo["pregunta"],
-            "opciones": acertijo["opciones"],
-            "indice": player.acertijo_actual,
-            "total": 3
-        })
-    except Exception as e:
-        print(f"[ACERTIJO] Error enviando popup: {e}")
-        # Fallback: mostrar en texto plano
-        await player.send(f"\n  🧩 ACERTIJO {player.acertijo_actual + 1}/3:")
-        await player.send(f"  {acertijo['pregunta']}")
-        for opt in acertijo["opciones"]:
-            await player.send(f"    {opt}")
-        await player.send("  Escribe la letra de tu respuesta (A, B, C o D):")
-
-
-async def verificar_respuesta_acertijo(player: Player, respuesta: str) -> bool:
-    """Verifica la respuesta del jugador al acertijo actual."""
-    sala_id = player.sala_id
-    
-    if sala_id not in SALAS_ACERTIJOS:
-        return False
-    
-    indices_acertijos = SALAS_ACERTIJOS[sala_id]
-    indice_actual = indices_acertijos[player.acertijo_actual]
-    acertijo = ACERTIJOS[indice_actual]
-    
-    respuesta_limpia = respuesta.strip().lower()
-    
-    # Verificar si la respuesta es válida (a, b, c, d)
-    if respuesta_limpia not in ["a", "b", "c", "d"]:
-        await player.send("  Responde con A, B, C o D.")
-        return False
-    
-    if respuesta_limpia == acertijo["respuesta"]:
-        # Respuesta correcta
-        await player.send(f"  ✅ ¡Correcto! La respuesta era {acertijo['letra_correcta']}.")
-        
-        player.acertijo_actual += 1
-        
-        # ¿Completó todos los acertijos?
-        if player.acertijo_actual >= 3:
-            await player.send("\n  🎉 ¡Has completado todos los acertijos! El camino está despejado.")
-            player.acertijos_completados.add(sala_id)
-            player.salas_limpias.add(sala_id)  # Marcar sala como limpia para poder avanzar
-            
-            # Notificar a otros jugadores en la sala
-            await broadcast_sala(sala_id, f"  {player.nombre} ha resuelto los acertijos y despejado el camino.")
-            
-            # Enviar señal de cierre de popup
-            try:
-                await player.ws.send_json({"type": "acertijo_end", "exito": True})
-            except Exception:
-                pass
-            return True
-        else:
-            # Siguiente acertijo
-            await player.send(f"\n  Siguiente acertijo...")
-            await mostrar_acertijo(player, indices_acertijos[player.acertijo_actual])
-            return False
-    else:
-        # Respuesta incorrecta - reiniciar
-        await player.send(f"  ❌ ¡Incorrecto! La respuesta correcta era {acertijo['letra_correcta']}.")
-        await player.send("  Debes volver a empezar desde el primer acertijo...\n")
-        
-        # Reiniciar progreso de acertijos en esta sala
-        player.acertijo_actual = 0
-        await mostrar_acertijo(player, indices_acertijos[0])
-        return False
-
-
-# ============================================================
 # SALAS
 # ============================================================
 
@@ -2022,12 +1872,9 @@ async def describir_sala(player: Player):
     if servicios:
         lineas.append(f"  Servicios: {' | '.join(servicios)}")
 
-    # Indicar si hay peligro o acertijos
-    if sala.get("acertijos"):
-        lineas.append("  🧩 Esta sala tiene acertijos. Debes resolverlos para avanzar.")
-        # Iniciar acertijos automáticamente al entrar
-        asyncio.create_task(iniciar_acertijos(player))
-    elif "bioma" in sala or sala.get("encuentros"):
+    # Indicar si hay peligro
+    tiene_enemigos = "bioma" in sala or sala.get("encuentros")
+    if tiene_enemigos:
         lineas.append("  Hay enemigos aqui. Escribe 'atacar' para combatir.")
 
     await player.send("\n".join(lineas))
@@ -2044,26 +1891,25 @@ async def mover_jugador(player: Player, direccion: str):
     if not sala_actual:
         return
 
-    # ── Bloqueo por acertijos ────────────────────────────────
-    if sala_actual.get("acertijos") and player.sala_id not in player.acertijos_completados:
-        await player.send(
-            "  🧩 ¡Debes resolver los acertijos de esta sala para poder avanzar!\n"
-            "  Responde correctamente los 3 acertijos para despejar el camino."
-        )
-        # Reiniciar acertijos si no los ha completado
-        if player.sala_id not in SALAS_ACERTIJOS or player.acertijo_actual >= 3:
-            player.acertijo_actual = 0
-        asyncio.create_task(iniciar_acertijos(player))
-        return
-
-    # ── Bloqueo por monstruos (solo si hay enemigos reales) ────────────────────────────────
-    tiene_enemigos_reales = "bioma" in sala_actual or bool(sala_actual.get("encuentros"))
-    if tiene_enemigos_reales and player.sala_id not in player.salas_limpias:
+    # ── Bloqueo por monstruos (solo salas CON enemigos, no salas seguras ni acertijos) ──
+    tiene_enemigos = "bioma" in sala_actual or bool(sala_actual.get("encuentros"))
+    if tiene_enemigos and player.sala_id not in player.salas_limpias:
         await player.send(
             "  ¡Hay enemigos bloqueando el paso!\n"
             "  Derrota a todos los monstruos de esta sala para poder avanzar.\n"
             "  Escribe 'atacar' para iniciar el combate."
         )
+        return
+
+    # ── Bloqueo por acertijo ─────────────────────────────────
+    if player.sala_id in SALAS_CON_ACERTIJOS and player.sala_id not in player.salas_limpias:
+        await player.send(
+            "  Un guardian bloquea el paso.\n"
+            "  Debes responder sus tres enigmas para avanzar.\n"
+            "  El desafio comenzara automaticamente al entrar a la sala."
+        )
+        # Lanzar acertijo
+        asyncio.create_task(iniciar_acertijo(player))
         return
 
     nueva = sala_actual["conexiones"].get(direccion)
@@ -2073,9 +1919,109 @@ async def mover_jugador(player: Player, direccion: str):
     await broadcast_sala(player.sala_id, f"  {player.nombre} se va hacia el {direccion}.", excluir=player)
     player.sala_id = nueva
     await broadcast_sala(player.sala_id, f"  {player.nombre} ha llegado.", excluir=player)
-    await notify_web_session(player)
-    await broadcast_players_to_web()
-    await describir_sala(player)
+
+    # ── Si llega a una sala de acertijo, lanzarlo inmediatamente ──
+    if player.sala_id in SALAS_CON_ACERTIJOS and player.sala_id not in player.salas_limpias:
+        await describir_sala(player)
+        asyncio.create_task(iniciar_acertijo(player))
+    else:
+        await notify_web_session(player)
+        await broadcast_players_to_web()
+        await describir_sala(player)
+
+
+# ============================================================
+# ACERTIJOS
+# ============================================================
+
+# Estado de acertijo por jugador: {sala_id: indice_acertijo_actual}
+acertijos_activos: dict[int, int] = {}   # player.id → indice actual (0-2)
+
+async def iniciar_acertijo(player: Player):
+    """Lanza la secuencia de 3 acertijos para el jugador en la sala actual."""
+    sala_id = player.sala_id
+    if sala_id not in SALAS_CON_ACERTIJOS:
+        return
+    if sala_id in player.salas_limpias:
+        return
+
+    # Marcar jugador en acertijo (reutilizamos combate como flag ligero)
+    player.en_acertijo = True
+
+    await player.send(
+        "\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  🧩  EL GUARDIAN TE DESAFIA\n"
+        "  Responde los tres enigmas en orden.\n"
+        "  Si fallas, volverás al primero.\n"
+        "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    idx = 0
+    while idx < len(ACERTIJOS):
+        ac = ACERTIJOS[idx]
+        num = idx + 1
+
+        # Enviar popup al cliente
+        try:
+            await player.ws.send_json({
+                "type":     "acertijo",
+                "num":      num,
+                "total":    len(ACERTIJOS),
+                "pregunta": ac["pregunta"],
+                "opciones": ac["opciones"],
+            })
+        except Exception:
+            pass
+
+        # Mostrar en log también
+        await player.send(
+            f"\n  [{num}/{len(ACERTIJOS)}] {ac['pregunta']}\n"
+            + "\n".join(f"  {op}" for op in ac["opciones"])
+            + "\n  Escribe A, B, C o D:"
+        )
+
+        # Esperar respuesta
+        while True:
+            raw = await player.recv()
+            if raw is None:
+                player.en_acertijo = False
+                return
+            resp = raw.strip().lower()
+            if resp not in ("a", "b", "c", "d"):
+                await player.send("  Escribe A, B, C o D.")
+                continue
+            break
+
+        if resp == ac["respuesta"]:
+            await player.send(f"  ✓ Correcto!")
+            try:
+                await player.ws.send_json({"type": "acertijo_ok", "num": num, "total": len(ACERTIJOS)})
+            except Exception:
+                pass
+            await asyncio.sleep(0.6)
+            idx += 1
+        else:
+            await player.send("  ✗ Incorrecto. El guardian te obliga a empezar desde el principio...")
+            try:
+                await player.ws.send_json({"type": "acertijo_fail"})
+            except Exception:
+                pass
+            await asyncio.sleep(1.5)
+            idx = 0   # reiniciar desde el primero
+
+    # Todos superados
+    player.salas_limpias.add(sala_id)
+    player.en_acertijo = False
+    await player.send(
+        "\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  ✅  ¡ENIGMAS SUPERADOS! El guardian se aparta.\n"
+        "  El camino esta libre. Puedes avanzar.\n"
+        "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    try:
+        await player.ws.send_json({"type": "acertijo_done"})
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -2588,14 +2534,6 @@ async def cmd_duelo(player: Player, args: str):
         return
 
     objetivo.duelo_pendiente = {"retador": player, "monedas": monedas_apuesta}
-    # Auto-cancelar el duelo si no es respon en 60s
-    async def _timeout_duelo():
-        await asyncio.sleep(60)
-        if objetivo.duelo_pendiente and objetivo.duelo_pendiente.get("retador") is player:
-            objetivo.duelo_pendiente = None
-            asyncio.create_task(player.send(f"  El duelo con {objetivo.nombre} expiró (sin respuesta)."))
-            asyncio.create_task(objetivo.send(f"  La invitación de duelo de {player.nombre} expiró."))
-    asyncio.create_task(_timeout_duelo())
 
     apuesta_txt = f" — Apuesta: {monedas_apuesta} 💰" if monedas_apuesta else ""
     await player.send(f"  Reto enviado a {objetivo.nombre}{apuesta_txt}. Esperando respuesta...")
@@ -2772,18 +2710,6 @@ async def procesar_comando(player: Player, cmd: str):
         return
     ac = partes[0]
 
-    # ── Verificar si está en modo acertijos ─────────────────────────
-    sala = SALAS.get(player.sala_id, {})
-    if sala.get("acertijos") and player.sala_id not in player.acertijos_completados:
-        # El jugador está respondiendo a un acertijo
-        if len(cmd.strip()) > 0 and cmd.strip().lower() in ["a", "b", "c", "d"]:
-            await verificar_respuesta_acertijo(player, cmd.strip())
-            return
-        # Comandos permitidos durante acertijos
-        if ac not in ["decir", "d", "g", "stats", "estado", "jugadores", "who", "ayuda"]:
-            await player.send("  🧩 Estás resolviendo acertijos. Responde A, B, C o D, o usa 'decir' para hablar.")
-            return
-
     if ac in ("norte", "sur", "este", "oeste", "n", "s", "e", "o"):
         dirs = {"n": "norte", "s": "sur", "e": "este", "o": "oeste"}
         await mover_jugador(player, dirs.get(ac, ac))
@@ -2808,10 +2734,7 @@ async def procesar_comando(player: Player, cmd: str):
         for p in jugadores_conectados:
             st     = "MUERTO" if p.muerto else f"Sala {p.sala_id}"
             grp    = f" [Grupo {p.grupo.id}]" if p.grupo else ""
-            acertijo_status = ""
-            if p.sala_id in SALAS_ACERTIJOS and p.sala_id not in p.acertijos_completados:
-                acertijo_status = " [🧩Acertijos]"
-            lineas.append(f"  - {p.nombre} [Nv.{p.nivel} {p.personaje['nombreClase']}] ({st}){grp}{acertijo_status}")
+            lineas.append(f"  - {p.nombre} [Nv.{p.nivel} {p.personaje['nombreClase']}] ({st}){grp}")
         await player.send("\n".join(lineas))
 
     elif ac == "invitar":
@@ -2894,6 +2817,13 @@ async def procesar_comando(player: Player, cmd: str):
         await player.send(
             f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}")
 
+    elif ac == "acertijo_resp":
+        # Las respuestas se recogen directamente en iniciar_acertijo via recv()
+        # Este comando llega cuando el usuario escribe desde el input del popup
+        if len(partes) > 1:
+            await player.input_queue.put(partes[1])
+        pass
+
     elif ac in ("guardar", "save"):
         await guardar_cuenta_async(player)
         await player.send("  Progreso guardado.")
@@ -2902,7 +2832,6 @@ async def procesar_comando(player: Player, cmd: str):
         await player.send(
             "\n  MOVER:    n s e o  (norte sur este oeste)\n"
             "           ⚠ Derrota los monstruos de la sala para avanzar\n"
-            "           🧩 Resuelve los acertijos en salas especiales\n"
             "  ACCION:   mirar | atacar\n"
             "  TIENDA:   tienda | mochila | usar <objeto>\n"
             "  HOSPITAL: hospital  (solo en salas con 🏥)\n"
@@ -2955,24 +2884,31 @@ async def handle_game_ws(ws, usuario: str):
         rt.cancel()
         return
 
-    await player.send(
-        f"\n  Bienvenido de vuelta, {player.nombre}!\n"
-        f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}\n"
-        f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
-        f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
-    )
-    await player.send_status()
-    # Enviar leaderboard global al conectar
-    lb = await get_leaderboard_async()
     try:
-        await player.ws.send_json({"type": "leaderboard", "ranking": lb})
-    except Exception:
-        pass
-    await broadcast_todos(f"\n  {player.nombre} se unio al dungeon!")
-    await broadcast_players_to_web()
-    await describir_sala(player)
+        await player.send(
+            f"\n  Bienvenido de vuelta, {player.nombre}!\n"
+            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}\n"
+            f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
+            f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
+        )
+        await player.send_status()
 
-    try:
+        # ── Lore intro (popup visual en el cliente) ────────────────────────────
+        try:
+            await player.ws.send_json({"type": "lore_intro"})
+        except Exception:
+            pass
+
+        # Enviar leaderboard global al conectar
+        lb = await get_leaderboard_async()
+        try:
+            await player.ws.send_json({"type": "leaderboard", "ranking": lb})
+        except Exception:
+            pass
+        await broadcast_todos(f"\n  {player.nombre} se unio al dungeon!")
+        await broadcast_players_to_web()
+        await describir_sala(player)
+
         while True:
             if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
                 await asyncio.sleep(0.05)
@@ -3065,14 +3001,12 @@ async def handle_dashboard_ws(ws, usuario: str):
                 ENEMIGOS.get(tipo, {}).get("tier") in ("Boss", "Elite")
                 for tipo, _ in s.get("encuentros", [])
             )
-            es_acertijos = s.get("acertijos", False)
             map_data[str(s_id)] = {
                 "nombre": s["nombre"],    "bioma":    s.get("bioma"),
                 "tienda": s.get("tienda", False),
                 "hospital": s.get("hospital", False),
                 "boss": tiene_boss,
-                "acertijos": es_acertijos,
-                "segura": not ("bioma" in s or bool(s.get("encuentros")) or es_acertijos),
+                "segura": not ("bioma" in s or bool(s.get("encuentros"))),
             }
         await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
         await broadcast_players_to_web()
@@ -3101,6 +3035,11 @@ async def handle_dashboard_ws(ws, usuario: str):
         chat_ws_clients.discard(ws)
         web_sessions.pop(usuario, None)
         print(f"[DASH] {usuario} desconectado")
+
+
+# ============================================================
+# AIOHTTP HANDLERS
+# ============================================================
 
 
 # ============================================================
@@ -3183,7 +3122,8 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .bw{width:100%;height:8px;background:var(--bg3);border-radius:4px;
     overflow:hidden;border:1px solid var(--border);margin-bottom:4px;}
 .bf{height:100%;border-radius:4px;transition:width .35s,background .35s;}
-.bf-hp{background:var(--red);}.bf-mp{background:var(--mana);}
+.bf-hp{background:var(--red);}
+.bf-mp{background:var(--mana);}
 .xw{width:100%;height:3px;background:var(--bg3);border-radius:2px;
     overflow:hidden;margin-bottom:4px;}
 .bf-xp{background:var(--purple);}
@@ -3224,9 +3164,13 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 #glog::-webkit-scrollbar{width:3px;}
 #glog::-webkit-scrollbar-thumb{background:var(--border);}
 .gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
-.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#e67e22;}
-.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
-.gi{color:var(--teal);}.gs{color:var(--dim);font-style:italic;}
+.gg{color:var(--text);}
+.gp2{color:var(--blue);}
+.gc{color:#e67e22;}
+.gv{color:var(--gold);font-weight:bold;}
+.gd{color:var(--red);}
+.gi{color:var(--teal);}
+.gs{color:var(--dim);font-style:italic;}
 .gl{color:var(--gold);background:#1a1300;border:1px solid var(--gold);
     padding:2px 5px;border-radius:2px;display:inline-block;margin:2px 0;}
 
@@ -3268,7 +3212,9 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .cm-t{color:var(--dim);font-size:8px;flex-shrink:0;}
 .cm-n{font-weight:bold;font-size:9px;flex-shrink:0;}
 .cm-tx{color:var(--text);font-size:10px;word-break:break-word;}
-.cn-s{color:var(--green);}.cn-g{color:var(--orange);}.cn-gr{color:var(--mana);}
+.cn-s{color:var(--green);}
+.cn-g{color:var(--orange);}
+.cn-gr{color:var(--mana);}
 #chat-in-row{display:flex;gap:3px;padding:4px 5px;border-top:1px solid var(--border);flex-shrink:0;}
 #chat-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);
          padding:3px 6px;font-family:monospace;font-size:10px;border-radius:3px;outline:none;}
@@ -3286,9 +3232,12 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
     padding:3px 6px;font-size:9px;cursor:pointer;border-radius:3px;
     font-family:monospace;white-space:nowrap;flex-shrink:0;}
 .cb:hover{color:var(--text);border-color:var(--gold);}
-.cb.dir{border-color:#1a2a3a;color:var(--blue);}.cb.dir:hover{background:#08101a;}
-.cb.atk{border-color:#1a3a1a;color:var(--green);}.cb.atk:hover{background:#081408;}
-.cb.pvp{border-color:#3a1a1a;color:var(--red);}.cb.pvp:hover{background:#180808;}
+.cb.dir{border-color:#1a2a3a;color:var(--blue);}
+.cb.dir:hover{background:#08101a;}
+.cb.atk{border-color:#1a3a1a;color:var(--green);}
+.cb.atk:hover{background:#081408;}
+.cb.pvp{border-color:#3a1a1a;color:var(--red);}
+.cb.pvp:hover{background:#180808;}
 .cb.gold-btn{background:var(--gold);color:#000;border-color:var(--gold);font-weight:bold;margin-left:auto;}
 .cb.gold-btn:hover{background:var(--gold2);}
 .cb-sep{width:1px;height:16px;background:var(--border);flex-shrink:0;margin:0 1px;}
@@ -3322,7 +3271,8 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 #help-inner h2{color:var(--gold);font-size:12px;margin-bottom:8px;}
 .hr{display:flex;gap:8px;margin-bottom:4px;font-size:10px;}
 .hk{color:var(--gold);width:150px;flex-shrink:0;}
-.hv{color:var(--text);}.hclose{margin-top:10px;background:var(--bg3);border:1px solid var(--border);
+.hv{color:var(--text);}
+.hclose{margin-top:10px;background:var(--bg3);border:1px solid var(--border);
         color:var(--dim);padding:4px 10px;cursor:pointer;border-radius:3px;
         font-family:monospace;font-size:10px;}
 
@@ -3343,25 +3293,6 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 #cp-pas{background:var(--bg3);color:var(--dim);border:1px solid var(--border);}
 #cp-obj{background:var(--orange);color:#000;}
 
-/* ACERTIJO POPUP */
-#acertijo-popup{display:none;position:fixed;top:50%;left:50%;
-                transform:translate(-50%,-50%);
-                background:var(--bg2);border:2px solid var(--purple);border-radius:8px;
-                padding:20px 24px;z-index:600;min-width:320px;max-width:400px;text-align:center;
-                box-shadow:0 6px 30px rgba(0,0,0,.7);}
-#acertijo-popup.open{display:block;}
-#acertijo-title{color:var(--purple);font-size:14px;font-weight:bold;margin-bottom:10px;}
-#acertijo-counter{color:var(--dim);font-size:10px;margin-bottom:8px;}
-#acertijo-pregunta{color:var(--text);font-size:12px;margin-bottom:15px;line-height:1.4;}
-#acertijo-opciones{display:flex;flex-direction:column;gap:6px;margin-bottom:15px;}
-.acertijo-opt{background:var(--bg3);border:1px solid var(--border);color:var(--text);
-              padding:8px 12px;font-size:11px;cursor:pointer;border-radius:4px;
-              font-family:monospace;text-align:left;transition:all .15s;}
-.acertijo-opt:hover{background:var(--border);border-color:var(--purple);}
-.acertijo-opt.correct{background:#0d3a0d;border-color:var(--green);color:var(--green);}
-.acertijo-opt.wrong{background:#3a0d0d;border-color:var(--red);color:var(--red);}
-#acertijo-msg{font-size:10px;min-height:14px;margin-top:8px;}
-
 /* PVP CHALLENGE POPUP */
 #pvp-popup{display:none;position:fixed;top:50%;left:50%;
            transform:translate(-50%,-50%);
@@ -3376,6 +3307,47 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
             border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
 #pvp-reject{background:var(--red);color:#fff;border:none;padding:7px 18px;
             border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
+/* LORE MODAL */
+#lore-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.96);
+            z-index:1000;align-items:center;justify-content:center;}
+#lore-modal.open{display:flex;}
+#lore-inner{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;
+            padding:30px 36px;max-width:600px;width:92%;max-height:88vh;overflow-y:auto;
+            text-align:center;}
+#lore-inner h2{color:var(--gold);font-size:15px;letter-spacing:2px;margin-bottom:18px;}
+.lore-p{color:var(--text);font-size:11px;line-height:1.9;margin-bottom:9px;text-align:left;}
+.lore-p.em{color:var(--gold);font-style:italic;}
+.lore-sep{color:var(--dim);font-size:9px;letter-spacing:3px;margin:12px 0;text-align:center;}
+#lore-close{margin-top:20px;background:var(--gold);border:none;color:#000;
+            padding:8px 24px;font-weight:bold;cursor:pointer;border-radius:3px;
+            font-family:monospace;font-size:12px;}
+#lore-close:hover{background:var(--gold2);}
+
+/* ACERTIJO POPUP */
+#acertijo-popup{display:none;position:fixed;top:50%;left:50%;
+                transform:translate(-50%,-50%);
+                background:var(--bg2);border:2px solid var(--purple);border-radius:8px;
+                padding:22px 26px;z-index:700;min-width:340px;max-width:480px;width:90%;
+                box-shadow:0 6px 30px rgba(0,0,0,.8);}
+#acertijo-popup.open{display:block;}
+#ac-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+#ac-badge{background:var(--purple);color:#fff;font-size:9px;padding:2px 8px;
+          border-radius:10px;font-family:monospace;font-weight:bold;}
+#ac-title{color:var(--purple);font-size:12px;font-weight:bold;}
+#ac-pregunta{color:var(--text);font-size:11px;line-height:1.7;margin-bottom:14px;
+             white-space:pre-line;}
+#ac-opciones{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.ac-opt{background:var(--bg3);border:1px solid var(--border);color:var(--text);
+        padding:7px 10px;border-radius:4px;cursor:pointer;font-family:monospace;
+        font-size:10px;text-align:left;transition:border-color .15s,background .15s;}
+.ac-opt:hover{border-color:var(--purple);background:#1a0a2a;}
+.ac-opt.wrong{border-color:var(--red);background:#200808;animation:shake .3s;}
+.ac-opt.correct{border-color:var(--green);background:#082008;}
+#ac-feedback{font-size:10px;min-height:14px;margin-bottom:4px;}
+#ac-feedback.ok{color:var(--green);}
+#ac-feedback.err{color:var(--red);}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+
 </style>
 </head>
 <body>
@@ -3409,7 +3381,7 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 <div id="map-modal" onclick="if(event.target===this)closeMapBtn()">
   <div id="map-inner">
     <button id="map-close" onclick="closeMapBtn()">✕</button>
-    <svg id="map-svg-full" viewBox="0 0 860 820" width="740" height="820" xmlns="http://www.w3.org/2000/svg">
+    <svg id="map-svg-full" viewBox="0 0 820 910" width="740" height="820" xmlns="http://www.w3.org/2000/svg">
       <defs><filter id="glowf"><feGaussianBlur stdDeviation="4" result="b"/>
         <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
       <!-- NIEVE -->
@@ -3448,7 +3420,6 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
     <div class="hr"><span class="hk">aceptar / rechazar</span><span class="hv">Responder invitación</span></div>
     <div class="hr"><span class="hk">grupo / salirgrupo</span><span class="hv">Ver/Abandonar grupo</span></div>
     <div class="hr"><span class="hk">duelo &lt;nombre&gt; [monedas]</span><span class="hv">Retar a PvP</span></div>
-    <div class="hr"><span class="hk">A/B/C/D</span><span class="hv">Responder acertijos</span></div>
     <div class="hr"><span class="hk">guardar</span><span class="hv">Guardar progreso</span></div>
     <button class="hclose" onclick="closeHelpBtn()">Cerrar</button>
   </div>
@@ -3466,15 +3437,6 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
   </div>
 </div>
 
-<!-- ACERTIJO POPUP -->
-<div id="acertijo-popup">
-  <div id="acertijo-title">🧩 ACERTIJO</div>
-  <div id="acertijo-counter"></div>
-  <div id="acertijo-pregunta"></div>
-  <div id="acertijo-opciones"></div>
-  <div id="acertijo-msg"></div>
-</div>
-
 <!-- PVP CHALLENGE POPUP -->
 <div id="pvp-popup">
   <div id="pvp-title">⚔ RETO A DUELO</div>
@@ -3483,6 +3445,41 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
     <button id="pvp-accept" onclick="acceptDuelo()">✓ Aceptar</button>
     <button id="pvp-reject" onclick="rejectDuelo()">✗ Rechazar</button>
   </div>
+</div>
+
+
+<!-- LORE MODAL -->
+<div id="lore-modal">
+  <div id="lore-inner">
+    <h2>⚔ THE RETURN TO HIGHDOWN ⚔</h2>
+    <div class="lore-sep">— PRÓLOGO —</div>
+    <p class="lore-p">Hace ya <strong>15 años</strong> de la gran tragedia. Quince años desde la masacre del pueblo de <strong>Highdown</strong>.</p>
+    <p class="lore-p">Highdown era un lugar legendario, conocido en todo el mundo por un don extraordinario: todos los nacidos allí poseían <strong>habilidades sobrehumanas</strong>. Guerreros, magos, arqueros… cada niño nacía con un poder que el resto del mundo apenas podía imaginar.</p>
+    <p class="lore-p">Eso no contentaba a <strong>Alpha</strong>, el Rey de la Destrucción. Todo lo que encontraba a su paso ardía en un mar de llamas y sangre. Por miedo a que algún día los hijos de Highdown lo destronaran, tomó una decisión terrible.</p>
+    <p class="lore-p em">"Si no puedo controlarlos, los eliminaré."</p>
+    <p class="lore-p">Alpha esperó a la noche, cuando todos dormían. Reunió a sus mejores hombres y lanzó la masacre. Aniquiló a todos los habitantes de Highdown. O eso creía.</p>
+    <div class="lore-sep">— EL SOLDADO SIN NOMBRE —</div>
+    <p class="lore-p">Uno de los soldados del pueblo, viendo lo que se avecinaba, actuó en secreto. Recorrió las casas y salvó a los niños con los futuros más prometedores, los que aún no habían sido encontrados.</p>
+    <p class="lore-p">Antes de dejarlos ir, se arrodilló ante ellos y dijo:</p>
+    <p class="lore-p em">"Huid lejos de aquí. Creced. Haceos fuertes. Y vengad a vuestro pueblo."</p>
+    <p class="lore-p">Los escoltó hasta los límites del territorio de Alpha, señaló el camino hacia tierras seguras, y volvió a la ciudad para luchar contra las tropas restantes junto a sus compañeros.</p>
+    <p class="lore-p"><em>Nunca se volvió a saber nada de él.</em></p>
+    <div class="lore-sep">— TÚ —</div>
+    <p class="lore-p">Han pasado 15 años. Eres uno de esos niños. Has crecido. Has entrenado. Ahora el mundo de Highdown te espera: el Desierto abrasador, el Mar tempestuoso, las Nieves eternas... y al final, <strong>Alpha</strong>.</p>
+    <p class="lore-p" style="text-align:center;color:var(--gold);font-weight:bold;">El momento de la venganza ha llegado.</p>
+    <button id="lore-close" onclick="closeLore()">COMENZAR LA AVENTURA ⚔</button>
+  </div>
+</div>
+
+<!-- ACERTIJO POPUP -->
+<div id="acertijo-popup">
+  <div id="ac-header">
+    <span id="ac-title">🧩 ENIGMA DEL GUARDIAN</span>
+    <span id="ac-badge">? / 3</span>
+  </div>
+  <div id="ac-pregunta"></div>
+  <div id="ac-opciones"></div>
+  <div id="ac-feedback"></div>
 </div>
 
 <!-- TOPBAR -->
@@ -3498,7 +3495,6 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
   <!-- LEFT -->
   <div id="left">
     <div id="stats-pane">
-      <div class="sp-emoji" id="s-emoji" style="font-size:28px;text-align:center;margin-bottom:4px">⚔️</div>
       <div class="sp-name" id="s-nm">—</div>
       <div class="sp-cls"  id="s-cl">—</div>
       <div>
@@ -3537,11 +3533,12 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
   <!-- CENTER -->
   <div id="center">
     <div id="minimap-btn" onclick="openMap()" title="Clic para ampliar">
-      <svg id="map-svg-mini" viewBox="0 0 860 820" xmlns="http://www.w3.org/2000/svg">
-        <rect x="5" y="5"   width="840" height="312" rx="4" fill="#06090f" stroke="#1a3a4a" stroke-width="1"/>
-        <rect x="5" y="320" width="840" height="218" rx="4" fill="#06060f" stroke="#1a2a4a" stroke-width="1"/>
-        <rect x="5" y="540" width="840" height="8"   rx="2" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
-        <rect x="5" y="552" width="840" height="205" rx="4" fill="#0f0700" stroke="#302000" stroke-width="1"/>
+      <svg id="map-svg-mini" viewBox="0 0 820 910" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="5"   width="810" height="310" rx="4" fill="#06090f" stroke="#1a3a4a" stroke-width="1"/>
+        <rect x="5" y="320" width="810" height="280" rx="4" fill="#06060f" stroke="#1a2a4a" stroke-width="1"/>
+        <rect x="360" y="608" width="80"  height="38" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
+        <rect x="650" y="608" width="160" height="38" rx="3" fill="#0d0d0d" stroke="#444"    stroke-width="1"/>
+        <rect x="5" y="650" width="810" height="255" rx="4" fill="#0f0700" stroke="#302000" stroke-width="1"/>
         <g id="map-conn-mini"></g><g id="map-rooms-mini"></g>
       </svg>
       <div id="minimap-label">🗺 MAPA</div>
@@ -3597,166 +3594,164 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 
 <script>
 /* MAP */
-/* MAP DATA — 150 salas (Tutorial + Desierto + Mar + Nieve + Oasis) */
+/* MAP DATA — 148 salas (Tutorial + Desierto + Mar + Nieve) */
 const RPOS={
  /* TUTORIAL */
- "0.1":{x:760,y:790,n:"Tutorial: Combate",b:"tutorial"},
- "0.2":{x:796,y:760,n:"Tutorial: Objetos",b:"tutorial"},
- "0.3":{x:760,y:730,n:"Tutorial: Estructuras",b:"tutorial"},
- "0.4":{x:796,y:730,n:"Tutorial: UI",b:"tutorial"},
+ "0.1":{x:720,y:850,n:"Tutorial: Combate",b:"tutorial"},
+ "0.2":{x:680,y:820,n:"Tutorial: Objetos",b:"tutorial"},
+ "0.3":{x:720,y:790,n:"Tutorial: Estructuras",b:"tutorial"},
+ "0.4":{x:760,y:820,n:"Tutorial: UI",b:"tutorial"},
  /* DESIERTO */
- 1:{x:28,y:700,n:"North Mass",b:"desierto"},
- 2:{x:80,y:700,n:"Dunas del Norte",b:"desierto"},
- 3:{x:132,y:700,n:"Ruinas del Desierto",b:"desierto"},
- 4:{x:184,y:700,n:"Ciudad Abrasada",b:"desierto",boss:true},
- 5:{x:236,y:700,n:"Valle Muerto",b:"desierto"},
- 6:{x:288,y:700,n:"Oasis",b:"safe"},
- 7:{x:340,y:700,n:"Sala del Viento",b:"desierto"},
- 8:{x:392,y:700,n:"Camara del Oasis",b:"desierto"},
- 9:{x:444,y:700,n:"Salon del Sol",b:"desierto"},
- 10:{x:496,y:700,n:"Cripta de las Dunas",b:"desierto"},
- 11:{x:548,y:700,n:"Caravana Fantasma",b:"desierto"},
- 12:{x:600,y:700,n:"Fosa de Titanes",b:"desierto"},
- 13:{x:652,y:700,n:"Altar del Soberano",b:"desierto",boss:true},
- 14:{x:704,y:700,n:"Extension de Azhar",b:"desierto"},
- 15:{x:756,y:700,n:"Mar de Dunas",b:"desierto"},
- 16:{x:808,y:700,n:"Vestigios Enterrados",b:"desierto"},
- 17:{x:28,y:652,n:"Santuario Carmesi",b:"desierto"},
- 18:{x:80,y:652,n:"Sepulcro de Colosos",b:"desierto"},
- 19:{x:132,y:652,n:"Trono del Abismo",b:"desierto"},
- 20:{x:184,y:652,n:"Llanura de Fuego",b:"desierto"},
- 21:{x:236,y:652,n:"Dunas del Murmullo",b:"desierto"},
- 22:{x:288,y:652,n:"Columnas del Olvido",b:"desierto"},
- 23:{x:340,y:652,n:"Templo de Sangre",b:"desierto"},
- 24:{x:392,y:652,n:"Abismo de los Caidos",b:"desierto"},
- 25:{x:444,y:652,n:"Trono del Devastador",b:"desierto",boss:true},
- 26:{x:496,y:652,n:"Horizonte Quebrado",b:"desierto"},
- 27:{x:548,y:652,n:"Dunas del Hambre",b:"desierto"},
- 28:{x:600,y:652,n:"Ruinas del Eco",b:"desierto"},
- 29:{x:652,y:652,n:"Santuario de la Marca",b:"desierto"},
- 30:{x:704,y:652,n:"Campos de Huesos",b:"desierto"},
- 31:{x:756,y:652,n:"Trono Ultimo Senor",b:"desierto",boss:true},
- 32:{x:808,y:652,n:"Falla de los Antiguos",b:"desierto"},
- 149:{x:820,y:700,n:"Oasis Tranquilo",b:"safe"},
+ 1:{x:100,y:870,n:"North Mass",b:"desierto"},
+ 2:{x:100,y:840,n:"Dunas del Norte",b:"desierto"},
+ 3:{x:140,y:810,n:"Ruinas del Desierto",b:"desierto"},
+ 4:{x:60,y:810,n:"Ciudad Abrasada",b:"desierto",boss:true},
+ 5:{x:180,y:780,n:"Valle Muerto",b:"desierto"},
+ 6:{x:400,y:860,n:"Oasis",b:"safe"},
+ 7:{x:360,y:810,n:"Sala del Viento",b:"desierto"},
+ 8:{x:320,y:840,n:"Camara del Oasis",b:"desierto"},
+ 9:{x:360,y:840,n:"Salon del Sol",b:"desierto"},
+ 10:{x:400,y:810,n:"Cripta de las Dunas",b:"desierto"},
+ 11:{x:440,y:840,n:"Caravana Fantasma",b:"desierto"},
+ 12:{x:480,y:810,n:"Fosa de Titanes",b:"desierto"},
+ 13:{x:520,y:780,n:"Altar del Soberano",b:"desierto",boss:true},
+ 14:{x:560,y:810,n:"Extension de Azhar",b:"desierto"},
+ 15:{x:600,y:780,n:"Mar de Dunas",b:"desierto"},
+ 16:{x:640,y:810,n:"Vestigios Enterrados",b:"desierto"},
+ 17:{x:680,y:780,n:"Santuario Carmesi",b:"desierto"},
+ 18:{x:720,y:810,n:"Sepulcro de Colosos",b:"desierto"},
+ 19:{x:760,y:780,n:"Trono del Abismo",b:"desierto"},
+ 20:{x:100,y:750,n:"Llanura de Fuego",b:"desierto"},
+ 21:{x:140,y:720,n:"Dunas del Murmullo",b:"desierto"},
+ 22:{x:180,y:750,n:"Columnas del Olvido",b:"desierto"},
+ 23:{x:220,y:720,n:"Templo de Sangre",b:"desierto"},
+ 24:{x:260,y:750,n:"Abismo de los Caidos",b:"desierto"},
+ 25:{x:300,y:720,n:"Trono del Devastador",b:"desierto",boss:true},
+ 26:{x:340,y:750,n:"Horizonte Quebrado",b:"desierto"},
+ 27:{x:380,y:720,n:"Dunas del Hambre",b:"desierto"},
+ 28:{x:420,y:750,n:"Ruinas del Eco",b:"desierto"},
+ 29:{x:460,y:720,n:"Santuario de la Marca",b:"desierto"},
+ 30:{x:500,y:750,n:"Campos de Huesos",b:"desierto"},
+ 31:{x:540,y:720,n:"Trono Ultimo Senor",b:"desierto",boss:true},
+ 32:{x:580,y:750,n:"Falla de los Antiguos",b:"desierto"},
  /* MAR */
- 33:{x:28,y:510,n:"Embarcadero 1",b:"mar",acertijos:true},
- 34:{x:80,y:510,n:"Abismo Coralino",b:"mar"},
- 35:{x:132,y:510,n:"Trono del Oceano",b:"mar",boss:true},
- 36:{x:184,y:510,n:"Cripta de las Algas",b:"mar"},
- 37:{x:236,y:510,n:"Embarcadero 2",b:"mar",acertijos:true},
- 38:{x:288,y:510,n:"Fosa de Sombras",b:"mar"},
- 39:{x:340,y:510,n:"Arrecife Susurrante",b:"mar"},
- 40:{x:392,y:510,n:"Caverna de la Bruma",b:"mar"},
- 41:{x:444,y:510,n:"Templo de las Olas",b:"mar"},
- 42:{x:496,y:510,n:"Laguna de Naufragos",b:"mar"},
- 43:{x:548,y:510,n:"Pantano del Silencio",b:"mar"},
- 44:{x:600,y:510,n:"Refugio de las Medusas",b:"mar"},
- 45:{x:652,y:510,n:"Camara del Pulpo",b:"mar"},
- 46:{x:704,y:510,n:"Bosque de Manglares",b:"mar"},
- 47:{x:756,y:510,n:"Isla de la Lluvia",b:"mar"},
- 48:{x:808,y:510,n:"Grieta Abisal",b:"mar"},
- 49:{x:28,y:462,n:"Playa de los Ecos",b:"mar"},
- 50:{x:80,y:462,n:"Torre del Vigia",b:"mar"},
- 51:{x:132,y:462,n:"Gruta de las Mareas",b:"mar"},
- 52:{x:184,y:462,n:"Pantano de las Raices",b:"mar"},
- 53:{x:236,y:462,n:"Caverna del Coral",b:"mar"},
- 54:{x:288,y:462,n:"Estuario del Viento",b:"mar"},
- 55:{x:340,y:462,n:"Pozo de Agua",b:"mar"},
- 56:{x:392,y:462,n:"Acantilado Lluvia",b:"mar"},
- 57:{x:444,y:462,n:"Laguna de Sombras",b:"mar"},
- 58:{x:496,y:462,n:"Bosque Inundado",b:"mar"},
- 59:{x:548,y:462,n:"Camara de Corrientes",b:"mar"},
- 60:{x:600,y:462,n:"Isla del Horizonte",b:"mar"},
- 61:{x:652,y:462,n:"Fosa de la Marea",b:"mar"},
- 62:{x:704,y:462,n:"Playa de Arena Humeda",b:"mar"},
- 63:{x:756,y:462,n:"Gruta del Agua",b:"mar"},
- 64:{x:808,y:462,n:"Delta de Canales",b:"mar"},
- 65:{x:28,y:414,n:"Arrecife de Espinas",b:"mar"},
- 66:{x:80,y:414,n:"Pantano de Lluvia",b:"mar"},
- 67:{x:132,y:414,n:"Caverna del Vapor",b:"mar"},
- 68:{x:184,y:414,n:"Laguna de Reflejos",b:"mar"},
- 69:{x:236,y:414,n:"Sendero del Lodo",b:"mar"},
- 70:{x:288,y:414,n:"Bahia de la Niebla",b:"mar"},
- 71:{x:340,y:414,n:"Cumbre del Leviatan",b:"mar",boss:true},
- 72:{x:392,y:414,n:"Cumbre del Kraken",b:"mar",boss:true},
- 150:{x:820,y:510,n:"Puerto Abandonado",b:"safe"},
+ 33:{x:100,y:560,n:"Embarcadero 1",b:"mar"},
+ 34:{x:140,y:530,n:"Abismo Coralino",b:"mar"},
+ 35:{x:180,y:560,n:"Trono del Oceano",b:"mar",boss:true},
+ 36:{x:220,y:530,n:"Cripta de las Algas",b:"mar"},
+ 37:{x:260,y:560,n:"Embarcadero 2",b:"mar"},
+ 38:{x:300,y:530,n:"Fosa de Sombras",b:"mar"},
+ 39:{x:340,y:560,n:"Arrecife Susurrante",b:"mar"},
+ 40:{x:380,y:530,n:"Caverna de la Bruma",b:"mar"},
+ 41:{x:420,y:560,n:"Templo de las Olas",b:"mar"},
+ 42:{x:460,y:530,n:"Laguna Naufragos",b:"mar"},
+ 43:{x:500,y:560,n:"Pantano del Silencio",b:"mar"},
+ 44:{x:540,y:530,n:"Refugio Medusas",b:"mar"},
+ 45:{x:580,y:560,n:"Camara del Pulpo",b:"mar"},
+ 46:{x:620,y:530,n:"Bosque Manglares",b:"mar"},
+ 47:{x:660,y:560,n:"Isla de la Lluvia",b:"mar"},
+ 48:{x:700,y:530,n:"Grieta Abisal",b:"mar"},
+ 49:{x:740,y:560,n:"Playa de los Ecos",b:"mar"},
+ 50:{x:100,y:500,n:"Torre del Vigia",b:"mar"},
+ 51:{x:140,y:470,n:"Gruta de las Mareas",b:"mar"},
+ 52:{x:180,y:500,n:"Pantano de las Raices",b:"mar"},
+ 53:{x:220,y:470,n:"Caverna del Coral",b:"mar"},
+ 54:{x:260,y:500,n:"Estuario del Viento",b:"mar"},
+ 55:{x:300,y:470,n:"Pozo de Agua",b:"mar"},
+ 56:{x:340,y:500,n:"Acantilado Lluvia",b:"mar"},
+ 57:{x:380,y:470,n:"Laguna de Sombras",b:"mar"},
+ 58:{x:420,y:500,n:"Bosque Inundado",b:"mar"},
+ 59:{x:460,y:470,n:"Camara Corrientes",b:"mar"},
+ 60:{x:500,y:500,n:"Isla del Horizonte",b:"mar"},
+ 61:{x:540,y:470,n:"Fosa Marea Negra",b:"mar"},
+ 62:{x:580,y:500,n:"Playa Arena Humeda",b:"mar"},
+ 63:{x:620,y:470,n:"Gruta del Agua",b:"mar"},
+ 64:{x:660,y:500,n:"Delta de Canales",b:"mar"},
+ 65:{x:700,y:470,n:"Arrecife Espinas",b:"mar"},
+ 66:{x:740,y:500,n:"Pantano Lluvia Eterna",b:"mar"},
+ 67:{x:100,y:440,n:"Caverna del Vapor",b:"mar"},
+ 68:{x:140,y:410,n:"Laguna Reflejos",b:"mar"},
+ 69:{x:180,y:440,n:"Sendero del Lodo",b:"mar"},
+ 70:{x:220,y:410,n:"Bahia de la Niebla",b:"mar"},
+ 71:{x:260,y:440,n:"Cumbre del Leviatan",b:"mar",boss:true},
+ 72:{x:300,y:410,n:"Cumbre del Kraken",b:"mar",boss:true},
  /* NIEVE */
- 73:{x:28,y:295,n:"Ventisca Eterna",b:"nieve"},
- 74:{x:80,y:295,n:"Bosque de Hielo Negro",b:"nieve"},
- 75:{x:132,y:295,n:"Grieta del Frio",b:"nieve"},
- 76:{x:184,y:295,n:"Llanura del Silencio",b:"nieve"},
- 77:{x:236,y:295,n:"Cementerio Congelado",b:"nieve"},
- 78:{x:288,y:295,n:"Tormenta Errante",b:"nieve"},
- 79:{x:340,y:295,n:"Picos del Desgarro",b:"nieve"},
- 80:{x:392,y:295,n:"Hondonada del Eco",b:"nieve"},
- 81:{x:444,y:295,n:"Rio de Hielo",b:"nieve"},
- 82:{x:496,y:295,n:"Fauces de la Tormenta",b:"nieve"},
- 83:{x:548,y:295,n:"Campo de Estatuas",b:"nieve"},
- 84:{x:600,y:295,n:"Abismo Nevado",b:"nieve"},
- 85:{x:652,y:295,n:"Cumbre del Viento",b:"nieve"},
- 86:{x:704,y:295,n:"Valle de Sombras",b:"nieve"},
- 87:{x:756,y:295,n:"Ruinas Congeladas",b:"nieve"},
- 88:{x:808,y:295,n:"Paso del Susurro",b:"nieve"},
- 89:{x:28,y:247,n:"Glaciar Viviente",b:"nieve"},
- 90:{x:80,y:247,n:"Fosa del Olvido",b:"nieve"},
- 91:{x:132,y:247,n:"Torres de Escarcha",b:"nieve"},
- 92:{x:184,y:247,n:"Velo de Nieve",b:"nieve"},
- 93:{x:236,y:247,n:"Lago de Cristal",b:"nieve"},
- 94:{x:288,y:247,n:"Bosque de Agujas",b:"nieve"},
- 95:{x:340,y:247,n:"Furia Blanca",b:"nieve"},
- 96:{x:392,y:247,n:"Caverna de Escarcha",b:"nieve"},
- 97:{x:444,y:247,n:"Paso del Ultimo Aliento",b:"nieve"},
- 98:{x:496,y:247,n:"Colmillos del Invierno",b:"nieve"},
- 99:{x:548,y:247,n:"Valle del Sueno",b:"nieve"},
- 100:{x:600,y:247,n:"Niebla Blanca",b:"nieve"},
- 101:{x:652,y:247,n:"Cumbre Quebrada",b:"nieve"},
- 102:{x:704,y:247,n:"Territorio del Frio",b:"nieve"},
- 103:{x:756,y:247,n:"Sendero del Hielo",b:"nieve"},
- 104:{x:808,y:247,n:"Vigilantes de Escarcha",b:"nieve"},
- 105:{x:28,y:199,n:"Desierto Blanco",b:"nieve"},
- 106:{x:80,y:199,n:"Garganta del Viento",b:"nieve"},
- 107:{x:132,y:199,n:"Ruinas del Invierno",b:"nieve"},
- 108:{x:184,y:199,n:"Campo de Fragmentos",b:"nieve"},
- 109:{x:236,y:199,n:"Pozo de Escarcha",b:"nieve"},
- 110:{x:288,y:199,n:"Travesia del Frio",b:"nieve"},
- 111:{x:340,y:199,n:"Tormenta Estatica",b:"nieve"},
- 112:{x:392,y:199,n:"Cascada Congelada",b:"nieve"},
- 113:{x:444,y:199,n:"Circulo de Hielo",b:"nieve"},
- 114:{x:496,y:199,n:"Bosque de Sombras",b:"nieve"},
- 115:{x:548,y:199,n:"Frontera del Frio",b:"nieve"},
- 116:{x:600,y:199,n:"Vertice Nevado",b:"nieve"},
- 117:{x:652,y:199,n:"Hogar de la Escarcha",b:"nieve"},
- 118:{x:704,y:199,n:"Sendero de los Perdidos",b:"nieve"},
- 119:{x:756,y:199,n:"Falla Glacial",b:"nieve"},
- 120:{x:808,y:199,n:"Campo de Huesos",b:"nieve"},
- 121:{x:28,y:151,n:"Tormenta Silenciosa",b:"nieve"},
- 122:{x:80,y:151,n:"Nucleo de Hielo",b:"nieve"},
- 123:{x:132,y:151,n:"Paso de los Colosos",b:"nieve"},
- 124:{x:184,y:151,n:"Mar de Escarcha",b:"nieve"},
- 125:{x:236,y:151,n:"Colina del Ultimo Suspiro",b:"nieve"},
- 126:{x:288,y:151,n:"Catedral de Hielo",b:"nieve"},
- 127:{x:340,y:151,n:"Velo del Olvido",b:"nieve"},
- 128:{x:392,y:151,n:"Fauces Heladas",b:"nieve"},
- 129:{x:444,y:151,n:"Bosque del Frio",b:"nieve"},
- 130:{x:496,y:151,n:"Campo de Escarcha Oscura",b:"nieve"},
- 131:{x:548,y:151,n:"Trampa de Nieve",b:"nieve"},
- 132:{x:600,y:151,n:"Cumbre del Olvido",b:"nieve"},
- 133:{x:652,y:151,n:"Rugido Blanco",b:"nieve"},
- 134:{x:704,y:151,n:"Valle del Frio Eterno",b:"nieve"},
- 135:{x:756,y:151,n:"Sombras Bajo el Hielo",b:"nieve"},
- 136:{x:808,y:151,n:"Paso de la Escarcha",b:"nieve"},
- 137:{x:28,y:103,n:"Caverna del Viento",b:"nieve"},
- 138:{x:80,y:103,n:"Campos del Silencio",b:"nieve"},
- 139:{x:132,y:103,n:"Colapso Glacial",b:"nieve"},
- 140:{x:184,y:103,n:"Tormenta del Norte",b:"nieve"},
- 141:{x:236,y:103,n:"Grieta del Ultimo Invierno",b:"nieve"},
- 142:{x:288,y:103,n:"Altar de Hielo",b:"nieve"},
- 143:{x:340,y:103,n:"Sendero del Frio Infinito",b:"nieve"},
- 144:{x:392,y:103,n:"Cupula de Escarcha",b:"nieve"},
- 145:{x:444,y:103,n:"Ruinas del Viento Blanco",b:"nieve"},
- 146:{x:496,y:103,n:"Frontera del Vacio",b:"nieve"},
- 147:{x:548,y:103,n:"Crater de Hielo",b:"nieve"},
- 148:{x:600,y:103,n:"Trono del Invierno",b:"nieve",boss:true},
+ 73:{x:100,y:300,n:"Ventisca Eterna",b:"nieve"},
+ 74:{x:140,y:270,n:"Bosque Hielo Negro",b:"nieve"},
+ 75:{x:180,y:300,n:"Grieta Frio Abisal",b:"nieve"},
+ 76:{x:220,y:270,n:"Llanura Silencio",b:"nieve"},
+ 77:{x:260,y:300,n:"Cementerio Congelado",b:"nieve"},
+ 78:{x:300,y:270,n:"Tormenta Errante",b:"nieve"},
+ 79:{x:340,y:300,n:"Picos del Desgarro",b:"nieve"},
+ 80:{x:380,y:270,n:"Hondonada del Eco",b:"nieve"},
+ 81:{x:420,y:300,n:"Rio de Hielo",b:"nieve"},
+ 82:{x:460,y:270,n:"Fauces Tormenta",b:"nieve"},
+ 83:{x:500,y:300,n:"Campo de Estatuas",b:"nieve"},
+ 84:{x:540,y:270,n:"Abismo Nevado",b:"nieve"},
+ 85:{x:580,y:300,n:"Cumbre Viento",b:"nieve"},
+ 86:{x:620,y:270,n:"Valle Sombras Blancas",b:"nieve"},
+ 87:{x:660,y:300,n:"Ruinas Congeladas",b:"nieve"},
+ 88:{x:700,y:270,n:"Paso del Susurro",b:"nieve"},
+ 89:{x:740,y:300,n:"Glaciar Viviente",b:"nieve"},
+ 90:{x:100,y:240,n:"Fosa del Olvido",b:"nieve"},
+ 91:{x:140,y:210,n:"Torres de Escarcha",b:"nieve"},
+ 92:{x:180,y:240,n:"Velo de Nieve",b:"nieve"},
+ 93:{x:220,y:210,n:"Lago de Cristal",b:"nieve"},
+ 94:{x:260,y:240,n:"Bosque de Agujas",b:"nieve"},
+ 95:{x:300,y:210,n:"Furia Blanca",b:"nieve"},
+ 96:{x:340,y:240,n:"Caverna de Escarcha",b:"nieve"},
+ 97:{x:380,y:210,n:"Paso Ultimo Aliento",b:"nieve"},
+ 98:{x:420,y:240,n:"Colmillos Invierno",b:"nieve"},
+ 99:{x:460,y:210,n:"Valle del Sueno",b:"nieve"},
+ 100:{x:500,y:240,n:"Niebla Blanca",b:"nieve"},
+ 101:{x:540,y:210,n:"Cumbre Quebrada",b:"nieve"},
+ 102:{x:580,y:240,n:"Territorio del Frio",b:"nieve"},
+ 103:{x:620,y:210,n:"Sendero Hielo Negro",b:"nieve"},
+ 104:{x:660,y:240,n:"Vigilantes Escarcha",b:"nieve"},
+ 105:{x:700,y:210,n:"Desierto Blanco",b:"nieve"},
+ 106:{x:740,y:240,n:"Garganta Viento",b:"nieve"},
+ 107:{x:100,y:180,n:"Ruinas del Invierno",b:"nieve"},
+ 108:{x:140,y:150,n:"Campo de Fragmentos",b:"nieve"},
+ 109:{x:180,y:180,n:"Pozo de Escarcha",b:"nieve"},
+ 110:{x:220,y:150,n:"Travesia del Frio",b:"nieve"},
+ 111:{x:260,y:180,n:"Tormenta Estatica",b:"nieve"},
+ 112:{x:300,y:150,n:"Cascada Congelada",b:"nieve"},
+ 113:{x:340,y:180,n:"Circulo de Hielo",b:"nieve"},
+ 114:{x:380,y:150,n:"Bosque de Sombras",b:"nieve"},
+ 115:{x:420,y:180,n:"Frontera del Frio",b:"nieve"},
+ 116:{x:460,y:150,n:"Vertice Nevado",b:"nieve"},
+ 117:{x:500,y:180,n:"Hogar de la Escarcha",b:"nieve"},
+ 118:{x:540,y:150,n:"Sendero Perdidos",b:"nieve"},
+ 119:{x:580,y:180,n:"Falla Glacial",b:"nieve"},
+ 120:{x:620,y:150,n:"Campo de Huesos",b:"nieve"},
+ 121:{x:660,y:180,n:"Tormenta Silenciosa",b:"nieve"},
+ 122:{x:700,y:150,n:"Nucleo de Hielo",b:"nieve"},
+ 123:{x:740,y:180,n:"Paso de los Colosos",b:"nieve"},
+ 124:{x:100,y:120,n:"Mar de Escarcha",b:"nieve"},
+ 125:{x:140,y:90,n:"Colina Ultimo Suspiro",b:"nieve"},
+ 126:{x:180,y:120,n:"Catedral de Hielo",b:"nieve"},
+ 127:{x:220,y:90,n:"Velo del Olvido",b:"nieve"},
+ 128:{x:260,y:120,n:"Fauces Heladas",b:"nieve"},
+ 129:{x:300,y:90,n:"Bosque del Frio",b:"nieve"},
+ 130:{x:340,y:120,n:"Campo Escarcha Oscura",b:"nieve"},
+ 131:{x:380,y:90,n:"Trampa de Nieve",b:"nieve"},
+ 132:{x:420,y:120,n:"Cumbre del Olvido",b:"nieve"},
+ 133:{x:460,y:90,n:"Rugido Blanco",b:"nieve"},
+ 134:{x:500,y:120,n:"Valle Frio Eterno",b:"nieve"},
+ 135:{x:540,y:90,n:"Sombras Bajo el Hielo",b:"nieve"},
+ 136:{x:580,y:120,n:"Paso Escarcha Mortal",b:"nieve"},
+ 137:{x:620,y:90,n:"Caverna Viento Helado",b:"nieve"},
+ 138:{x:660,y:120,n:"Campos del Silencio",b:"nieve"},
+ 139:{x:700,y:90,n:"Colapso Glacial",b:"nieve"},
+ 140:{x:740,y:120,n:"Tormenta del Norte",b:"nieve"},
+ 141:{x:340,y:180,n:"Grieta Ultimo Invierno",b:"nieve"},
+ 142:{x:380,y:210,n:"Altar de Hielo",b:"nieve"},
+ 143:{x:420,y:180,n:"Sendero Frio Infinito",b:"nieve"},
+ 144:{x:460,y:210,n:"Cupula de Escarcha",b:"nieve"},
+ 145:{x:500,y:180,n:"Ruinas Viento Blanco",b:"nieve"},
+ 146:{x:540,y:210,n:"Frontera Vacio Helado",b:"nieve"},
+ 147:{x:580,y:180,n:"Crater de Hielo",b:"nieve"},
+ 148:{x:620,y:210,n:"Trono del Invierno",b:"nieve",boss:true},
 };
 
 const CONNS=[
@@ -3766,13 +3761,17 @@ const CONNS=[
  [1,2],[1,6],[1,13],[2,3],[3,4],[3,16],[4,5],[5,6],[6,7],[7,8],[7,9],[8,9],[10,11],[10,6],
  [11,12],[11,17],[12,13],[12,18],[13,14],[13,19],[14,15],[15,16],[16,22],[17,18],[18,27],
  [19,20],[20,21],[20,25],[21,22],[22,23],[23,24],[24,30],[24,32],[25,26],[26,19],[27,28],
- [28,29],[29,30],[30,31],[31,32],[32,33],[6,37],
+ [28,29],[29,30],[30,31],[31,32],
+ /* Desierto -> Mar */
+ [32,33],[6,37],
  /* Mar */
  [33,34],[33,38],[33,39],[34,35],[35,36],[36,37],[36,41],[37,38],[37,42],[38,39],[38,44],
  [39,40],[39,44],[40,41],[41,46],[42,43],[42,52],[43,44],[43,51],[44,45],[44,50],[46,47],
  [46,48],[47,48],[48,59],[49,50],[49,56],[50,51],[50,55],[51,52],[51,54],[52,53],[53,54],
  [54,55],[56,49],[57,58],[57,59],[58,60],[59,60],[59,62],[60,61],[61,62],[61,64],[62,63],
- [63,66],[64,65],[65,66],[66,68],[68,69],[69,70],[70,71],[71,72],[72,73],
+ [63,66],[64,65],[65,66],[66,68],[68,69],[69,70],[70,71],[71,72],
+ /* Mar -> Nieve */
+ [72,73],
  /* Nieve */
  [73,74],[74,75],[74,76],[75,76],[76,77],[77,78],[77,83],[78,79],[79,80],[79,98],[80,83],
  [81,82],[82,83],[83,84],[83,96],[84,85],[84,95],[85,86],[86,87],[86,89],[88,89],[90,91],
@@ -3783,9 +3782,7 @@ const CONNS=[
  [120,121],[120,129],[121,122],[122,123],[122,132],[123,133],[124,125],[125,134],[126,127],
  [126,135],[127,136],[128,145],[129,144],[130,143],[131,142],[132,141],[133,140],[134,135],
  [134,139],[137,138],[138,139],[139,140],[140,141],[141,142],[141,146],[142,143],[144,145],
- [145,146],[146,147],[146,148],[147,148],
- /* Oasis y extras */
- [24,149],[32,149],[71,150]
+ [145,146],[146,147],[146,148],[147,148]
 ];
 
 const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32",tutorial:"#555"};
@@ -3838,8 +3835,7 @@ const SNAMES={
  137:"Caverna del Viento",138:"Campos del Silencio",139:"Colapso Glacial",
  140:"Tormenta del Norte",141:"Grieta del Ultimo Invierno",142:"Altar de Hielo",
  143:"Sendero del Frio Infinito",144:"Cupula de Escarcha",145:"Ruinas del Viento",
- 146:"Frontera del Vacio",147:"Crater de Hielo",148:"Trono del Invierno",
- 149:"Oasis Tranquilo",150:"Trono del Invierno 2"
+ 146:"Frontera del Vacio",147:"Crater de Hielo",148:"Trono del Invierno"
 };
 
 function buildMap(connId,roomId){
@@ -3860,22 +3856,17 @@ function buildMap(connId,roomId){
     const safeId=String(id).replace(".","_");
     const g=document.createElementNS(ns,"g");
     g.setAttribute("id",roomId+"-r"+safeId);g.setAttribute("data-sid",id);
-    const W=r.boss?40:r.acertijos?36:32,H=14;
+    const W=r.boss?40:32,H=14;
     const rect=document.createElementNS(ns,"rect");
     rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
     rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",2);
-    let fillColor="#0d0d0d";
-    let strokeColor=BC[r.b]||"#2a2a2a";
-    if(r.boss){fillColor="#150000";strokeColor="#7a1a1a";}
-    else if(r.acertijos){fillColor="#150015";strokeColor="#8e44ad";}
-    rect.setAttribute("fill",fillColor);
-    rect.setAttribute("stroke",strokeColor);
+    rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
+    rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
     rect.setAttribute("stroke-width","1");
     const txt=document.createElementNS(ns,"text");
     txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
     txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
-    let textColor=r.boss?"#cc3333":r.acertijos?"#8e44ad":(BC[r.b]||"#555");
-    txt.setAttribute("fill",textColor);
+    txt.setAttribute("fill",r.boss?"#cc3333":(BC[r.b]||"#555"));
     txt.setAttribute("font-size","6");txt.setAttribute("font-family","monospace");
     txt.textContent=id;
     g.appendChild(rect);g.appendChild(txt);
@@ -3884,8 +3875,7 @@ function buildMap(connId,roomId){
       g.addEventListener("mouseenter",e=>{
         tt=document.createElement("div");
         tt.style.cssText="position:fixed;background:#1a1a1a;border:1px solid #444;padding:3px 7px;border-radius:3px;font-size:10px;color:#ccc;pointer-events:none;z-index:600;white-space:nowrap;font-family:monospace";
-        let extra=r.boss?" [BOSS]":r.acertijos?" [🧩ACERTIJOS]":"";
-        tt.textContent="["+id+"] "+(SNAMES[id]||r.n)+extra;document.body.appendChild(tt);
+        tt.textContent="["+id+"] "+(SNAMES[id]||r.n);document.body.appendChild(tt);
       });
       g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-5)+"px";}});
       g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
@@ -3902,12 +3892,8 @@ function highlightRoom(id){
       const rid=g.getAttribute("data-sid");
       const r=RPOS[rid]||RPOS[String(rid)];if(!r)return;
       const rect=g.querySelector("rect");if(!rect)return;
-      let fillColor="#0d0d0d";
-      let strokeColor=BC[r.b]||"#2a2a2a";
-      if(r.boss){fillColor="#150000";strokeColor="#7a1a1a";}
-      else if(r.acertijos){fillColor="#150015";strokeColor="#8e44ad";}
-      rect.setAttribute("fill",fillColor);
-      rect.setAttribute("stroke",strokeColor);
+      rect.setAttribute("fill",r.boss?"#150000":"#0d0d0d");
+      rect.setAttribute("stroke",r.boss?"#7a1a1a":(BC[r.b]||"#2a2a2a"));
       rect.setAttribute("stroke-width","1");rect.removeAttribute("filter");
     });
     const g=document.getElementById(pfx+"-r"+safeId);
@@ -3920,7 +3906,7 @@ function highlightRoom(id){
 }
 
 /* STATE */
-let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,acertijoActivo=false;
+let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null;
 
 /* LOGIN */
 function showTab(t){
@@ -3992,10 +3978,16 @@ function handle(m){
     closeCombatPopup();
   } else if(m.type==="pvp_challenge"){
     openPvpPopup(m.retador,m.monedas);
+  } else if(m.type==="lore_intro"){
+    openLore();
   } else if(m.type==="acertijo"){
-    openAcertijoPopup(m.pregunta,m.opciones,m.indice,m.total);
-  } else if(m.type==="acertijo_end"){
-    closeAcertijoPopup(m.exito);
+    showAcertijo(m);
+  } else if(m.type==="acertijo_ok"){
+    onAcertijoOk(m.num,m.total);
+  } else if(m.type==="acertijo_fail"){
+    onAcertijoFail();
+  } else if(m.type==="acertijo_done"){
+    closeAcertijo();appendLog("  ✅ ¡Has superado los enigmas del guardian! El camino esta libre.","gv");
   }
 }
 
@@ -4005,7 +3997,6 @@ function classify(t){
   if(l.includes("victoria")||l.includes("🏆"))return "gv";
   if(l.includes("caido")||l.includes("derrota")||l.includes("muerto")||l.includes("💀"))return "gd";
   if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
-  if(l.includes("acertijo")||l.includes("🧩"))return "gp2";
   if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
   if(l.includes("╔")||l.includes("║")||l.includes("╚"))return "gl";
   return "gg";
@@ -4021,43 +4012,45 @@ function appendLog(text,cls){
   log.scrollTop=log.scrollHeight;
 }
 
-/* STATS */
-const CLASE_EMOJI={
-  "guerrero":"🛡️","mago":"🔥","arquero":"🏹","curandero":"💚",
-  "nigromante":"💀","hechicero":"👁️","caballero":"⚔️","cazador":"🎯",
-  "asesino":"🗡️","bárbaro":"🪓","barbaro":"🪓"
-};
+/* STATS — actualización en tiempo real */
 function updateStats(s){
   myStats=s;
   set("s-nm",s.nombre||"—");
   set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  const emojiEl=document.getElementById("s-emoji");
-  if(emojiEl)emojiEl.textContent=CLASE_EMOJI[(s.clase||"").toLowerCase()]||"⚔️";
   set("s-nv","Nv."+s.nivel);
   document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
 
+  /* XP */
   const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
   document.getElementById("b-xp").style.width=xpPct+"%";
   set("s-xp",s.xp+"/"+s.xpMax);
 
+  /* HP */
   const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
   const bh=document.getElementById("b-hp");
   bh.style.width=hpPct+"%";
   bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#e67e22":"var(--red)";
   set("s-hp",s.hp+"/"+s.hpMax);
 
+  /* Mana */
   const mpPct=s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0;
   document.getElementById("b-mp").style.width=mpPct+"%";
   set("s-mp",s.mana+"/"+s.manaMax);
 
+  /* Combate */
   const atqs=s.ataquesTurno;
   set("s-dmg",s.danioBase||"—");
   set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
   set("s-mc",(s.costoEspecial||0)+" mana");
 
+  /* Mochila */
   set("bag-coins",(s.monedas||0)+" 💰");
   if(s.inventario!==undefined)renderBag(s.inventario);
+
+  /* Servicios */
   if(s.sala_id!==undefined)updateServices(s.sala_id);
+
+  /* Mapa */
   if(s.sala_id)highlightRoom(s.sala_id);
 }
 
@@ -4070,12 +4063,14 @@ function renderBag(inv){
 }
 
 const SALAS_SVC={
- "0.3":{h:true,s:true},4:{h:true,s:false},5:{h:true,s:false},6:{h:true,s:true},
- 8:{h:true,s:true},13:{h:false,s:true},17:{h:false,s:false},21:{h:true,s:true},
- 25:{h:true,s:true},34:{h:true,s:false},38:{h:true,s:false},39:{h:false,s:true},
+ "0.3":{h:true,s:true},
+ 4:{h:true,s:false},5:{h:true,s:false},6:{h:true,s:true},
+ 8:{h:true,s:true},13:{h:false,s:true},17:{h:false,s:false},
+ 21:{h:true,s:true},25:{h:true,s:true},
+ 34:{h:true,s:false},38:{h:true,s:false},39:{h:false,s:true},
  44:{h:true,s:true},53:{h:true,s:false},58:{h:false,s:true},70:{h:true,s:false},
- 87:{h:true,s:false},94:{h:true,s:false},105:{h:true,s:false},131:{h:true,s:false},
- 142:{h:true,s:false},147:{h:true,s:true},149:{h:true,s:true}
+ 87:{h:true,s:false},94:{h:true,s:false},105:{h:true,s:false},
+ 131:{h:true,s:false},142:{h:true,s:false},147:{h:true,s:true}
 };
 function updateServices(sid){
   const sv=SALAS_SVC[sid]||{};
@@ -4142,39 +4137,6 @@ function closeCombatPopup(){
   document.getElementById("combat-popup").classList.remove("open");
 }
 
-/* ACERTIJO POPUP */
-function openAcertijoPopup(pregunta,opciones,indice,total){
-  acertijoActivo=true;
-  const popup=document.getElementById("acertijo-popup");
-  document.getElementById("acertijo-title").textContent="🧩 ACERTIJO "+(indice+1)+"/"+total;
-  document.getElementById("acertijo-counter").textContent="Progreso: "+indice+"/"+total+" completados";
-  document.getElementById("acertijo-pregunta").textContent=pregunta;
-  document.getElementById("acertijo-msg").textContent="";
-  const div=document.getElementById("acertijo-opciones");
-  div.innerHTML="";
-  opciones.forEach((opt,idx)=>{
-    const btn=document.createElement("button");
-    btn.className="acertijo-opt";
-    btn.textContent=opt;
-    btn.onclick=()=>responderAcertijo(String.fromCharCode(97+idx)); // a, b, c, d
-    div.appendChild(btn);
-  });
-  popup.classList.add("open");
-  disableUI();
-}
-function responderAcertijo(letra){
-  if(!acertijoActivo)return;
-  send(letra);
-}
-function closeAcertijoPopup(exito){
-  acertijoActivo=false;
-  document.getElementById("acertijo-popup").classList.remove("open");
-  enableUI();
-  if(exito){
-    appendLog("  🎉 ¡Acertijos completados! Puedes continuar.","gv");
-  }
-}
-
 /* PVP POPUP */
 function openPvpPopup(retador,monedas){
   document.getElementById("pvp-info").textContent=
@@ -4229,18 +4191,58 @@ function enableUI(){
 function disableUI(){
   ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
   ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
-  if(!acertijoActivo)closeCombatPopup();
+  closeCombatPopup();
 }
 function setConn(on){document.getElementById("cdot").className=on?"on":"";}
 function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+
+/* LORE */
+function openLore(){document.getElementById("lore-modal").classList.add("open");}
+function closeLore(){document.getElementById("lore-modal").classList.remove("open");}
+
+/* ACERTIJO */
+let _acertijoLocked=false;
+function showAcertijo(m){
+  _acertijoLocked=false;
+  document.getElementById("ac-badge").textContent=(m.num)+"/"+m.total;
+  document.getElementById("ac-pregunta").textContent=m.pregunta;
+  document.getElementById("ac-feedback").textContent="";
+  document.getElementById("ac-feedback").className="";
+  const cont=document.getElementById("ac-opciones");
+  cont.innerHTML="";
+  m.opciones.forEach((op,i)=>{
+    const btn=document.createElement("button");
+    btn.className="ac-opt";btn.textContent=op;
+    btn.onclick=()=>{
+      if(_acertijoLocked)return;
+      _acertijoLocked=true;
+      send("acertijo_resp "+(["a","b","c","d"][i]));
+    };
+    cont.appendChild(btn);
+  });
+  document.getElementById("acertijo-popup").classList.add("open");
+}
+function closeAcertijo(){document.getElementById("acertijo-popup").classList.remove("open");}
+function onAcertijoOk(num,total){
+  const fb=document.getElementById("ac-feedback");
+  fb.textContent="✓ Correcto!";fb.className="ok";
+  document.querySelectorAll(".ac-opt").forEach(b=>{b.style.pointerEvents="none";});
+  if(num>=total){setTimeout(closeAcertijo,900);}
+}
+function onAcertijoFail(){
+  const fb=document.getElementById("ac-feedback");
+  fb.textContent="✗ Incorrecto. Comenzando de nuevo...";fb.className="err";
+  document.querySelectorAll(".ac-opt").forEach(b=>{b.classList.add("wrong");b.style.pointerEvents="none";});
+  setTimeout(closeAcertijo,1400);
+}
 
 buildMap("map-conn-mini","map-rooms-mini");
 buildMap("map-conn-full","map-rooms-full");
 </script>
 </body>
 </html>"""
-
 
 async def http_handler(request: web.Request) -> web.Response:
     """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
@@ -4380,11 +4382,9 @@ async def main():
     print(f"[SERVER] Puerto: {port}")
     print(f"[SERVER] Abre http://localhost:{port} para jugar")
     print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
-    print(f"[SERVER] Salas con acertijos: 33, 37")
     print("[SERVER] Listo.\n")
 
     await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
-
