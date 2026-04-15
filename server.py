@@ -357,7 +357,7 @@ SALAS = {
 
     6:  {"nombre": "Oasis",
          "descripcion": "Agua fresca y palmeras. Un respiro en el desierto.",
-         "conexiones": {"sur": 1, "norte": 33},
+         "conexiones": {"sur": 1, "norte": 32},
          "tienda": True, "hospital": True},
 
     7:  {"nombre": "Sala del Viento Susurrante",
