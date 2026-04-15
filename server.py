@@ -317,17 +317,27 @@ ACERTIJOS = [
 ]
 SALAS_CON_ACERTIJOS = {33, 37}   # salas donde se usan los acertijos
 
-# ============================================================
-# SALAS
-# ============================================================
-# Tres sintaxis disponibles:
-#   A) Enemigos fijos:      "encuentros": [("bandido", 2)]
-#   B) Bioma aleatorio:     "bioma": "desierto", "cantidad": 2
-#   C) Acertijo:            sala_id in SALAS_CON_ACERTIJOS  (no bioma/encuentros)
-#   Sala segura: ninguno de los anteriores → sin combate ni acertijo
-# ============================================================
-SALAS = {
-    # ── DESIERTO (salas 1-13) ──────────────────────────────────
+# ── TUTORIAL (salas 010-050) ──────────────────────────────────
+    0.1: {"nombre": "Como combatir",
+          "descripcion": "Usa los comandos que aparecen para atacar",
+          "conexiones": {"norte": 0.2},
+          "encuentros": [("bandido", 1)] },
+ 
+    0.2: {"nombre": "Objetos",
+          "descripcion": "Como usar objetos",
+          "conexiones": {"sur": 0.1, "norte": 0.3},
+          "encuentros": [("duende", 1)] },
+ 
+    0.3: {"nombre": "estructuras basicas",
+          "descripcion": "hospital y tienda",
+          "conexiones": {"sur": 0.2, "norte": 0.40},
+         "hospital": True, "tienda": True},
+ 
+    0.4: {"nombre": "Como funciona UI",
+          "descripcion": "UI",
+          "conexiones": {"sur": 0.3, "norte": 1}},
+
+    # ── DESIERTO (salas 1-32) ──────────────────────────────────
     1:  {"nombre": "North Mass",
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
          "conexiones": {"norte": 2, "este": 13, "sur": 6},
@@ -343,30 +353,32 @@ SALAS = {
          "conexiones": {"oeste": 4, "norte": 5, "este": 16},
          "bioma": "desierto", "cantidad": 2},
 
-    4:  {"nombre": "Ciudad Abrasada",
-         "descripcion": "Una ciudad abrasada. Sus torres negras susurran historias de un fuego que nunca se apaga.",
+    4:  {"nombre": "Ciudad abrasada",
+         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas, donde las calles aún respiran calor y las sombras tiemblan como brasas vivas.",
+         "descripcion": "Sus torres, negras y agrietadas, susurran historias de un fuego que nunca se apaga,",
+         "descripcion": "mientras un cielo rojizo arde sin descanso sobre los últimos vestigios de vida.",
+         "descripcion": "Un demonio superior aguarda, tenéis que derrotarlo!",
          "conexiones": {"este": 3},
          "encuentros": [("demonioSuperior", 1)],
          "hospital": True},
 
-    5:  {"nombre": "Valle Muerto",
-         "descripcion": "Centenares de esqueletos más grandes que buques navales.",
+    5:  {"nombre": "Valle muerto",
+         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
          "conexiones": {"sur": 3},
-         "bioma": "desierto", "cantidad": 2,
-         "hospital": True},
+         "bioma": "desierto", "cantidad": 2},
 
-    6:  {"nombre": "Oasis",
-         "descripcion": "Agua fresca y palmeras. Un respiro en el desierto.",
-         "conexiones": {"sur": 1, "norte": 32},
-         "tienda": True, "hospital": True},
-
-    7:  {"nombre": "Sala del Viento Susurrante",
+    6:  {"nombre": "Sala del Viento Susurrante",
          "descripcion": "Columnas de arena giran lentamente y traen voces del pasado.",
-         "conexiones": {"sur": 10, "oeste": 8, "norte": 1},
+         "conexiones": {"sur": 10, "oeste": 7, "norte": 1},
          "encuentros": [("elfoOscuro", 1)]},
 
-    8:  {"nombre": "Salon del Sol Eterno",
-         "descripcion": "Un sol artificial quema sin piedad.",
+    7:  {"nombre": "Cámara del Oasis Oculto",
+         "descripcion": "Un pequeño lago mágico que concede visiones o recuerdos.",
+         "conexiones": {"oeste": 8, "este": 6, "sur": 9},
+         "bioma": "desierto", "cantidad": 1},
+
+    8:  {"nombre": "Salón del Sol Eterno",
+         "descripcion": "Un techo abierto donde un sol artificial quema sin piedad.",
          "conexiones": {"sur": 9, "este": 7},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True, "tienda": True},
@@ -376,146 +388,141 @@ SALAS = {
          "conexiones": {"norte": 7},
          "bioma": "desierto", "cantidad": 2},
 
-    10: {"nombre": "Caravana Fantasma",
-         "descripcion": "Viajeros espectrales repiten eternamente su ultima travesia.",
-         "conexiones": {"este": 11, "norte": 7},
+    10: {"nombre": "Caravana fantasma",
+         "descripcion": "Viajeros espectrales repiten eternamente su última travesía.",
+         "conexiones": {"este": 11, "norte": 6},
          "encuentros": [("demonioInferior", 2)]},
 
     11: {"nombre": "Fosa de Titanes",
-         "descripcion": "Restos colosales emergen de la arena.",
+         "descripcion": "Restos colosales emergen de la arena, como si antiguos gigantes hubieran caído aquí.",
          "conexiones": {"norte": 12, "oeste": 10, "este": 17},
          "bioma": "desierto", "cantidad": 2},
 
     12: {"nombre": "Altar del Soberano Abisal",
-         "descripcion": "Un trono oscuro tallado en huesos ennegrecidos.",
+         "descripcion": "Un trono oscuro tallado en huesos ennegrecidos irradia una presencia opresiva.",
          "conexiones": {"sur": 11, "este": 18, "norte": 13},
-         "encuentros": [("reyEsqueleto", 1)],
-         "tienda": True},
+         "encuentros": [("reyEsqueleto", 1)]},
 
-    13: {"nombre": "Extension de Azhar",
-         "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla.",
+    13: {"nombre": "Extensión de Azhar",
+         "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla por el calor.",
          "conexiones": {"norte": 14, "este": 19, "oeste": 1},
          "bioma": "desierto", "cantidad": 1},
 
     14: {"nombre": "Mar de Dunas Susurrantes",
-         "descripcion": "Las dunas emiten murmullos cuando el viento las roza.",
+         "descripcion": "Las dunas se extienden sin fin, emitiendo murmullos cuando el viento las roza.",
          "conexiones": {"norte": 15, "sur": 13},
          "bioma": "desierto", "cantidad": 2},
 
     15: {"nombre": "Vestigios Enterrados",
-         "descripcion": "Ruinas antiguas asoman entre la arena.",
+         "descripcion": "Ruinas antiguas asoman entre la arena, como recuerdos que se niegan a desaparecer.",
          "conexiones": {"norte": 16, "sur": 14},
          "bioma": "desierto", "cantidad": 1},
 
-    16: {"nombre": "Santuario Carmesi",
-         "descripcion": "Muros cubiertos de simbolos sangrientos.",
+    16: {"nombre": "Santuario Carmesí",
+         "descripcion": "Muros cubiertos de símbolos sangrientos laten con una energía inquietante.",
          "conexiones": {"sur": 15, "este": 22, "oeste": 3},
-         "encuentros": [("demonioInferior", 2)],
-         "tienda": True},
+         "encuentros": [("demonioInferior", 2)]},
 
     17: {"nombre": "Sepulcro de Colosos",
-         "descripcion": "Huesos gigantescos yacen dispersos.",
+         "descripcion": "Huesos gigantescos yacen dispersos, devorados lentamente por el desierto.",
          "conexiones": {"oeste": 11},
          "bioma": "desierto", "cantidad": 2,
          "tienda": True},
 
     18: {"nombre": "Trono del Abismo",
-         "descripcion": "Una estructura de hueso y sombra domina el lugar.",
+         "descripcion": "Una estructura de hueso y sombra domina el lugar, como si aún esperara a su dueño.",
          "conexiones": {"oeste": 12, "este": 27},
          "bioma": "desierto", "cantidad": 1},
 
     19: {"nombre": "Llanura de Fuego Blanco",
-         "descripcion": "Todo parece arder en un resplandor palido.",
+         "descripcion": "La luz del sol es tan intensa que todo parece arder en un resplandor pálido.",
          "conexiones": {"norte": 20, "este": 26, "oeste": 13},
          "bioma": "desierto", "cantidad": 1},
 
     20: {"nombre": "Dunas del Murmullo Eterno",
-         "descripcion": "Algo invisible se desliza bajo la arena.",
+         "descripcion": "Algo invisible se desliza bajo la arena, siguiendo cada paso que das.",
          "conexiones": {"sur": 19, "este": 25},
          "bioma": "desierto", "cantidad": 2},
 
     21: {"nombre": "Columnas del Olvido",
-         "descripcion": "Pilares erosionados marcando un lugar que el tiempo quiso borrar.",
+         "descripcion": "Pilares erosionados se alzan torcidos, marcando un lugar que el tiempo quiso borrar.",
          "conexiones": {"este": 15},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True, "tienda": True},
 
     22: {"nombre": "Templo de la Sangre Antigua",
-         "descripcion": "Inscripciones vivas recorren las paredes.",
+         "descripcion": "Inscripciones vivas recorren las paredes, como si observaran a los intrusos.",
          "conexiones": {"este": 23, "oeste": 16},
          "encuentros": [("demonioInferior", 2)]},
 
-    23: {"nombre": "Abismo de los Caidos",
-         "descripcion": "Un campo donde incluso el viento parece evitar pasar.",
+    23: {"nombre": "Abismo de los Caídos",
+         "descripcion": "Un campo de restos antiguos donde incluso el viento parece evitar pasar.",
          "conexiones": {"sur": 24, "oeste": 22},
          "bioma": "desierto", "cantidad": 2},
 
     24: {"nombre": "Trono del Devastador",
-         "descripcion": "Un asiento de poder olvidado, rodeado de oscuridad.",
+         "descripcion": "Un asiento de poder olvidado, rodeado de una oscuridad que respira.",
          "conexiones": {"sur": 30, "norte": 23, "este": 32},
-         "bioma": "desierto", "cantidad": 4},
+         "bioma": "desierto", "cantidad": 4,
+         "tesoro": True},
 
     25: {"nombre": "Horizonte Quebrado",
-         "descripcion": "El aire distorsiona la vista.",
+         "descripcion": "El aire distorsiona la vista, haciendo que la distancia pierda todo sentido.",
          "conexiones": {"oeste": 20, "sur": 26},
-         "bioma": "desierto", "cantidad": 1,
-         "tienda": True, "hospital": True},
+         "bioma": "desierto", "cantidad": 1},
 
     26: {"nombre": "Dunas del Hambre",
-         "descripcion": "La arena se mueve de forma antinatural.",
+         "descripcion": "La arena se mueve de forma antinatural, como si buscara devorar a los vivos.",
          "conexiones": {"oeste": 19, "norte": 25},
          "bioma": "desierto", "cantidad": 2},
 
     27: {"nombre": "Ruinas del Eco Silente",
-         "descripcion": "Cada paso resuena demasiado fuerte.",
+         "descripcion": "Cada paso resuena demasiado fuerte, como si algo escuchara desde abajo.",
          "conexiones": {"oeste": 18, "este": 28},
          "bioma": "desierto", "cantidad": 2},
 
     28: {"nombre": "Santuario de la Marca Roja",
-         "descripcion": "Antiguos rituales dejaron su huella.",
+         "descripcion": "Antiguos rituales dejaron su huella, aún palpable en el aire seco.",
          "conexiones": {"oeste": 27, "norte": 29},
          "encuentros": [("demonioInferior", 2)]},
 
     29: {"nombre": "Campos de Huesos Errantes",
-         "descripcion": "Restos que cambian de lugar con el tiempo.",
+         "descripcion": "Restos que cambian de lugar con el tiempo, formando patrones desconocidos.",
          "conexiones": {"sur": 28, "norte": 30},
          "bioma": "desierto", "cantidad": 2},
 
-    30: {"nombre": "Trono del Ultimo Senor",
-         "descripcion": "Un lugar de dominio absoluto en silencio antinatural.",
+    30: {"nombre": "Trono del Último Señor",
+         "descripcion": "Un lugar de dominio absoluto, ahora envuelto en un silencio antinatural.",
          "conexiones": {"oeste": 24, "norte": 31},
          "encuentros": [("reyEsqueleto", 1)]},
 
     31: {"nombre": "Falla de los Antiguos",
-         "descripcion": "Una grieta llena de restos de una civilizacion olvidada.",
+         "descripcion": "Una grieta llena de restos y reliquias de una civilización olvidada.",
          "conexiones": {"sur": 30},
-         "bioma": "desierto", "cantidad": 2,
-         "hospital": True},
+         "bioma": "desierto", "cantidad": 2},
 
     32: {"nombre": "Trono de Ceniza Viva",
-         "descripcion": "El asiento aun desprende calor como si su rey no se hubiera ido del todo.",
+         "descripcion": "El asiento aún desprende calor, como si su antiguo rey no se hubiera ido del todo.",
          "conexiones": {"oeste": 24, "este": 33, "norte": 37},
          "encuentros": [("reyDemonio", 1)]},
 
-    # ── MAR (salas 33-72) ──────────────────────────────────────────────────────
-    # Salas 33 y 37: ACERTIJO — no hay combate, hay puzzle
+    # ── Mar (salas 33-72) ──────────────────────────────────
     33: {"nombre": "Embarcadero 1",
-         "descripcion": (
-             "La marea esta calmada. Un guardian antiguo custodia el paso.\n"
-             "Dice: Solo los sabios pueden cruzar. Responde mis tres enigmas o no avanzaras."
-         ),
-         "conexiones": {"oeste": 32, "norte": 38, "este": 39, "sur": 34}},
+         "descripcion": "La marea está calmada, un anciano te espera en el muelle. Te dice: "Solo los sabios podran pasar para cruzar el mar".",
+         "conexiones": {"oeste": 32, "norte": 38, "este": 39, "sur": 34},
+         "bioma": "mar"},
 
     34: {"nombre": "Abismo Coralino",
-         "descripcion": "Corales brillantes cubren una grieta que no tiene fin.",
-         "conexiones": {"norte": 33, "este": 35},
+         "descripcion": "Corales brillantes cubren una grieta que parece no tener fin.",
+         "conexiones": {"oeste": 33, "este": 35},
          "bioma": "mar", "cantidad": 1,
          "hospital": True},
 
     35: {"nombre": "Trono del Oceano",
          "descripcion": "Un trono erosionado por el tiempo, rodeado de corrientes poderosas.",
          "conexiones": {"oeste": 34, "este": 36},
-         "bioma": "mar", "cantidad": 2},
+         "bioma": "mar", "cantidad": 2,
+         "tesoro": True},
 
     36: {"nombre": "Cripta de las Algas",
          "descripcion": "Columnas cubiertas de algas esconden secretos olvidados.",
@@ -523,26 +530,25 @@ SALAS = {
          "bioma": "mar", "cantidad": 1},
 
     37: {"nombre": "Embarcadero 2",
-         "descripcion": (
-             "El puerto rebosante de gente. Otro guardian bloquea el camino.\n"
-             "Voz grave: Solo el que piensa puede pasar. Demuestra tu ingenio."
-         ),
-         "conexiones": {"sur": 32, "este": 38, "norte": 42}},
+         "descripcion": "La marea está calmada, un anciano te espera en el muelle. Te dice: "Solo los sabios podran pasar para cruzar el mar",
+         "conexiones": {"sur": 32, "este": 38, "norte": 42},
+         "bioma": "mar"},
 
     38: {"nombre": "Fosa de las Sombras Marinas",
-         "descripcion": "Una profundidad oscura donde nada deberia sobrevivir.",
-         "conexiones": {"oeste": 37, "norte": 43, "este": 39, "sur": 33},
+         "descripcion": "Una profundidad oscura donde nada debería sobrevivir.",
+         "conexiones": {"oeste": 37, "norte": 44, "este": 39, "sur": 33},
          "bioma": "mar", "cantidad": 2,
          "hospital": True},
 
     39: {"nombre": "Arrecife Susurrante",
-         "descripcion": "El coral emite sonidos extranos al moverse con la corriente.",
+         "descripcion": "El coral emite sonidos extraños al moverse con la corriente.",
          "conexiones": {"norte": 44, "sur": 33, "oeste": 38, "este": 40},
-         "bioma": "mar", "cantidad": 1},
+         "bioma": "mar", "cantidad": 1,
+         "tesoro": True},
 
     40: {"nombre": "Caverna de la Bruma Salina",
-         "descripcion": "Una cueva humeda llena de niebla con olor a sal.",
-         "conexiones": {"oeste": 39, "este": 41, "sur": 36},
+         "descripcion": "Una cueva húmeda llena de niebla con olor a sal.",
+         "conexiones": {},
          "bioma": "mar", "cantidad": 2},
 
     41: {"nombre": "Templo de las Olas Eternas",
@@ -556,23 +562,23 @@ SALAS = {
          "bioma": "mar", "cantidad": 1},
 
     43: {"nombre": "Pantano del Silencio",
-         "descripcion": "Un pantano donde ni los insectos se atreven a sonar.",
+         "descripcion": "Un pantano inmóvil donde ni los insectos se atreven a sonar.",
          "conexiones": {"oeste": 42, "norte": 51, "este": 44, "sur": 39},
          "bioma": "mar", "cantidad": 2},
 
     44: {"nombre": "Refugio de las Medusas",
-         "descripcion": "Criaturas translucidas iluminan la oscuridad acuatica.",
+         "descripcion": "Criaturas translúcidas iluminan la oscuridad acuática.",
          "conexiones": {"norte": 50, "sur": 39, "oeste": 43, "este": 45},
          "bioma": "mar", "cantidad": 3,
          "hospital": True, "tienda": True},
 
     45: {"nombre": "Camara del Pulpo Antiguo",
-         "descripcion": "Tentaculos gigantes dejaron marcas en las paredes.",
+         "descripcion": "Tentáculos gigantes dejaron marcas en las paredes.",
          "conexiones": {"oeste": 44},
          "bioma": "mar", "cantidad": 1},
 
     46: {"nombre": "Bosque de Manglares Oscuros",
-         "descripcion": "Raices retorcidas emergen del agua turbia.",
+         "descripcion": "Raíces retorcidas emergen del agua turbia.",
          "conexiones": {"sur": 41, "este": 47, "norte": 48},
          "bioma": "mar", "cantidad": 2},
 
@@ -582,7 +588,7 @@ SALAS = {
          "bioma": "mar", "cantidad": 3},
 
     48: {"nombre": "Grieta Abisal",
-         "descripcion": "Una fisura profunda que emite un frio inquietante.",
+         "descripcion": "Una fisura profunda que emite un frío inquietante.",
          "conexiones": {"oeste": 46, "sur": 47, "norte": 59},
          "bioma": "mar", "cantidad": 1},
 
@@ -597,9 +603,10 @@ SALAS = {
          "bioma": "mar", "cantidad": 1},
 
     51: {"nombre": "Gruta de las Mareas Silentes",
-         "descripcion": "El agua entra y sale sin hacer ruido.",
+         "descripcion": "El agua entra y sale sin hacer ruido, como si el sonido estuviera prohibido.",
          "conexiones": {"norte": 54, "sur": 43, "oeste": 52, "este": 50},
-         "bioma": "mar", "cantidad": 2},
+         "bioma": "mar", "cantidad": 2,
+         "tesoro": True},
 
     52: {"nombre": "Pantano de las Raices Hundidas",
          "descripcion": "Raices gigantes se entrelazan bajo aguas oscuras.",
@@ -615,10 +622,11 @@ SALAS = {
     54: {"nombre": "Estuario del Viento Humedo",
          "descripcion": "El aire cargado de humedad sopla con fuerza constante.",
          "conexiones": {"oeste": 53, "este": 55, "sur": 50},
-         "bioma": "mar", "cantidad": 2},
+         "bioma": "mar", "cantidad": 2,
+         "tesoro": True},
 
     55: {"nombre": "Pozo de Agua Estancada",
-         "descripcion": "Un pozo donde el agua no se mueve desde hace siglos.",
+         "descripcion": "Un pozo profundo donde el agua no se mueve desde hace siglos.",
          "conexiones": {"oeste": 54, "sur": 50},
          "bioma": "mar", "cantidad": 1},
 
@@ -636,7 +644,7 @@ SALAS = {
          "descripcion": "Arboles muertos sobresalen de aguas tranquilas.",
          "conexiones": {"sur": 57, "este": 60},
          "bioma": "mar", "cantidad": 1,
-         "tienda": True},
+         "tienda": True, "tesoro": True},
 
     59: {"nombre": "Camara de las Corrientes Ocultas",
          "descripcion": "El agua fluye por caminos invisibles bajo tus pies.",
@@ -653,20 +661,22 @@ SALAS = {
          "conexiones": {"oeste": 60, "sur": 62, "este": 64},
          "bioma": "mar", "cantidad": 1},
 
-    62: {"nombre": "Playa de Arena Humeda",
-         "descripcion": "La arena nunca llega a secarse.",
+    62: {"nombre": "Playa de la Arena Humeda",
+         "descripcion": "La arena nunca llega a secarse, incluso bajo el sol.",
          "conexiones": {"oeste": 59, "norte": 61, "este": 63},
-         "bioma": "mar", "cantidad": 2},
+         "bioma": "mar", "cantidad": 2,
+         "tesoro": True},
 
     63: {"nombre": "Gruta del Agua Resonante",
-         "descripcion": "Cada gota crea ecos prolongados.",
+         "descripcion": "Cada gota crea ecos prolongados en la cueva.",
          "conexiones": {"oeste": 62, "este": 66},
          "bioma": "mar", "cantidad": 3},
 
     64: {"nombre": "Delta de los Canales Perdidos",
          "descripcion": "Un laberinto de agua donde es facil desorientarse.",
          "conexiones": {"oeste": 61, "este": 65},
-         "bioma": "mar", "cantidad": 1},
+         "bioma": "mar", "cantidad": 1,
+         "tesoro": True},
 
     65: {"nombre": "Arrecife de las Espinas Blancas",
          "descripcion": "Formaciones afiladas sobresalen entre las olas.",
@@ -705,43 +715,44 @@ SALAS = {
          "bioma": "mar", "cantidad": 1},
 
     72: {"nombre": "Cumbre del Kraken",
-         "descripcion": "Un pico rocoso azotado por tormentas donde una sombra colosal se agita.",
+         "descripcion": "Un pico rocoso azotado por tormentas donde una sombra colosal se agita bajo las olas.",
          "conexiones": {"oeste": 71, "este": 73},
+         "bioma": "mar", "cantidad": 1,
          "encuentros": [("kraken", 1)]},
 
-    # ── NIEVE (salas 73-148) ──────────────────────────────────
+    # ── Nieve (salas 73-149) ──────────────────────────────────
     73:  {"nombre": "Ventisca Eterna",
-          "descripcion": "El viento ruge sin descanso, cuchillas de nieve que desgarran la piel.",
+          "descripcion": "El viento ruge sin descanso, levantando cuchillas de nieve que desgarran la piel.",
           "conexiones": {"este": 74, "oeste": 72},
           "bioma": "nieve", "cantidad": 1},
 
     74:  {"nombre": "Bosque de Hielo Negro",
-          "descripcion": "Arboles oscuros cubiertos de escarcha absorben la luz y el calor.",
-          "conexiones": {"oeste": 74, "sur": 75, "este": 76},
+          "descripcion": "Árboles oscuros cubiertos de escarcha absorben la luz y el calor.",
+          "conexiones": {"oeste": 76, "sur": 75, "este": 76},
           "bioma": "nieve", "cantidad": 2},
 
-    75:  {"nombre": "Grieta del Frio Abisal",
-          "descripcion": "Una fisura profunda exhala un aire tan frio que quema.",
+    75:  {"nombre": "Grieta del Frío Abisal",
+          "descripcion": "Una fisura profunda exhala un aire tan frío que quema.",
           "conexiones": {"norte": 74},
           "bioma": "nieve", "cantidad": 2},
 
     76:  {"nombre": "Llanura del Silencio Blanco",
-          "descripcion": "Una extension infinita donde ningun sonido logra sobrevivir.",
+          "descripcion": "Una extensión infinita donde ningún sonido logra sobrevivir.",
           "conexiones": {"sur": 77, "oeste": 74},
           "bioma": "nieve", "cantidad": 1},
 
     77:  {"nombre": "Cementerio Congelado",
           "descripcion": "Cuerpos atrapados en hielo parecen observar a los vivos.",
-          "conexiones": {"norte": 76, "este": 78},
+          "conexiones": {"NORTE": 76, "este": 78},
           "bioma": "nieve", "cantidad": 2},
 
     78:  {"nombre": "Tormenta Errante",
-          "descripcion": "Una ventisca viva se desplaza sin rumbo.",
+          "descripcion": "Una ventisca viva se desplaza sin rumbo, devorando todo a su paso.",
           "conexiones": {"sur": 77, "norte": 79},
           "bioma": "nieve", "cantidad": 2},
 
     79:  {"nombre": "Picos del Desgarro",
-          "descripcion": "Montanas afiladas como cuchillas sobresalen entre la nieve.",
+          "descripcion": "Montañas afiladas como cuchillas sobresalen entre la nieve.",
           "conexiones": {"sur": 78, "norte": 98, "este": 80},
           "bioma": "nieve", "cantidad": 2},
 
@@ -750,8 +761,8 @@ SALAS = {
           "conexiones": {"oeste": 79, "norte": 97},
           "bioma": "nieve", "cantidad": 1},
 
-    81:  {"nombre": "Rio de Hielo Muerto",
-          "descripcion": "Un rio congelado bajo el cual algo se mueve lentamente.",
+    81:  {"nombre": "Río de Hielo Muerto",
+          "descripcion": "Un río congelado bajo el cual algo se mueve lentamente.",
           "conexiones": {"este": 82},
           "bioma": "nieve", "cantidad": 2},
 
@@ -766,7 +777,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     84:  {"nombre": "Abismo Nevado",
-          "descripcion": "Un vacio oculto bajo la nieve, listo para tragar incautos.",
+          "descripcion": "Un vacío oculto bajo la nieve, listo para tragar incautos.",
           "conexiones": {"sur": 85, "norte": 95, "oeste": 83},
           "bioma": "nieve", "cantidad": 1},
 
@@ -783,11 +794,10 @@ SALAS = {
     87:  {"nombre": "Ruinas Congeladas",
           "descripcion": "Estructuras antiguas atrapadas en hielo eterno.",
           "conexiones": {"sur": 86},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
+          "bioma": "nieve", "cantidad": 2},
 
-    88:  {"nombre": "Paso del Susurro Gelido",
-          "descripcion": "Voces heladas parecen guiarte... o perderte.",
+    88:  {"nombre": "Paso del Susurro Gélido",
+          "descripcion": "Voces heladas parecen guiarte… o perderte.",
           "conexiones": {"sur": 89},
           "bioma": "nieve", "cantidad": 1},
 
@@ -797,7 +807,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     90:  {"nombre": "Fosa del Olvido Blanco",
-          "descripcion": "Quienes caen aqui desaparecen sin dejar rastro.",
+          "descripcion": "Quienes caen aquí desaparecen sin dejar rastro.",
           "conexiones": {"norte": 91},
           "bioma": "nieve", "cantidad": 2},
 
@@ -816,11 +826,10 @@ SALAS = {
           "conexiones": {"este": 92, "norte": 102},
           "bioma": "nieve", "cantidad": 2},
 
-    94:  {"nombre": "Bosque de Agujas Gelidas",
+    94:  {"nombre": "Bosque de Agujas Gélidas",
           "descripcion": "Espinas de hielo sobresalen del suelo como trampas.",
           "conexiones": {"oeste": 95, "norte": 103},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
+          "bioma": "nieve", "cantidad": 2},
 
     95:  {"nombre": "Furia Blanca",
           "descripcion": "Una tormenta que parece tener voluntad propia.",
@@ -828,12 +837,12 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     96:  {"nombre": "Caverna de Escarcha Viva",
-          "descripcion": "El hielo late con una energia inquietante.",
+          "descripcion": "El hielo late con una energía inquietante.",
           "conexiones": {"sur": 83, "norte": 105, "oeste": 97},
           "bioma": "nieve", "cantidad": 2},
 
-    97:  {"nombre": "Paso del Ultimo Aliento",
-          "descripcion": "El aire es tan frio que respirar duele.",
+    97:  {"nombre": "Paso del Último Aliento",
+          "descripcion": "El aire es tan frío que respirar duele.",
           "conexiones": {"sur": 80, "este": 96},
           "bioma": "nieve", "cantidad": 1},
 
@@ -842,8 +851,8 @@ SALAS = {
           "conexiones": {"sur": 79, "norte": 107, "oeste": 99},
           "bioma": "nieve", "cantidad": 2},
 
-    99:  {"nombre": "Valle del Sueno Helado",
-          "descripcion": "Un frio que induce un sueno mortal.",
+    99:  {"nombre": "Valle del Sueño Helado",
+          "descripcion": "Un frío que induce un sueño mortal.",
           "conexiones": {"este": 98, "norte": 108},
           "bioma": "nieve", "cantidad": 2},
 
@@ -857,8 +866,8 @@ SALAS = {
           "conexiones": {"sur": 92, "norte": 118},
           "bioma": "nieve", "cantidad": 2},
 
-    102: {"nombre": "Territorio del Frio Antiguo",
-          "descripcion": "Una energia ancestral congela todo lo que toca.",
+    102: {"nombre": "Territorio del Frío Antiguo",
+          "descripcion": "Una energía ancestral congela todo lo que toca.",
           "conexiones": {"sur": 93, "norte": 117},
           "bioma": "nieve", "cantidad": 2},
 
@@ -868,15 +877,14 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     104: {"nombre": "Vigilantes de Escarcha",
-          "descripcion": "Figuras inmoviles parecen seguir cada movimiento.",
+          "descripcion": "Figuras inmóviles parecen seguir cada movimiento.",
           "conexiones": {"sur": 95, "norte": 115, "este": 103, "oeste": 105},
           "bioma": "nieve", "cantidad": 2},
 
     105: {"nombre": "Desierto Blanco",
           "descripcion": "Dunas de nieve reemplazan a la arena.",
           "conexiones": {"sur": 96, "este": 104, "oeste": 106},
-          "bioma": "nieve", "cantidad": 1,
-          "hospital": True},
+          "bioma": "nieve", "cantidad": 1},
 
     106: {"nombre": "Garganta del Viento Helado",
           "descripcion": "Corrientes de aire atraviesan como cuchillas.",
@@ -884,58 +892,57 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     107: {"nombre": "Ruinas del Invierno Eterno",
-          "descripcion": "Restos de una civilizacion atrapada en hielo.",
+          "descripcion": "Restos de una civilización atrapada en hielo.",
           "conexiones": {"sur": 98, "norte": 112, "este": 106, "oeste": 108},
           "bioma": "nieve", "cantidad": 2},
 
-    108: {"nombre": "Campo de Fragmentos Gelidos",
-          "descripcion": "El suelo esta cubierto de cristales afilados.",
+    108: {"nombre": "Campo de Fragmentos Gélidos",
+          "descripcion": "El suelo está cubierto de cristales afilados.",
           "conexiones": {"sur": 99, "norte": 111, "este": 107, "oeste": 109},
           "bioma": "nieve", "cantidad": 2},
 
     109: {"nombre": "Pozo de Escarcha",
-          "descripcion": "Un agujero profundo que emana frio absoluto.",
+          "descripcion": "Un agujero profundo que emana frío absoluto.",
           "conexiones": {"sur": 100, "norte": 110, "este": 108},
           "bioma": "nieve", "cantidad": 1},
 
-    110: {"nombre": "Travesia del Frio Mortal",
+    110: {"nombre": "Travesía del Frío Mortal",
           "descripcion": "Cada paso drena lentamente la vida.",
           "conexiones": {"sur": 109, "norte": 111},
           "bioma": "nieve", "cantidad": 2},
 
-    111: {"nombre": "Tormenta Estatica",
-          "descripcion": "El aire esta cargado de energia helada.",
+    111: {"nombre": "Tormenta Estática",
+          "descripcion": "El aire está cargado de energía helada.",
           "conexiones": {"sur": 108, "este": 112},
           "bioma": "nieve", "cantidad": 2},
 
     112: {"nombre": "Cascada Congelada",
-          "descripcion": "El agua quedo atrapada en pleno descenso.",
+          "descripcion": "El agua quedó atrapada en pleno descenso.",
           "conexiones": {"sur": 107, "norte": 125, "oeste": 111},
           "bioma": "nieve", "cantidad": 1},
 
-    113: {"nombre": "Circulo de Hielo Antiguo",
-          "descripcion": "Formaciones perfectas rodean un centro vacio.",
+    113: {"nombre": "Círculo de Hielo Antiguo",
+          "descripcion": "Formaciones perfectas rodean un centro vacío.",
           "conexiones": {"sur": 124, "este": 114},
           "bioma": "nieve", "cantidad": 2},
 
     114: {"nombre": "Bosque de Sombras Heladas",
           "descripcion": "Sombras que no pertenecen a nada visible.",
           "conexiones": {"oeste": 113, "norte": 123},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
+          "bioma": "nieve", "cantidad": 2},
 
-    115: {"nombre": "Frontera del Frio Absoluto",
-          "descripcion": "Mas alla de este punto, nada sobrevive.",
+    115: {"nombre": "Frontera del Frío Absoluto",
+          "descripcion": "Más allá de este punto, nada sobrevive.",
           "conexiones": {"sur": 104, "norte": 122, "este": 116},
           "bioma": "nieve", "cantidad": 2},
 
-    116: {"nombre": "Vertice Nevado",
+    116: {"nombre": "Vértice Nevado",
           "descripcion": "Un punto donde el viento converge violentamente.",
           "conexiones": {"oeste": 115, "norte": 121},
           "bioma": "nieve", "cantidad": 2},
 
     117: {"nombre": "Hogar de la Escarcha",
-          "descripcion": "El frio parece originarse aqui.",
+          "descripcion": "El frío parece originarse aquí.",
           "conexiones": {"sur": 102, "norte": 120},
           "bioma": "nieve", "cantidad": 1},
 
@@ -955,12 +962,12 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     121: {"nombre": "Tormenta Silenciosa",
-          "descripcion": "La nieve cae sin hacer ningun sonido.",
+          "descripcion": "La nieve cae sin hacer ningún sonido.",
           "conexiones": {"sur": 116, "norte": 130, "oeste": 122, "este": 120},
           "bioma": "nieve", "cantidad": 1},
 
-    122: {"nombre": "Nucleo de Hielo Vivo",
-          "descripcion": "Una fuente de energia helada palpita.",
+    122: {"nombre": "Núcleo de Hielo Vivo",
+          "descripcion": "Una fuente de energía helada palpita.",
           "conexiones": {"sur": 115, "norte": 131, "oeste": 123, "este": 121},
           "bioma": "nieve", "cantidad": 2},
 
@@ -970,12 +977,12 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     124: {"nombre": "Mar de Escarcha",
-          "descripcion": "Una extension ondulante de hielo solido.",
+          "descripcion": "Una extensión ondulante de hielo sólido.",
           "conexiones": {"sur": 113, "norte": 133, "oeste": 125, "este": 123},
           "bioma": "nieve", "cantidad": 2},
 
-    125: {"nombre": "Colina del Ultimo Suspiro",
-          "descripcion": "El frio roba el aliento lentamente.",
+    125: {"nombre": "Colina del Último Suspiro",
+          "descripcion": "El frío roba el aliento lentamente.",
           "conexiones": {"este": 124, "norte": 134},
           "bioma": "nieve", "cantidad": 1},
 
@@ -994,7 +1001,7 @@ SALAS = {
           "conexiones": {"sur": 119, "norte": 145},
           "bioma": "nieve", "cantidad": 2},
 
-    129: {"nombre": "Bosque del Frio Susurrante",
+    129: {"nombre": "Bosque del Frío Susurrante",
           "descripcion": "El viento parece hablar entre las ramas congeladas.",
           "conexiones": {"sur": 120, "norte": 144},
           "bioma": "nieve", "cantidad": 2},
@@ -1007,12 +1014,11 @@ SALAS = {
     131: {"nombre": "Trampa de Nieve Profunda",
           "descripcion": "El suelo cede bajo el peso sin aviso.",
           "conexiones": {"sur": 122, "norte": 142},
-          "bioma": "nieve", "cantidad": 1,
-          "hospital": True},
+          "bioma": "nieve", "cantidad": 1},
 
     132: {"nombre": "Cumbre del Olvido",
-          "descripcion": "Quienes llegan aqui olvidan por que vinieron.",
-          "conexiones": {"sur": 123, "norte": 142, "oeste": 133},
+          "descripcion": "Quienes llegan aquí olvidan por qué vinieron.",
+          "conexiones": {"sur": 122, "norte": 142, "oeste": 133},
           "bioma": "nieve", "cantidad": 2},
 
     133: {"nombre": "Rugido Blanco",
@@ -1020,7 +1026,7 @@ SALAS = {
           "conexiones": {"sur": 124, "norte": 140, "este": 132},
           "bioma": "nieve", "cantidad": 2},
 
-    134: {"nombre": "Valle del Frio Eterno",
+    134: {"nombre": "Valle del Frío Eterno",
           "descripcion": "Nunca deja de nevar en este lugar.",
           "conexiones": {"sur": 125, "norte": 139, "oeste": 135},
           "bioma": "nieve", "cantidad": 2},
@@ -1041,7 +1047,7 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     138: {"nombre": "Campos del Silencio",
-          "descripcion": "El mundo parece detenido aqui.",
+          "descripcion": "El mundo parece detenido aquí.",
           "conexiones": {"oeste": 137, "este": 139},
           "bioma": "nieve", "cantidad": 1},
 
@@ -1055,24 +1061,23 @@ SALAS = {
           "conexiones": {"sur": 133, "oeste": 139, "este": 141},
           "bioma": "nieve", "cantidad": 2},
 
-    141: {"nombre": "Grieta del Ultimo Invierno",
-          "descripcion": "Un frio ancestral emana desde lo profundo.",
+    141: {"nombre": "Grieta del Último Invierno",
+          "descripcion": "Un frío ancestral emana desde lo profundo.",
           "conexiones": {"sur": 132, "norte": 146, "este": 142, "oeste": 140},
           "bioma": "nieve", "cantidad": 2},
 
     142: {"nombre": "Altar de Hielo Antiguo",
-          "descripcion": "Un lugar olvidado donde el frio es venerado.",
+          "descripcion": "Un lugar olvidado donde el frío es venerado.",
           "conexiones": {"sur": 131, "oeste": 141, "este": 143},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
+          "bioma": "nieve", "cantidad": 2},
 
-    143: {"nombre": "Sendero del Frio Infinito",
+    143: {"nombre": "Sendero del Frío Infinito",
           "descripcion": "Un camino que parece no tener final.",
           "conexiones": {"sur": 130, "oeste": 142},
           "bioma": "nieve", "cantidad": 2},
 
-    144: {"nombre": "Cupula de Escarcha",
-          "descripcion": "Una formacion cerrada de hielo perfecto.",
+    144: {"nombre": "Cúpula de Escarcha",
+          "descripcion": "Una formación cerrada de hielo perfecto.",
           "conexiones": {"sur": 129, "este": 145},
           "bioma": "nieve", "cantidad": 1},
 
@@ -1081,21 +1086,20 @@ SALAS = {
           "conexiones": {"sur": 128, "norte": 146, "oeste": 144},
           "bioma": "nieve", "cantidad": 2},
 
-    146: {"nombre": "Frontera del Vacio Helado",
-          "descripcion": "Mas alla solo hay frio y nada mas.",
+    146: {"nombre": "Frontera del Vacío Helado",
+          "descripcion": "Más allá solo hay frío y nada más.",
           "conexiones": {"sur": 141, "norte": 148, "este": 145, "oeste": 147},
           "bioma": "nieve", "cantidad": 2},
 
-    147: {"nombre": "Crater de Hielo Vivo",
-          "descripcion": "Un impacto antiguo que aun emana energia.",
+    147: {"nombre": "Cráter de Hielo Vivo",
+          "descripcion": "Un impacto antiguo que aún emana energía.",
           "conexiones": {"este": 146, "norte": 148},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True, "tienda": True},
+          "bioma": "nieve", "cantidad": 2},
 
     148: {"nombre": "Trono del Invierno",
-          "descripcion": "Un asiento de poder donde el frio gobierna todo.",
+          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
           "conexiones": {"sur": 146, "oeste": 147},
-          "encuentros": [("alpha", 1)]},
+          "encuentros": [("alpha", 1)]}, 
 }
 
 # ============================================================
