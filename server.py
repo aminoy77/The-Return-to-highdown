@@ -1215,6 +1215,8 @@ class Player:
         self.salas_limpias    = set()   # salas donde el jugador ya derrotó a los enemigos
         self.duelo_pendiente  = None    # {"retador": Player, "monedas": int} — duelo recibido pendiente
         self.en_acertijo      = False   # True mientras resuelve acertijos
+        self.lore_visto       = False   # True tras ver el intro por primera vez
+        self.dialogos_boss_vistos = set()  # sala_ids de bosses ya dialogados
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
@@ -1587,6 +1589,7 @@ async def guardar_cuenta_async(player: "Player"):
             "monedas":    player.monedas,
             "inventario": player.inventario,
             "sala_id":    player.sala_id,
+            "lore_visto": player.lore_visto,
             "personaje": {
                 "nombreClase": player.personaje["nombreClase"],
                 "vidaMax":     player.personaje["vidaMax"],
@@ -1628,6 +1631,7 @@ async def cargar_cuenta_async(player: "Player", usuario: str):
     player.monedas    = datos.get("monedas", 0)
     player.inventario = datos.get("inventario", {})
     player.sala_id    = datos.get("sala_id", 1)
+    player.lore_visto = datos.get("lore_visto", False)
 
     clase = datos.get("personaje", {}).get("nombreClase", "guerrero")
     base  = deepcopy(CLASES[clase])
@@ -2028,6 +2032,172 @@ async def iniciar_acertijo(player: Player):
 # COMBATE
 # ============================================================
 
+
+# Salas boss con diálogo previo
+BOSS_SALA_NOMBRE = {32: "Rey Demonio", 72: "Kraken", 148: "Alpha"}
+
+async def dialogo_boss(sala_id: int, jugador: "Player") -> None:
+    """Muestra la conversación con el boss antes del combate (una sola vez por jugador)."""
+    if sala_id in jugador.dialogos_boss_vistos:
+        return
+    jugador.dialogos_boss_vistos.add(sala_id)
+
+    async def elige(player, opciones):
+        lineas = [f"  {i}. {op}" for i, op in enumerate(opciones, 1)]
+        await player.send("\n".join(lineas) + "\n  Tu elección (1/2/3):")
+        while True:
+            raw = await player.recv()
+            if raw is None:
+                return 1
+            r = raw.strip()
+            if r in ("1", "2", "3"):
+                return int(r)
+
+    # ── REY DEMONIO ────────────────────────────────────────────────────────────
+    if sala_id == 32:
+        await jugador.send(
+            "\n  ══════════════════════════════════════════════════════\n"
+            "  El Rey Demonio te mira desde su trono de ceniza.\n"
+            "  ══════════════════════════════════════════════════════"
+        )
+        await asyncio.sleep(1)
+        await jugador.send(
+            "\n  Rey Demonio: \"Por fin has llegado... otro que busca lo que no comprende.\"\n"
+        )
+        op1 = await elige(jugador, [
+            "He venido por la llave.",
+            "Si eres un obstaculo, caeras.",
+            "Quiero respuestas.",
+        ])
+        if op1 == 1:
+            await jugador.send(
+                "\n  Rey Demonio: \"La llave... todos la desean, ninguno la entiende."
+                " Dime, que haras cuando la tengas?\"\n"
+            )
+        elif op1 == 2:
+            await jugador.send(
+                "\n  Rey Demonio: \"Hablas con la arrogancia de quienes aun no han visto la verdad.\"\n"
+            )
+        else:
+            await jugador.send(
+                "\n  Rey Demonio: \"Respuestas... eso es mas de lo que los demas pidieron."
+                " Quiza no seas como ellos.\"\n"
+            )
+        await asyncio.sleep(0.6)
+        op2 = await elige(jugador, [
+            "No me importa tu historia.",
+            "Entonces explicame.",
+            "*Prepararte para luchar.",
+        ])
+        if op2 == 1:
+            await jugador.send(
+                "\n  Rey Demonio: \"Entonces repetiras los errores de todos los que vinieron antes.\"\n"
+            )
+        elif op2 == 2:
+            await jugador.send(
+                "\n  Rey Demonio: \"La llave mantiene cerrada una puerta que nunca debio existir."
+                " Yo... soy su guardian.\"\n"
+            )
+        else:
+            await jugador.send(
+                "\n  Rey Demonio: \"Asi termina siempre. Ven, demuestra si eres digno..."
+                " o si solo eres otro recuerdo.\"\n"
+            )
+        await asyncio.sleep(0.8)
+        await jugador.send("  El Rey Demonio desenvaina su espada de oscuridad. iEmpieza la batalla!")
+
+    # ── KRAKEN ─────────────────────────────────────────────────────────────────
+    elif sala_id == 72:
+        await jugador.send(
+            "\n  ══════════════════════════════════════════════════════\n"
+            "  Un tentaculo colosal emerge de las profundidades.\n"
+            "  Las olas se vuelven negras. La tormenta ruge.\n"
+            "  ══════════════════════════════════════════════════════"
+        )
+        await asyncio.sleep(1)
+        await jugador.send(
+            "\n  Kraken: \"iVenis a por mi verdad? iIntentadlo si quereis!\"\n"
+        )
+        op1 = await elige(jugador, [
+            "Si, ya hemos acabado con el Rey Demonio, uno de tus amigos. iPreparate!",
+            "Si, supongo... no te preocupes, no te haremos danio... iO si?",
+            "Vale.",
+        ])
+        if op1 == 1:
+            await jugador.send(
+                "\n  Kraken: \"iComo os atreveis a matar a uno de mis mejores amigos!"
+                " Si quereis la llave habreis de pasar por encima de mi cadaver.\"\n"
+            )
+        elif op1 == 2:
+            await jugador.send(
+                "\n  Kraken: \"Perro ladrador poco mordedor.\"\n"
+            )
+        else:
+            await jugador.send(
+                "\n  Kraken: \"Un mito como yo nunca sera derrotado por un simple marinero"
+                " de agua dulce que vomita al navegar.\"\n"
+            )
+        await asyncio.sleep(0.8)
+        await jugador.send("  Las aguas se agitan violentamente. iEl Kraken ataca!")
+
+    # ── ALPHA ──────────────────────────────────────────────────────────────────
+    elif sala_id == 148:
+        await jugador.send(
+            "\n  ══════════════════════════════════════════════════════\n"
+            "  Highdown. El lugar donde todo empezo.\n"
+            "  Una figura imponente aguarda en el centro de la sala.\n"
+            "  ══════════════════════════════════════════════════════"
+        )
+        await asyncio.sleep(1.5)
+        await jugador.send(
+            "\n  Alpha: \"Por fin has llegado, te estaba esperando.\"\n"
+        )
+        op1 = await elige(jugador, [
+            "iA mi?",
+            "iQuien no me espera? Es la verdadera pregunta.",
+            "Me da igual, te matare y vengare al rey.",
+        ])
+        if op1 == 1:
+            await jugador.send(
+                "\n  Alpha: \"Eres el que tenia mas poder en todo Highdown, el unico que podria"
+                " interponerse en mi camino anos despues, por eso te esperaba."
+                " De no ser por ese soldado, te habria matado sin esfuerzo."
+                " Lo torture hasta la muerte por lo que hizo."
+                " Habrias visto su cara de sufrimiento."
+                " Ahora moriras igual que el y... igual que tus padres."
+                " Asi es, soy el verdugo de tus padres y del hombre que te salvo cuando eras tan solo un crio."
+                " Ahora te reuniras con ellos."
+                " Has sido un estupido pensando que podrias venir aqui y derrotarme.\"\n"
+            )
+        elif op1 == 2:
+            await jugador.send(
+                "\n  Alpha: \"Que infantil. Se te habria cambiado la cara si hubieras visto morir"
+                " a tus padres y al hombre que te salvo la vida. Eres un necio.\"\n"
+            )
+        else:
+            await jugador.send(
+                "\n  Alpha: \"Como quieras, el murio porque era un necio.\"\n"
+            )
+        await asyncio.sleep(0.8)
+        op2 = await elige(jugador, [
+            "Callate, te matare.",
+            "Me da igual, tu muerte es inevitable.",
+            "*Quedarte callado.",
+        ])
+        if op2 == 1:
+            await jugador.send("\n  Alpha: \"Ya veremos quien muere.\"\n")
+        elif op2 == 2:
+            await jugador.send("\n  Alpha: \"Un simple mortal no puede derrotar a un dios.\"\n")
+        else:
+            await jugador.send(
+                "\n  Alpha: \"Conque no quieres hablar, eh. Muy bien, pues muere en silencio.\"\n"
+            )
+        await asyncio.sleep(1)
+        await jugador.send(
+            "  El aire se congela. Una energia oscura envuelve a Alpha. iLa batalla final comienza!"
+        )
+
+
 async def iniciar_combate(sala_id: int):
     if sala_id in combates_activos:
         return
@@ -2068,6 +2238,14 @@ async def iniciar_combate(sala_id: int):
             await p.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
         except Exception:
             pass
+
+    # ── Diálogo de boss (sala 32, 72, 148) — solo si algún jugador no lo ha visto ──
+    BOSS_SALAS = {32, 72, 148}
+    if sala_id in BOSS_SALAS:
+        for p in jug:
+            if sala_id not in p.dialogos_boss_vistos:
+                await dialogo_boss(sala_id, p)
+                break  # basta con uno (el que abre el combate)
 
     asyncio.create_task(loop_combate(combate))
 
@@ -2893,11 +3071,14 @@ async def handle_game_ws(ws, usuario: str):
         )
         await player.send_status()
 
-        # ── Lore intro (popup visual en el cliente) ────────────────────────────
-        try:
-            await player.ws.send_json({"type": "lore_intro"})
-        except Exception:
-            pass
+        # ── Lore intro: solo la primera vez ────────────────────────────────────
+        if not player.lore_visto:
+            player.lore_visto = True
+            await guardar_cuenta_async(player)   # guardar flag inmediatamente
+            try:
+                await player.ws.send_json({"type": "lore_intro"})
+            except Exception:
+                pass
 
         # Enviar leaderboard global al conectar
         lb = await get_leaderboard_async()
