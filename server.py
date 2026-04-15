@@ -1395,10 +1395,10 @@ async def dar_xp(player: Player, cantidad: int):
         proximo = xp_para_subir(player.nivel)
         await player.send(
             f"\n  ╔══════════════════════════════╗\n"
-            f"  ║  SUBISTE AL NIVEL {player.nivel:>2}!        ║\n"
-            f"  ║  +{MONEDAS_SUBIDA} monedas  Total:{player.monedas:<5}      ║\n"
-            f"  ║  HP:{p['vidaMax']}  Dano:{p['danioBase']}  Mana:{p['manaMax']}   ║\n"
-            f"  ║  Siguiente nivel: {proximo} XP          ║\n"
+            f"  ║  SUBISTE AL NIVEL {player.nivel:>2}!║\n"
+            f"  ║  +{MONEDAS_SUBIDA} monedas  Total:{player.monedas:<5}║\n"
+            f"  ║  HP:{p['vidaMax']}  Dano:{p['danioBase']}  Mana:{p['manaMax']}║\n"
+            f"  ║  Siguiente nivel: {proximo} XP ║\n"
             f"  ╚══════════════════════════════╝"
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
