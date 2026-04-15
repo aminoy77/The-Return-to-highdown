@@ -318,22 +318,22 @@ ACERTIJOS = [
 SALAS_CON_ACERTIJOS = {33, 37}   # salas donde se usan los acertijos
 
 # ── TUTORIAL (salas 010-050) ──────────────────────────────────
-    0.1: {"nombre": "Como combatir",
+    0100000: {"nombre": "Como combatir",
           "descripcion": "Usa los comandos que aparecen para atacar",
           "conexiones": {"norte": 0.2},
           "encuentros": [("bandido", 1)] },
  
-    0.2: {"nombre": "Objetos",
+    02000000: {"nombre": "Objetos",
           "descripcion": "Como usar objetos",
           "conexiones": {"sur": 0.1, "norte": 0.3},
           "encuentros": [("duende", 1)] },
  
-    0.3: {"nombre": "estructuras basicas",
+    0300000: {"nombre": "estructuras basicas",
           "descripcion": "hospital y tienda",
           "conexiones": {"sur": 0.2, "norte": 0.40},
          "hospital": True, "tienda": True},
  
-    0.4: {"nombre": "Como funciona UI",
+    040000000: {"nombre": "Como funciona UI",
           "descripcion": "UI",
           "conexiones": {"sur": 0.3, "norte": 1}},
 
