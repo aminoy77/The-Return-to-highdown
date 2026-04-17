@@ -74,7 +74,7 @@ async def _sb_upsert(row: dict):
 # Leaderboard cache (30s TTL)
 _lb_cache: list = []
 _lb_cache_ts: float = 0.0
-_LB_CACHE_TTL = 30
+_LB_CACHE_TTL = 60
 
 async def get_leaderboard_async(limit: int = 20) -> list:
     """Ranking global ordenado por nivel desc (cached 30s)."""
@@ -1161,6 +1161,8 @@ SALAS = {
 # ============================================================
 jugadores_conectados = []
 combates_activos     = {}
+BANNED_USERS: set    = set()   # usuarios baneados (persiste en memoria mientras corra el server)
+ADMIN_PASSWORD       = os.environ.get("ADMIN_PASSWORD", "admin1234")  # cambia esto en producción
 chat_ws_clients      = set()
 web_sessions         = {}   # usuario → websocket (navegadores autenticados)
 grupos               = {}   # grupo_id → Grupo
@@ -1274,6 +1276,7 @@ class Player:
         self.duelo_pendiente  = None    # {"retador": Player, "monedas": int} — duelo recibido pendiente
         self.acertijos_completados = set()  # salas con acertijos completados
         self.acertijo_actual = 0  # índice del acertijo actual en la sala
+        self.is_admin        = False  # se activa con /admin <password>
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
@@ -2794,6 +2797,7 @@ async def procesar_comando(player: Player, cmd: str):
     now = asyncio.get_event_loop().time()
     last = _last_cmd_time.get(id(player), 0)
     if now - last < 0.5:
+        # Silent rate limit — don't spam the user with messages
         return
     _last_cmd_time[id(player)] = now
 
@@ -2941,8 +2945,158 @@ async def procesar_comando(player: Player, cmd: str):
             "  GRUPO:    invitar <nombre> | aceptar | rechazar\n"
             "            grupo | salirgrupo | gc <msg>\n"
             "  PvP:      duelo <nombre> [monedas] | aceptar_duelo | rechazar_duelo\n"
-            "  CHAT:     decir <msg> (sala) | g <msg> (global)"
+            "  CHAT:     decir <msg> (sala) | g <msg> (global)\n"
+            "  ADMIN:    admin <password>  (per activar mode admin)"
         )
+
+    # ── ADMIN COMMANDS ────────────────────────────────────────
+    elif ac == "admin":
+        # /admin <password> → activa mode admin
+        if len(partes) < 2:
+            await player.send("  Uso: admin <password>")
+        elif partes[1] == ADMIN_PASSWORD:
+            player.is_admin = True
+            await player.send("  ✅ Mode admin activat. Comandes: kick, ban, setlvl, teleport, healtot")
+        else:
+            await player.send("  ❌ Contrasenya incorrecta.")
+
+    elif ac == "kick":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        elif len(partes) < 2:
+            await player.send("  Uso: kick <nom_jugador>")
+        else:
+            nom = partes[1]
+            target = next((p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nom), None)
+            if not target:
+                await player.send(f"  Jugador '{nom}' no trobat.")
+            else:
+                await target.send("  🚪 Has estat expulsat pel administrador.")
+                try:
+                    await target.ws.close()
+                except Exception:
+                    pass
+                await player.send(f"  ✅ {target.nombre} expulsat.")
+
+    elif ac == "ban":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        elif len(partes) < 2:
+            await player.send("  Uso: ban <nom_jugador>")
+        else:
+            nom = partes[1]
+            target = next((p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nom), None)
+            if not target:
+                # Try banning offline user by username
+                BANNED_USERS.add(nom)
+                await player.send(f"  ✅ '{nom}' afegit a la llista de baneats.")
+            else:
+                BANNED_USERS.add(target.usuario or target.nombre.lower())
+                await target.send("  🚫 Has estat baneado pel administrador.")
+                try:
+                    await target.ws.close()
+                except Exception:
+                    pass
+                await player.send(f"  ✅ {target.nombre} baneado i expulsat.")
+
+    elif ac == "unban":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        elif len(partes) < 2:
+            await player.send("  Uso: unban <nom_jugador>")
+        else:
+            nom = partes[1]
+            BANNED_USERS.discard(nom)
+            await player.send(f"  ✅ '{nom}' desbaneat.")
+
+    elif ac == "setlvl":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        elif len(partes) < 3:
+            await player.send("  Uso: setlvl <nom_jugador> <nivell>")
+        else:
+            nom = partes[1]
+            try:
+                nou_nivell = int(partes[2])
+                if nou_nivell < 1 or nou_nivell > 100:
+                    raise ValueError
+            except ValueError:
+                await player.send("  ❌ Nivell ha de ser un número entre 1 i 100.")
+            else:
+                target = next((p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nom), None)
+                if not target:
+                    await player.send(f"  Jugador '{nom}' no trobat (ha d'estar connectat).")
+                else:
+                    target.nivel = nou_nivell
+                    target.xp = 0
+                    await target.send_status()
+                    await target.send(f"  ⭐ El teu nivell ha estat establert a {nou_nivell} per l'admin.")
+                    await player.send(f"  ✅ {target.nombre} → Nivell {nou_nivell}.")
+
+    elif ac == "teleport":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        elif len(partes) < 3:
+            await player.send("  Uso: teleport <nom_jugador> <sala_id>")
+        else:
+            nom = partes[1]
+            try:
+                sala_dest = int(partes[2])
+                if sala_dest not in SALAS:
+                    raise ValueError
+            except ValueError:
+                await player.send(f"  ❌ Sala invàlida. Has de posar un ID de sala existent.")
+            else:
+                target = next((p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nom), None)
+                if not target:
+                    await player.send(f"  Jugador '{nom}' no trobat (ha d'estar connectat).")
+                else:
+                    await broadcast_sala(target.sala_id, f"  {target.nombre} desapareix en un destell blau.")
+                    target.sala_id = sala_dest
+                    await broadcast_sala(sala_dest, f"  {target.nombre} apareix en un destell blau.", excluir=target)
+                    await describir_sala(target)
+                    await player.send(f"  ✅ {target.nombre} teletransportat a sala {sala_dest}.")
+
+    elif ac == "healtot":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        elif len(partes) < 2:
+            await player.send("  Uso: healtot <nom_jugador>  o  healtot *  (tothom)")
+        else:
+            nom = partes[1]
+            if nom == "*":
+                for p in jugadores_conectados:
+                    if p.personaje:
+                        p.personaje["vidaActual"] = p.personaje["vidaMax"]
+                        p.personaje["manaActual"] = p.personaje["manaMax"]
+                        p.muerto = False
+                        await p.send_status()
+                        await p.send("  💚 L'admin t'ha curat completament!")
+                await player.send(f"  ✅ Tots els jugadors curats.")
+            else:
+                target = next((p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nom), None)
+                if not target:
+                    await player.send(f"  Jugador '{nom}' no trobat.")
+                elif not target.personaje:
+                    await player.send(f"  {nom} no té personatge inicialitzat.")
+                else:
+                    target.personaje["vidaActual"] = target.personaje["vidaMax"]
+                    target.personaje["manaActual"] = target.personaje["manaMax"]
+                    target.muerto = False
+                    await target.send_status()
+                    await target.send("  💚 L'admin t'ha curat completament!")
+                    await player.send(f"  ✅ {target.nombre} curat.")
+
+    elif ac == "adminlist":
+        if not player.is_admin:
+            await player.send("  ❌ No tens permisos d'admin.")
+        else:
+            bans = ", ".join(BANNED_USERS) if BANNED_USERS else "cap"
+            connected = ", ".join(p.nombre for p in jugadores_conectados if p.nombre) or "ningú"
+            await player.send(
+                f"  👥 Connectats: {connected}\n"
+                f"  🚫 Baneats: {bans}"
+            )
 
     else:
         await player.send(f"  Desconocido: '{cmd}'. Escribe 'ayuda'.")
@@ -2955,6 +3109,10 @@ async def procesar_comando(player: Player, cmd: str):
 async def handle_game_ws(ws, usuario: str):
     player = Player(ws)
     player.usuario = usuario
+
+    if usuario in BANNED_USERS:
+        await player.send("  🚫 Tu cuenta ha sido baneada. Contacta con el administrador.")
+        return
 
     if len(jugadores_conectados) >= MAX_JUGADORES:
         await player.send("Servidor lleno (max 5 jugadores).")
