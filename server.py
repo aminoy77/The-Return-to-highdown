@@ -340,6 +340,200 @@ SALAS_ACERTIJOS = {
 }
 
 # ============================================================
+# BOSS RESPAWN TIMERS
+# ============================================================
+# sala_id → asyncio.Task de respawn (None si no hay timer activo)
+_boss_respawn_tasks: dict = {}
+# sala_id → True si el boss está vivo (para evitar doble spawn)
+_boss_vivo: dict = {}
+
+BOSS_SALAS = {
+    # sala_id: (nom_boss, respawn_segons)
+    15:  ("El Gran Bandido",    300),   # 5 min
+    30:  ("Señor de los Muertos", 420), # 7 min
+    50:  ("Leviatán del Mar",   600),   # 10 min
+    75:  ("Rey del Hielo",      900),   # 15 min
+    100: ("El Demonio Supremo", 1200),  # 20 min
+}
+
+async def _boss_respawn_task(sala_id: int, delay: int):
+    """Espera delay segons i fa respawn del boss a la sala."""
+    await asyncio.sleep(delay)
+    _boss_vivo[sala_id] = True
+    _boss_respawn_tasks.pop(sala_id, None)
+    boss_nom = BOSS_SALAS[sala_id][0]
+    # Avisar jugadors a la sala
+    await broadcast_sala(sala_id, f"\n  💀 {boss_nom} ha reaparegut! Prepareu-vos...\n")
+    await broadcast_todos(f"  ⚠️  Un boss ha reaparegut a la sala {sala_id}: {boss_nom}!")
+
+def boss_defeated(sala_id: int):
+    """Cridar quan un boss mor. Programa el respawn."""
+    if sala_id not in BOSS_SALAS:
+        return
+    _boss_vivo[sala_id] = False
+    if sala_id not in _boss_respawn_tasks or _boss_respawn_tasks[sala_id].done():
+        delay = BOSS_SALAS[sala_id][1]
+        task = asyncio.create_task(_boss_respawn_task(sala_id, delay))
+        _boss_respawn_tasks[sala_id] = task
+
+def boss_esta_viu(sala_id: int) -> bool:
+    """Retorna True si el boss d'una sala és viu (o mai ha mort)."""
+    if sala_id not in BOSS_SALAS:
+        return False
+    return _boss_vivo.get(sala_id, True)  # per defecte viu al inicio
+
+# ============================================================
+# LOOT / ITEMS DROP SYSTEM
+# ============================================================
+LOOT_TAULES = {
+    # tier → llista de (item_id, prob_0_a_1, monedes_min, monedes_max)
+    "Base":     [("pocion_vida", 0.25, 5, 15),   ("pocion_danio", 0.10, 0, 0)],
+    "Especial": [("pocion_vida", 0.40, 15, 35),  ("pocion_danio", 0.20, 0, 0), ("gema_teleporte", 0.05, 0, 0)],
+    "Superior": [("pocion_vida", 0.55, 30, 60),  ("pocion_danio", 0.30, 0, 0), ("gema_teleporte", 0.15, 0, 0)],
+    "Boss":     [("pocion_vida", 1.00, 80, 150), ("pocion_danio", 0.60, 0, 0), ("gema_teleporte", 0.40, 0, 0)],
+}
+
+def calcular_loot(tier: str) -> tuple[dict, int]:
+    """Retorna (items_dropats {item_id: quantitat}, monedes)."""
+    import random as _r
+    taula = LOOT_TAULES.get(tier, LOOT_TAULES["Base"])
+    items = {}
+    monedes = 0
+    for item_id, prob, mon_min, mon_max in taula:
+        if _r.random() < prob:
+            items[item_id] = items.get(item_id, 0) + 1
+        if mon_max > 0:
+            monedes += _r.randint(mon_min, mon_max)
+    return items, monedes
+
+async def donar_loot(player, tier: str):
+    """Dona loot a un jugador i li notifica."""
+    items, monedes = calcular_loot(tier)
+    if monedes > 0:
+        player.monedas += monedes
+        await player.send(f"  💰 +{monedes} monedes!")
+    for item_id, qty in items.items():
+        player.inventario[item_id] = player.inventario.get(item_id, 0) + qty
+        nom = CATALOGO.get(item_id, {}).get("nom", item_id)
+        emoji = CATALOGO.get(item_id, {}).get("emoji", "📦")
+        await player.send(f"  {emoji} Has obtingut: {nom} x{qty}!")
+
+# ============================================================
+# QUEST SYSTEM
+# ============================================================
+QUESTS = {
+    "q1": {
+        "id": "q1",
+        "nom": "Primera Sang",
+        "descripcio": "Derrota 3 enemics per demostrar la teva valentia.",
+        "tipus": "kills",       # kills | nivell | sala
+        "objectiu": 3,
+        "recompensa_xp": 50,
+        "recompensa_monedes": 30,
+        "recompensa_item": None,
+    },
+    "q2": {
+        "id": "q2",
+        "nom": "Explorador",
+        "descripcio": "Arriba al nivell 5.",
+        "tipus": "nivell",
+        "objectiu": 5,
+        "recompensa_xp": 100,
+        "recompensa_monedes": 50,
+        "recompensa_item": "pocion_danio",
+    },
+    "q3": {
+        "id": "q3",
+        "nom": "El Tresor Ocult",
+        "descripcio": "Arriba a la sala del tresor (sala 50).",
+        "tipus": "sala",
+        "objectiu": 50,
+        "recompensa_xp": 150,
+        "recompensa_monedes": 80,
+        "recompensa_item": "gema_teleporte",
+    },
+    "q4": {
+        "id": "q4",
+        "nom": "Caçador de Bèsties",
+        "descripcio": "Derrota 10 enemics.",
+        "tipus": "kills",
+        "objectiu": 10,
+        "recompensa_xp": 200,
+        "recompensa_monedes": 100,
+        "recompensa_item": "pocion_vida",
+    },
+    "q5": {
+        "id": "q5",
+        "nom": "Llegenda",
+        "descripcio": "Arriba al nivell 10.",
+        "tipus": "nivell",
+        "objectiu": 10,
+        "recompensa_xp": 500,
+        "recompensa_monedes": 200,
+        "recompensa_item": "gema_teleporte",
+    },
+}
+
+async def comprovar_quests(player, event: str, valor=None):
+    """
+    Comprova si el jugador ha completat alguna quest.
+    event: 'kill', 'nivell', 'sala'
+    valor: nombre de kills total, nivell actual, o sala_id
+    """
+    if not hasattr(player, 'quests_completades'):
+        player.quests_completades = set()
+    if not hasattr(player, 'kills_total'):
+        player.kills_total = 0
+
+    for qid, q in QUESTS.items():
+        if qid in player.quests_completades:
+            continue
+        completa = False
+        if q["tipus"] == "kills" and event == "kill":
+            completa = player.kills_total >= q["objectiu"]
+        elif q["tipus"] == "nivell" and event == "nivell":
+            completa = (valor or player.nivel) >= q["objectiu"]
+        elif q["tipus"] == "sala" and event == "sala":
+            completa = (valor or player.sala_id) >= q["objectiu"]
+
+        if completa:
+            player.quests_completades.add(qid)
+            await player.send(f"\n  🏆 QUEST COMPLETADA: {q['nom']}!")
+            await player.send(f"  📜 {q['descripcio']}")
+            await player.send(f"  🎁 Recompensa: +{q['recompensa_xp']} XP, +{q['recompensa_monedes']} monedes")
+            player.monedas += q["recompensa_monedes"]
+            if q.get("recompensa_item"):
+                iid = q["recompensa_item"]
+                player.inventario[iid] = player.inventario.get(iid, 0) + 1
+                nom = CATALOGO.get(iid, {}).get("nombre", iid)
+                await player.send(f"  + {nom}!")
+            await dar_xp(player, q["recompensa_xp"])
+            await broadcast_todos(f"  🏆 {player.nombre} ha completat la quest: {q['nom']}!")
+
+async def cmd_quests(player):
+    """Mostra les quests del jugador."""
+    if not hasattr(player, 'quests_completades'):
+        player.quests_completades = set()
+    if not hasattr(player, 'kills_total'):
+        player.kills_total = 0
+    linies = ["\n  📜 LES TEVES QUESTS\n  " + "-"*32]
+    for qid, q in QUESTS.items():
+        if qid in player.quests_completades:
+            linies.append(f"  ✅ {q['nom']} — COMPLETADA")
+        else:
+            if q["tipus"] == "kills":
+                prog = f"{player.kills_total}/{q['objectiu']} kills"
+            elif q["tipus"] == "nivell":
+                prog = f"Nivell {player.nivel}/{q['objectiu']}"
+            elif q["tipus"] == "sala":
+                prog = f"Sala {player.sala_id}/{q['objectiu']}"
+            else:
+                prog = "?"
+            linies.append(f"  🔲 {q['nom']} ({prog})\n     {q['descripcio']}")
+    await player.send("\n".join(linies))
+
+
+# ============================================================
 # SALAS
 # ============================================================
 SALAS = {
@@ -1163,6 +1357,7 @@ jugadores_conectados = []
 combates_activos     = {}
 BANNED_USERS: set    = set()   # usuarios baneados (persiste en memoria mientras corra el server)
 ADMIN_PASSWORD       = os.environ.get("ADMIN_PASSWORD", "admin1234")  # cambia esto en producción
+ADMIN_WHITELIST      = {"moya", "._.", "verhoeven"}  # usernames que poden ser admin
 chat_ws_clients      = set()
 web_sessions         = {}   # usuario → websocket (navegadores autenticados)
 grupos               = {}   # grupo_id → Grupo
@@ -1468,6 +1663,7 @@ async def dar_xp(player: Player, cantidad: int):
             f"  ╚══════════════════════════════╝"
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
+        await comprovar_quests(player, "nivell", player.nivel)
     await notify_web_session(player)
     asyncio.create_task(broadcast_leaderboard())
 
@@ -2099,6 +2295,8 @@ async def mover_jugador(player: Player, direccion: str):
     await notify_web_session(player)
     await broadcast_players_to_web()
     await describir_sala(player)
+    # Quest check: nova sala
+    await comprovar_quests(player, "sala", nueva)
 
 
 # ============================================================
@@ -2244,6 +2442,20 @@ async def loop_combate(combate: Combate):
             await p.send_status()   # actualizar HP tras +20
         await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
         await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
+
+        # ── LOOT DROP per cada enemic derrotat ──
+        for p in combate.jugadores_vivos():
+            for e in combate.enemigos:
+                tier = e.get("tier", "Base")
+                await donar_loot(p, tier)
+            # Kills counter per quests
+            if not hasattr(p, 'kills_total'):
+                p.kills_total = 0
+            p.kills_total += len(combate.enemigos)
+            await comprovar_quests(p, "kill")
+
+        # ── BOSS RESPAWN TIMER ──
+        boss_defeated(sala_id)
 
     # Limpiar buffs
     for p in combate.jugadores:
@@ -2946,17 +3158,23 @@ async def procesar_comando(player: Player, cmd: str):
             "            grupo | salirgrupo | gc <msg>\n"
             "  PvP:      duelo <nombre> [monedas] | aceptar_duelo | rechazar_duelo\n"
             "  CHAT:     decir <msg> (sala) | g <msg> (global)\n"
+            "  QUESTS:   quests\n"
             "  ADMIN:    admin <password>  (per activar mode admin)"
         )
 
+    elif ac in ("quests", "quest", "misiones", "missio"):
+        await cmd_quests(player)
+
     # ── ADMIN COMMANDS ────────────────────────────────────────
     elif ac == "admin":
-        # /admin <password> → activa mode admin
+        # /admin <password> → activa mode admin (whitelist + password)
         if len(partes) < 2:
             await player.send("  Uso: admin <password>")
+        elif player.usuario and player.usuario.lower() not in ADMIN_WHITELIST:
+            await player.send("  ❌ No tens permisos d'admin.")
         elif partes[1] == ADMIN_PASSWORD:
             player.is_admin = True
-            await player.send("  ✅ Mode admin activat. Comandes: kick, ban, setlvl, teleport, healtot")
+            await player.send("  ✅ Mode admin activat. Comandes: kick, ban, unban, setlvl, teleport, healtot, adminlist")
         else:
             await player.send("  ❌ Contrasenya incorrecta.")
 
