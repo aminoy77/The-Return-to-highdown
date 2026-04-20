@@ -3445,6 +3445,8 @@ async def handle_game_ws(ws, usuario: str):
                 p.invitacion_de = None
                 asyncio.create_task(p.send(f"  La invitacion de {player.nombre} expiro."))
         rt.cancel()
+        # Cleanup rate-limit dict to prevent memory leak
+        _last_cmd_time.pop(id(player), None)
         if player in jugadores_conectados:
             jugadores_conectados.remove(player)
         if player.nombre:
@@ -3505,7 +3507,10 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "online": False,
             }
 
-        await ws.send_json({"type": "auth_ok", "stats": stats})
+        try:
+            await ws.send_json({"type": "auth_ok", "stats": stats})
+        except Exception:
+            return ws
 
         map_data = {}
         for s_id, s in SALAS.items():
@@ -3522,7 +3527,10 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "acertijos": es_acertijos,
                 "segura": not ("bioma" in s or bool(s.get("encuentros")) or es_acertijos),
             }
-        await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
+        try:
+            await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
+        except Exception:
+            pass
         await broadcast_players_to_web()
 
         async for msg in ws:
@@ -4730,13 +4738,22 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         # Registro nuevo
         nombre   = data.get("nombre", "").strip() or usuario
         if len(usuario) < 3:
-            await ws.send_json({"type": "auth_fail", "msg": "Usuario: minimo 3 caracteres."})
+            try:
+                await ws.send_json({"type": "auth_fail", "msg": "Usuario: minimo 3 caracteres."})
+            except Exception:
+                pass
             return ws
         if len(password) < 4:
-            await ws.send_json({"type": "auth_fail", "msg": "Contrasena: minimo 4 caracteres."})
+            try:
+                await ws.send_json({"type": "auth_fail", "msg": "Contrasena: minimo 4 caracteres."})
+            except Exception:
+                pass
             return ws
         if await cuenta_existe_async(usuario):
-            await ws.send_json({"type": "auth_fail", "msg": "Ese usuario ya existe."})
+            try:
+                await ws.send_json({"type": "auth_fail", "msg": "Ese usuario ya existe."})
+            except Exception:
+                pass
             return ws
 
         await crear_cuenta_async(usuario, password)
@@ -4757,7 +4774,11 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 await tmp.input_queue.put(None)
 
         rt = asyncio.create_task(reg_reader())
-        await ws.send_json({"type": "auth_ok"})
+        try:
+            await ws.send_json({"type": "auth_ok"})
+        except Exception:
+            rt.cancel()
+            return ws
         lineas = ["\nCLASES DISPONIBLES:"]
         for i, (clase, s) in enumerate(CLASES.items(), 1):
             atqs = s["ataquesTurno"]
@@ -4788,23 +4809,43 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
 
     elif msg_type == "game_auth":
         if not await cuenta_existe_async(usuario) or not await verificar_password_async(usuario, password):
-            await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
+            try:
+                await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
+            except Exception:
+                pass
             return ws
         ya = any(p.usuario == usuario for p in jugadores_conectados)
         if ya:
-            await ws.send_json({"type": "auth_fail", "msg": "Ya estas jugando en otra ventana."})
+            # Reconnect: expulsar sessió antiga i permetre la nova
+            old_player = next((p for p in jugadores_conectados if p.usuario == usuario), None)
+            if old_player:
+                try:
+                    await old_player.ws.send_json({"type": "auth_fail", "msg": "Sesion cerrada: nuevo inicio de sesion detectado."})
+                except Exception:
+                    pass
+                if old_player in jugadores_conectados:
+                    jugadores_conectados.remove(old_player)
+                _last_cmd_time.pop(id(old_player), None)
+        try:
+            await ws.send_json({"type": "auth_ok"})
+        except Exception:
             return ws
-        await ws.send_json({"type": "auth_ok"})
         await handle_game_ws(ws, usuario)
 
     elif msg_type == "auth":
         if not await cuenta_existe_async(usuario) or not await verificar_password_async(usuario, password):
-            await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
+            try:
+                await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
+            except Exception:
+                pass
             return ws
         await handle_dashboard_ws(ws, usuario)
 
     else:
-        await ws.send_json({"type": "auth_fail", "msg": "Tipo desconocido"})
+        try:
+            await ws.send_json({"type": "auth_fail", "msg": "Tipo desconocido"})
+        except Exception:
+            pass
 
     return ws
 
