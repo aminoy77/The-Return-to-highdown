@@ -1567,23 +1567,58 @@ async def notify_web_session(player: "Player"):
     await player.send_status()  # reutiliza send_status que ya tiene todo
 
 
+# ── Delta broadcast state ──
+_players_snapshot: dict = {}  # player_id → last sent data dict
+
+
+def _player_to_dict(p) -> dict:
+    """Serialitza un jugador a dict comparable."""
+    if not p.nombre or not p.personaje:
+        return {}
+    return {
+        "nombre":      p.nombre,
+        "clase":       p.personaje["nombreClase"],
+        "nivel":       p.nivel,
+        "sala_id":     p.sala_id,
+        "sala_nombre": SALAS.get(p.sala_id, {}).get("nombre", "?"),
+        "muerto":      p.muerto,
+        "grupo_id":    p.grupo.id         if p.grupo else None,
+        "grupo_lider": p.grupo.lider.nombre if p.grupo else None,
+    }
+
+
 async def broadcast_players_to_web():
-    """Envía la lista de jugadores conectados a todos los dashboards."""
+    """
+    Envia la llista de jugadors als dashboards.
+    Optimitzat amb delta: només envia si hi ha canvis reals.
+    """
     if not web_sessions:
         return
-    players_data = [
-        {
-            "nombre":      p.nombre,
-            "clase":       p.personaje["nombreClase"],
-            "nivel":       p.nivel,
-            "sala_id":     p.sala_id,
-            "sala_nombre": SALAS.get(p.sala_id, {}).get("nombre", "?"),
-            "muerto":      p.muerto,
-            "grupo_id":    p.grupo.id    if p.grupo else None,
-            "grupo_lider": p.grupo.lider.nombre if p.grupo else None,
-        }
-        for p in jugadores_conectados if p.nombre and p.personaje
+
+    # Construir snapshot actual
+    current: dict = {}
+    for p in jugadores_conectados:
+        if p.nombre and p.personaje:
+            current[p.id] = _player_to_dict(p)
+
+    # Detectar canvis respecte l'últim snapshot
+    global _players_snapshot
+    added   = [d for pid, d in current.items() if pid not in _players_snapshot]
+    removed = [d for pid, d in _players_snapshot.items() if pid not in current]
+    changed = [
+        current[pid] for pid in current
+        if pid in _players_snapshot and current[pid] != _players_snapshot[pid]
     ]
+
+    # Si no hi ha canvis, no enviem res
+    if not added and not removed and not changed:
+        return
+
+    # Actualitzar snapshot
+    _players_snapshot = current
+
+    # Enviar la llista completa (els clients la reemplacen sencera)
+    players_data = list(current.values())
     payload = {"type": "players", "list": players_data}
     dead = []
     for usuario, ws in list(web_sessions.items()):
