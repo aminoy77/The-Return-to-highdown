@@ -44,7 +44,8 @@ _sb_session: aiohttp.ClientSession | None = None
 def _get_sb_session() -> aiohttp.ClientSession:
     global _sb_session
     if _sb_session is None or _sb_session.closed:
-        _sb_session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=10)  # 10s max per Supabase call
+        _sb_session = aiohttp.ClientSession(timeout=timeout)
     return _sb_session
 
 async def _sb_get(usuario: str) -> dict | None:
@@ -344,6 +345,7 @@ SALAS_ACERTIJOS = {
 # ============================================================
 # sala_id → asyncio.Task de respawn (None si no hay timer activo)
 _boss_respawn_tasks: dict = {}
+_background_tasks: set = {}  # Keeps strong refs so GC can't collect running tasks
 # sala_id → True si el boss está vivo (para evitar doble spawn)
 _boss_vivo: dict = {}
 
@@ -413,10 +415,13 @@ async def donar_loot(player, tier: str):
         player.monedas += monedes
         await player.send(f"  💰 +{monedes} monedes!")
     for item_id, qty in items.items():
-        player.inventario[item_id] = player.inventario.get(item_id, 0) + qty
-        nom = CATALOGO.get(item_id, {}).get("nom", item_id)
+        nom   = CATALOGO.get(item_id, {}).get("nom", item_id)
         emoji = CATALOGO.get(item_id, {}).get("emoji", "📦")
-        await player.send(f"  {emoji} Has obtingut: {nom} x{qty}!")
+        ok = await _add_to_inventario(player, item_id, qty)
+        if ok:
+            await player.send(f"  {emoji} Has obtingut: {nom} x{qty}!")
+        else:
+            await player.send(f"  🎒 Inventari ple! No pots recollir {nom}.")
 
 # ============================================================
 # QUEST SYSTEM
@@ -504,9 +509,12 @@ async def comprovar_quests(player, event: str, valor=None):
             player.monedas += q["recompensa_monedes"]
             if q.get("recompensa_item"):
                 iid = q["recompensa_item"]
-                player.inventario[iid] = player.inventario.get(iid, 0) + 1
+                ok = await _add_to_inventario(player, iid, 1)
                 nom = CATALOGO.get(iid, {}).get("nombre", iid)
-                await player.send(f"  + {nom}!")
+                if ok:
+                    await player.send(f"  + {nom}!")
+                else:
+                    await player.send(f"  🎒 Inventari ple! No s'ha pogut afegir {nom}.")
             await dar_xp(player, q["recompensa_xp"])
             await broadcast_todos(f"  🏆 {player.nombre} ha completat la quest: {q['nom']}!")
 
@@ -1700,7 +1708,9 @@ async def dar_xp(player: Player, cantidad: int):
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
         await comprovar_quests(player, "nivell", player.nivel)
     await notify_web_session(player)
-    asyncio.create_task(broadcast_leaderboard())
+    _t = asyncio.create_task(broadcast_leaderboard())
+    _background_tasks.add(_t)
+    _t.add_done_callback(_background_tasks.discard)
 
 
 # ============================================================
@@ -1747,8 +1757,11 @@ async def cmd_tienda(player: Player):
         if player.monedas < item["precio"]:
             await player.send(f"  Sin monedas ({item['precio']} necesarias).")
             continue
-        player.monedas -= item["precio"]
-        player.inventario[iid] = player.inventario.get(iid, 0) + 1
+        ok = await _add_to_inventario(player, iid, 1)
+        if not ok:
+            player.monedas += item["precio"]  # refund
+            await player.send(f"  🎒 Inventari ple! No pots comprar més items.")
+            continue
         await player.send(f"  Compraste {item['emoji']} {item['nombre']}. Quedan {player.monedas}.")
         await player.send_status()  # actualizar mochila y monedas en tiempo real
 
@@ -1831,7 +1844,35 @@ def _ruta_cuenta(usuario: str) -> str:
     return os.path.join(SAVES_DIR, f"{seguro}.json")
 
 def _hash_password(password: str, salt: str) -> str:
-    return hashlib.sha256((salt + password).encode()).hexdigest()
+    """scrypt: memory-hard, brute-force resistant (replaces SHA-256)."""
+    dk = hashlib.scrypt(
+        password.encode(),
+        salt=salt.encode(),
+        n=16384, r=8, p=1,
+        dklen=32
+    )
+    return dk.hex()
+
+# ── Inventory helper ─────────────────────────────────────────
+MAX_INV_SLOTS = 20   # max unique item types
+MAX_INV_STACK = 99   # max per stack
+
+async def _add_to_inventario(player, iid: str, qty: int = 1) -> bool:
+    """
+    Afegeix qty unitats d'un item a l'inventari.
+    Retorna True si s'ha pogut afegir, False si l'inventari és ple.
+    """
+    current = player.inventario.get(iid, 0)
+    # Stack limit
+    new_qty = min(current + qty, MAX_INV_STACK)
+    actual_added = new_qty - current
+    if actual_added <= 0:
+        return False
+    # Slot limit (only check if new item)
+    if current == 0 and len([k for k, v in player.inventario.items() if v > 0]) >= MAX_INV_SLOTS:
+        return False
+    player.inventario[iid] = new_qty
+    return True
 
 # ── Versiones síncronas (ficheros locales, fallback) ──────────
 
@@ -2280,7 +2321,9 @@ async def describir_sala(player: Player):
     if sala.get("acertijos"):
         lineas.append("  🧩 Esta sala tiene acertijos. Debes resolverlos para avanzar.")
         # Iniciar acertijos automáticamente al entrar
-        asyncio.create_task(iniciar_acertijos(player))
+        _t = asyncio.create_task(iniciar_acertijos(player))
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
     elif "bioma" in sala or sala.get("encuentros"):
         lineas.append("  Hay enemigos aqui. Escribe 'atacar' para combatir.")
 
@@ -2307,7 +2350,9 @@ async def mover_jugador(player: Player, direccion: str):
         # Reiniciar acertijos si no los ha completado
         if player.sala_id not in SALAS_ACERTIJOS or player.acertijo_actual >= 3:
             player.acertijo_actual = 0
-        asyncio.create_task(iniciar_acertijos(player))
+        _t = asyncio.create_task(iniciar_acertijos(player))
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
         return
 
     # ── Bloqueo por monstruos (solo si hay enemigos reales) ────────────────────────────────
@@ -2379,7 +2424,9 @@ async def iniciar_combate(sala_id: int):
         except Exception:
             pass
 
-    asyncio.create_task(loop_combate(combate))
+    _t = asyncio.create_task(loop_combate(combate))
+    _background_tasks.add(_t)
+    _t.add_done_callback(_background_tasks.discard)
 
 
 async def loop_combate(combate: Combate):
@@ -2448,7 +2495,9 @@ async def loop_combate(combate: Combate):
         for p in combate.jugadores:
             if p.personaje["vidaActual"] <= 0 and not p.muerto:
                 await broadcast_sala(sala_id, f"  {p.nombre} ha caido!")
-                asyncio.create_task(respawn(p))
+                _t = asyncio.create_task(respawn(p))
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
 
         # Actualizar stats en tiempo real (directo, sin create_task para evitar retrasos)
         for p in combate.jugadores:
@@ -2807,6 +2856,7 @@ async def cmd_gchat(player: Player, mensaje: str):
     if not mensaje.strip():
         await player.send("  Que quieres decir al grupo?")
         return
+    mensaje = mensaje[:300]  # limit chat length
     texto = f"  [Grupo] {player.nombre}: {mensaje}"
     await broadcast_grupo(player.grupo, texto)
 
@@ -3538,7 +3588,7 @@ async def handle_dashboard_ws(ws, usuario: str):
                 try:
                     d = json.loads(msg.data)
                     if d.get("type") == "chat":
-                        mensaje = d.get("mensaje", "").strip()
+                        mensaje = d.get("mensaje", "").strip()[:300]
                         scope   = d.get("scope", "global")
                         nombre  = stats["nombre"]
                         if not mensaje:
@@ -4872,7 +4922,34 @@ async def main():
     print(f"[SERVER] Salas con acertijos: 33, 37")
     print("[SERVER] Listo.\n")
 
-    await asyncio.Future()
+    # ── Graceful shutdown on SIGTERM (Render sends this on restart/deploy) ──
+    loop = asyncio.get_running_loop()
+    shutdown_event = asyncio.Event()
+
+    def _handle_sigterm():
+        print("[SERVER] SIGTERM rebut — guardant jugadors...")
+        shutdown_event.set()
+
+    import signal
+    try:
+        loop.add_signal_handler(signal.SIGTERM, _handle_sigterm)
+        loop.add_signal_handler(signal.SIGINT,  _handle_sigterm)
+    except NotImplementedError:
+        pass  # Windows no suporta add_signal_handler
+
+    await shutdown_event.wait()
+
+    # Save all connected players before exiting
+    saved = 0
+    for player in list(jugadores_conectados):
+        if player.usuario and player.personaje:
+            try:
+                await guardar_cuenta_async(player)
+                saved += 1
+            except Exception as e:
+                print(f"[SAVE] Error guardant {player.usuario}: {e}")
+    print(f"[SERVER] {saved} jugadors guardats. Apagant...")
+    await runner.cleanup()
 
 if __name__ == "__main__":
     asyncio.run(main())
