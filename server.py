@@ -5059,6 +5059,13 @@ function handle(m){
     openAcertijoPopup(m.pregunta,m.opciones,m.indice,m.total);
   } else if(m.type==="acertijo_end"){
     closeAcertijoPopup(m.exito);
+  } else if(m.type==="map"){
+    // Store map data for services (hospital/tienda)
+    window._mapData = m.salas;
+    // Also use it to update services immediately if already in game
+    if(myStats && myStats.sala_id){
+      updateServices(myStats.sala_id);
+    }
   }
 }
 
@@ -5132,18 +5139,14 @@ function renderBag(inv){
   div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
-const SALAS_SVC={
- "0.3":{h:true,s:true},4:{h:true,s:false},5:{h:true,s:false},6:{h:true,s:true},
- 8:{h:true,s:true},13:{h:false,s:true},17:{h:false,s:false},21:{h:true,s:true},
- 25:{h:true,s:true},34:{h:true,s:false},38:{h:true,s:false},39:{h:false,s:true},
- 44:{h:true,s:true},53:{h:true,s:false},58:{h:false,s:true},70:{h:true,s:false},
- 87:{h:true,s:false},94:{h:true,s:false},105:{h:true,s:false},131:{h:true,s:false},
- 142:{h:true,s:false},147:{h:true,s:true},149:{h:true,s:true}
-};
-function updateServices(sid){
-  const sv=SALAS_SVC[sid]||{};
-  document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
-  document.getElementById("btn-shop").classList.toggle("visible",!!sv.s);
+// Generate services dynamically from map data
+let SALAS_SVC = {};
+function updateServices(sid) {
+  // Get services from map data (sent by server)
+  const mapData = window._mapData || {};
+  const sala = mapData[sid] || {};
+  document.getElementById("btn-hosp").classList.toggle("visible", !!sala.hospital);
+  document.getElementById("btn-shop").classList.toggle("visible", !!sala.tienda);
 }
 
 /* LEADERBOARD */
