@@ -1718,6 +1718,9 @@ _save_queue: dict = {}     # usuario → datos a guardar
 _save_timer: asyncio.Task = None
 _SAVE_BATCH_DELAY = 5.0    # segundos entre guardados en batch
 
+# Cleanup task for periodic maintenance
+_cleanup_task: asyncio.Task = None
+
 
 class Grupo:
     """Grupo de jugadores. El líder es quien lo creó."""
