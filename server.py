@@ -5482,7 +5482,6 @@ async def main():
     print("[SERVER] Listo.\n")
 
     # Start periodic cleanup task
-    global _cleanup_task
     _cleanup_task = asyncio.create_task(_periodic_cleanup())
     _cleanup_tasks.add(_cleanup_task)
 
@@ -5515,7 +5514,6 @@ async def main():
     print(f"[SERVER] {saved} jugadores guardados. Apagant...")
     
     # Cancel cleanup task
-    global _cleanup_task
     if _cleanup_task and not _cleanup_task.done():
         _cleanup_task.cancel()
         try:
