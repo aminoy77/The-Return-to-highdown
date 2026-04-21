@@ -253,6 +253,45 @@ XP_POR_TIER = {
 XP_POR_NIVEL   = 150
 MONEDAS_SUBIDA = 20
 SALA_RESPAWN   = 6    # Oasis — sala segura, no hay enemigos
+
+# ── Lore popup — se muestra UNA sola vez al primer inicio ───────
+async def mostrar_lore_inicial(player):
+    """Envia el popup de lore al client com missatge de tipus lore."""
+    linies = [
+        "Hace ya 15 años de la gran tragedia. Ya habían pasado 15 años de la masacre del pueblo de Highdown.",
+        "",
+        "Highdown era un pueblo conocido por que todos los nacidos ahí poseían habilidades sobrehumanas.",
+        "Eso no contentaba a Alpha, el actual rey de la destrucción. Todo lo que encontraba a su paso,",
+        "ardía en un mar de llamas y sangre. Por miedo a que le destronaran de ser el rey de la destrucción,",
+        "decidió hacer una masacre.",
+        "",
+        "Alpha esperó a la noche, que todos estuvieran durmiendo, reunió a sus mejores hombres y aniquiló",
+        "a todos sus habitantes. O eso pensaba él, pues uno de los soldados del pueblo pudo salvar a algunos",
+        "de los niños con futuros más prometedores.",
+        "",
+        'El soldado les dijo: \"Huid lejos de aquí y vengad a vuestro pueblo.\"',
+        "",
+        "Tras decir eso, el soldado los escoltó a la salida y les indicó el camino al pueblo al que tenían",
+        "que ir, fuera del territorio de Alpha. Después, el soldado volvió a la ciudad para intentar aniquilar",
+        "a las tropas restantes junto a sus compañeros. Nunca se volvió a saber nada de él.",
+        "",
+        "─────────────────────────────────────",
+        "",
+        f"Uno de los chicos eres tú, {player.nombre}. Ahora empezarás a estudiar en la escuela más prestigiosa",
+        "de todo el país, si llegas con vida. Te tienes que dirigir al pueblo donde se encuentra la escuela",
+        "como ha dicho el soldado. Os ha dado una espada corta a cada uno.",
+        "",
+        "Comienza tu historia en el tutorial. Demuestra de qué estás hecho.",
+    ]
+    texto = "\n".join(linies)
+    try:
+        await player.ws.send_json({"type": "lore", "text": texto, "titulo": "EL RETORNO A HIGHDOWN"})
+    except Exception:
+        pass
+    player.lore_mostrado = True
+    await guardar_cuenta_async(player)
+
+
 TIEMPO_RESPAWN = 5
 MAX_JUGADORES  = 5
 
@@ -341,6 +380,289 @@ SALAS_ACERTIJOS = {
 }
 
 # ============================================================
+
+
+# ── Lore de sala (es mostra quan entres per primera vegada) ──────
+LORE_SALAS: dict = {
+    1: (
+        "MISIÓN 1 — El Rey Demonio",
+        """Mucho antes de que los reinos humanos alzaran sus murallas actuales, existió un nombre que se susurraba con temor incluso entre los dioses: el Rey Demonio.
+
+Gobernaba desde una fortaleza oculta en un territorio marchito donde la luz apenas sobrevivía. Se dice que en su poder guardaba una llave antigua, forjada antes del tiempo conocido, capaz de abrir un camino hacia algo que ni siquiera los sabios se atreven a describir.
+
+Tu misión comienza cuando descubres que esa llave no es solo un objeto de poder, sino una pieza necesaria para evitar que el mundo vuelva a caer en una era de oscuridad por culpa de Alpha. La llave es la puerta a Alpha. Necesitarás 2 llaves. Una la tiene el Rey Demonio, la otra... el Kraken.
+
+Nadie ha logrado acercarse al trono del Rey Demonio y sobrevivir. Aun así, partes hacia su dominio con una única certeza: si no lo detienes, el mundo caerá en la desesperación."""
+    ),
+    16: (
+        "El Dominio Oscuro",
+        """El viaje te lleva a través de tierras olvidadas: bosques donde los árboles parecen susurrar, ruinas que reaccionan a tu presencia y criaturas que no pertenecen a este mundo.
+
+Poco a poco, descubres que el dominio del Rey Demonio no es un simple lugar, sino una prueba en sí misma. Para llegar a él, debes atravesar tres sellos antiguos, cada uno custodiado por entidades que representan el miedo, la desesperación y el odio.
+
+Sin embargo, cada victoria te acerca más al castillo oscuro que emerge entre tormentas perpetuas. Allí, en lo más alto, te espera el Rey Demonio… y la llave."""
+    ),
+    24: (
+        "La Verdad del Guardián",
+        """A medida que te aproximas, comienzan a surgir verdades inquietantes. El Rey Demonio no siempre fue lo que es ahora.
+
+Antiguos registros hablan de un guardián, alguien que protegía el equilibrio del mundo. Pero algo ocurrió: una traición, un sacrificio o quizá una decisión imposible.
+
+La llave que buscas no es solo un objeto de poder… es un sello. Y el Rey Demonio no la guarda por ambición, sino por necesidad. Si alguien la toma sin comprender su propósito, podría desatar algo peor que él mismo.
+
+Ahora tu misión ya no es tan simple. ¿Vienes a salvar el mundo… o a condenarlo?"""
+    ),
+    33: (
+        "MISIÓN 2 — El Kraken",
+        """Has obtenido la primera Llave.
+
+Tras volver victorioso de Death Valley, eres recompensado por haber acabado con el peligroso Rey Demonio. Ahora eres uno de los mejores guerreros de la faz de la Tierra.
+
+El Rey Demonio ha delatado a su compañero: el Kraken. Este custodia la segunda llave para abrir el portal hacia la fortaleza de Alpha. Decidís ir a por él. Pagáis a un capitán para que os lleve en su barco hacia la isla de Bermuda, rodeando el triángulo.
+
+Empieza la aventura."""
+    ),
+    47: (
+        "El Capitán y los Acertijos",
+        """El capitán os detiene en la entrada del triángulo.
+
+Capitán: "Sé que tienes muchas ganas de embarcar, camarada, pero no puedo adentrarme en este lugar sin saber que mi tripulación no es corta de mente. Resuelve estos acertijos y podrás pasar. Cada uno es más difícil que el anterior."
+
+Presta atención en los acertijos que encuentres en el camino. Solo los que demuestren inteligencia merecen enfrentarse al Kraken."""
+    ),
+    72: (
+        "Las Bermudas — El Kraken Despierta",
+        """Dos horas después os encontráis en medio de una tormenta gigantesca. Te asaltan recuerdos de tu niñez, cuando vivías en Highdown y las tormentas eran devastadoras.
+
+Los eruditos de tu pueblo creen que los poderes de los habitantes de Highdown vienen de la energía eléctrica de las altas tormentas. Es por eso que sospecháis que Alpha reside allí. Y es muy probable que el Kraken esté aquí.
+
+Un tentáculo gigantesco emerge de las profundidades y rompe el mástil principal del barco."""
+    ),
+    73: (
+        "MISIÓN 3 — Alpha",
+        """Habéis derrotado al Kraken. Habéis derrotado a la leyenda más temida de los 7 mares.
+
+Poco a poco te estás convirtiendo en un gran guerrero, pero aún te falta mejorar. Tienes mucho que descubrir. ¿Tienes lo que hace falta? Eso está por descubrirse.
+
+Ahora tienes las dos llaves. Tu misión pendiente desde hace tiempo: Highdown. Tu objetivo es asesinar a Alpha y recuperar el dominio de tu pueblo. Usando el portal de entrada a Highdown, que se encuentra en el distrito blanco, Alaska, os dirigiréis allí al alba.
+
+El que consiga derrotar a Alpha será parte de los caballeros reales de su alteza."""
+    ),
+    98: (
+        "Nuevas Noticias",
+        """Tras varios días de travesía, os ha llegado nueva información.
+
+El portal se encuentra a las afueras de la ciudad, cerca de la barrera que rodea la ciudad. El portal está dentro de una mazmorra al lado de la ciudad. La mazmorra está gobernada por un dragón y ahí dentro hay varios monstruos, tanto de bajo como de alto rango.
+
+Tendrás que abrirte paso a través de ellos."""
+    ),
+    146: (
+        "El Rey Ha Muerto",
+        """Han llegado nuevas noticias: el rey ha muerto a manos de Alpha y sus súbditos.
+
+El rey está muerto. Se os ha informado que hay un cambio de recompensa: el asesino de Alpha será el nuevo rey del reino, pues el rey aún no tenía descendencia. Esa ha sido la última voluntad de su majestad."""
+    ),
+}
+
+# Salas donde el lore post-combate se muestra (al limpiar la sala)
+LORE_POST_COMBATE: dict = {
+    32: (
+        "El Rey Demonio Cae",
+        """Tras una batalla que sacude el mismo tejido del mundo, el Rey Demonio cae. En sus últimos momentos, no muestra odio… sino alivio.
+
+Antes de desaparecer, deja la llave en tus manos. Por un instante, sientes su peso… no físico, sino algo más profundo. Es la desesperación que el Rey Demonio ha estado soportando todo este tiempo.
+
+Comprendes entonces que no has derrotado a un tirano, sino que has aniquilado a un guardián al que, si no completas tu objetivo, condenas a una muerte innecesaria.
+
+El mundo no cambia de inmediato. No hay celebración, ni gloria. Solo una elección: usar la llave… o desecharla. No puedes desecharla. Tienes que matar a Alpha. Tienes que vengar a los tuyos."""
+    ),
+    72: (
+        "Victoria sobre el Kraken",
+        """Habéis derrotado al Kraken. Habéis derrotado a la leyenda más temida de los 7 mares.
+
+Poco a poco te estás convirtiendo en un gran guerrero pero aún te falta mejorar. ¿Qué es realmente un verdadero guerrero? Eso está por descubrirse. Tienes que descubrirlo por tu propia cuenta."""
+    ),
+    148: (
+        "La Caída de Alpha — FIN",
+        """Tras la muerte de Alpha vuelves al pueblo victorioso. Mañana te coronarán como rey.
+
+El consejero real del antiguo rey te corona como el nuevo rey, que traerá paz a este mundo de guerra y destrucción. Todo el mundo grita tu nombre, eres el que ha traído paz a este mundo y seguirá trayéndola una y otra vez como rey del imperio.
+
+En este viaje has descubierto algo esencial para conseguir la paz en el mundo. Has descubierto el enigma… Has descubierto el significado de ser un verdadero guerrero.
+
+Un verdadero enemigo no tiene enemigos. Si entiendes eso, serás capaz de reinar en el mundo como un verdadero guerrero.
+
+Si tienes un sueño lucha por él. Lucha por la paz. Porque el perdedor no es el que es derrotado, sino el que no se levanta una y otra vez. Si no luchas no puedes ganar — así que lucha, pierde, levántate, ríe, llora y, gana. Nunca te rindas. Para ganar… tienes que luchar."""
+    ),
+}
+
+async def mostrar_lore_sala(player, sala_id):
+    """Mostra lore d'entrada a la sala, una sola vegada per jugador."""
+    if not hasattr(player, 'salas_lore_vistes'):
+        player.salas_lore_vistes = set()
+    if sala_id in player.salas_lore_vistes:
+        return
+    lore = LORE_SALAS.get(sala_id)
+    if not lore:
+        return
+    player.salas_lore_vistes.add(sala_id)
+    titulo, texto = lore
+    try:
+        await player.ws.send_json({"type": "lore", "text": texto, "titulo": titulo})
+    except Exception:
+        pass
+
+async def mostrar_lore_post_combate(player, sala_id):
+    """Mostra lore de fi de combat, una sola vegada."""
+    if not hasattr(player, 'salas_lore_post_vistes'):
+        player.salas_lore_post_vistes = set()
+    if sala_id in player.salas_lore_post_vistes:
+        return
+    lore = LORE_POST_COMBATE.get(sala_id)
+    if not lore:
+        return
+    player.salas_lore_post_vistes.add(sala_id)
+    titulo, texto = lore
+    try:
+        await player.ws.send_json({"type": "lore", "text": texto, "titulo": titulo})
+    except Exception:
+        pass
+
+# ── Conversations de Boss ────────────────────────────────────────
+BOSS_CONVERSACIONES = {
+    # sala_id: (boss_name, [(opciones_jugador, respuesta_boss), ...])
+    32: {
+        "nombre": "Rey Demonio",
+        "intro": "Por fin has llegado… otro que busca lo que no comprende.",
+        "opciones": [
+            ("He venido por la llave",       "La llave… todos la desean, ninguno la entiende. Dime, ¿qué harás cuando la tengas?"),
+            ("Si eres un obstáculo, caerás", "Hablas con la arrogancia de quienes aún no han visto la verdad."),
+            ("Quiero respuestas",            "Respuestas… eso es más de lo que los demás pidieron. Quizá no seas como ellos."),
+        ],
+        "respuestas_2": {
+            0: [
+                ("No me importa tu historia",  "Entonces repetirás los errores de todos los que vinieron antes."),
+                ("Entonces explícate",         "La llave mantiene cerrada una puerta que nunca debió existir. Yo… soy su guardián."),
+                ("*Prepararte para luchar",    "Así termina siempre. Ven, demuestra si eres digno… o si solo eres otro recuerdo."),
+            ],
+            1: [
+                ("No me importa tu historia",  "Entonces repetirás los errores de todos los que vinieron antes."),
+                ("Entonces explícate",         "La llave mantiene cerrada una puerta que nunca debió existir. Yo… soy su guardián."),
+                ("*Prepararte para luchar",    "Así termina siempre. Ven, demuestra si eres digno… o si solo eres otro recuerdo."),
+            ],
+            2: [
+                ("No me importa tu historia",  "Entonces repetirás los errores de todos los que vinieron antes."),
+                ("Entonces explícate",         "La llave mantiene cerrada una puerta que nunca debió existir. Yo… soy su guardián."),
+                ("*Prepararte para luchar",    "Así termina siempre. Ven, demuestra si eres digno… o si solo eres otro recuerdo."),
+            ],
+        }
+    },
+    72: {
+        "nombre": "Kraken",
+        "intro": "¿Venís a por mí, verdad? ¡Intentadlo si queréis!",
+        "opciones": [
+            ("Sí, ya hemos acabado con el rey demonio. ¡Prepárate!", "¡Cómo os atrevéis! Si queréis la llave habréis de pasar por encima de mi cadáver."),
+            ("Sí… no te preocupes, no te haremos daño… ¿O sí?",     "Perro ladrador poco mordedor."),
+            ("Vale…",                                                  "Un mito como yo nunca será derrotado por un simple marinero de agua dulce."),
+        ],
+        "respuestas_2": {}
+    },
+    148: {
+        "nombre": "Alpha",
+        "intro": "Por fin has llegado, te estaba esperando.",
+        "opciones": [
+            ("¿A mí?",                                              "Eres el que tenía más poder en todo Highdown. Te esperaba. De no ser por ese soldado, te habría matado sin esfuerzo. Lo torturé hasta la muerte. Ahora morirás igual que él e igual que tus padres."),
+            ("¿Quién no me espera? Esa es la verdadera pregunta.", "Qué infantil. Se te habría cambiado la cara si hubieras visto morir a tus padres y al hombre que te salvó la vida."),
+            ("Me da igual, te mataré y vengaré al rey",            "Cómo quieras, él murió porque era un necio."),
+        ],
+        "respuestas_2": {
+            0: [
+                ("¡Cállate, te mataré!",        "Ya veremos quien muere."),
+                ("Me da igual, tu muerte es inevitable.", "Un simple mortal no puede derrotar a un dios."),
+                ("*Quedarse callado",            "¿Conque no quieres hablar? Muy bien, pues muere en silencio."),
+            ],
+            1: [
+                ("¡Cállate, te mataré!",        "Ya veremos quien muere."),
+                ("Me da igual, tu muerte es inevitable.", "Un simple mortal no puede derrotar a un dios."),
+                ("*Quedarse callado",            "¿Conque no quieres hablar? Muy bien, pues muere en silencio."),
+            ],
+            2: [
+                ("¡Cállate, te mataré!",        "Ya veremos quien muere."),
+                ("Me da igual, tu muerte es inevitable.", "Un simple mortal no puede derrotar a un dios."),
+                ("*Quedarse callado",            "¿Conque no quieres hablar? Muy bien, pues muere en silencio."),
+            ],
+        }
+    },
+}
+
+async def iniciar_conversacion_boss(player, sala_id: int) -> bool:
+    """
+    Mostra la conversa prèvia al combat del boss.
+    Retorna True si el combate ha de continuar, False si el jugador es desconnecta.
+    """
+    conv = BOSS_CONVERSACIONES.get(sala_id)
+    if not conv:
+        return True
+
+    nombre_boss = conv["nombre"]
+    try:
+        await player.ws.send_json({
+            "type": "boss_conv",
+            "boss": nombre_boss,
+            "text": conv["intro"]
+        })
+    except Exception:
+        pass
+    await player.send(f"\n  ══════════════════════════════════")
+    await player.send(f"  {nombre_boss.upper()}: {conv['intro']}")
+    await player.send(f"  ══════════════════════════════════")
+
+    # Round 1
+    opciones = conv["opciones"]
+    linies = ["\n  ¿Qué respondes?"]
+    for i, (opc, _) in enumerate(opciones, 1):
+        linies.append(f"  {i}. {opc}")
+    await player.send("\n".join(linies))
+
+    eleccio = None
+    while True:
+        r = await player.recv()
+        if r is None:
+            return False
+        r = r.strip()
+        if r in ("1","2","3") and int(r)-1 < len(opciones):
+            eleccio = int(r) - 1
+            break
+        await player.send("  Elige 1, 2 o 3.")
+
+    _, resposta = opciones[eleccio]
+    await player.send(f"\n  {nombre_boss.upper()}: {resposta}")
+
+    # Round 2 (si existeix)
+    respuestas_2 = conv.get("respuestas_2", {}).get(eleccio, [])
+    if respuestas_2:
+        linies2 = ["\n  ¿Y ahora?"]
+        for i, (opc, _) in enumerate(respuestas_2, 1):
+            linies2.append(f"  {i}. {opc}")
+        await player.send("\n".join(linies2))
+
+        while True:
+            r2 = await player.recv()
+            if r2 is None:
+                return False
+            r2 = r2.strip()
+            if r2 in ("1","2","3") and int(r2)-1 < len(respuestas_2):
+                eleccio2 = int(r2) - 1
+                break
+            await player.send("  Elige 1, 2 o 3.")
+
+        _, resposta2 = respuestas_2[eleccio2]
+        await player.send(f"\n  {nombre_boss.upper()}: {resposta2}")
+
+    await player.send(f"\n  ⚔️  ¡El combate contra {nombre_boss} comienza!")
+    await asyncio.sleep(1)
+    return True
+
 # BOSS RESPAWN TIMERS
 # ============================================================
 # sala_id → asyncio.Task de respawn (None si no hay timer activo)
@@ -1480,6 +1802,9 @@ class Player:
         self.acertijos_completados = set()  # salas con acertijos completados
         self.acertijo_actual = 0  # índice del acertijo actual en la sala
         self.is_admin        = False  # se activa con /admin <password>
+        self.lore_mostrado        = False  # True tras mostrar el lore inicial una vez
+        self.salas_lore_vistes     = set()  # salas donde ya se mostró lore de entrada
+        self.salas_lore_post_vistes = set() # salas donde ya se mostró lore post-combate
 
     async def send(self, texto: str, tipo: str = "game"):
         try:
@@ -1556,9 +1881,14 @@ async def broadcast_todos(texto):
             pass
 
 async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
-    if not chat_ws_clients:
-        return
-    payload = {"type": "chat", "scope": scope, "nombre": nombre, "mensaje": mensaje}
+    payload = {"type": "chat", "scope": scope, "nombre": nombre, "text": mensaje}
+    # Enviar a jugadores del juego
+    for p in list(jugadores_conectados):
+        try:
+            await p.ws.send_json(payload)
+        except Exception:
+            pass
+    # Enviar a clientes del dashboard
     muertos = set()
     for ws in chat_ws_clients:
         try:
@@ -1649,12 +1979,8 @@ async def cmd_chat(player: Player, mensaje: str, sala_solo: bool):
     # Límite de seguridad
     mensaje = mensaje[:300]
     if sala_solo:
-        texto = f"  [Sala] {player.nombre}: {mensaje}"
-        await broadcast_sala(player.sala_id, texto)
         await broadcast_chat_ws("sala", player.nombre, mensaje)
     else:
-        texto = f"  [Global] {player.nombre}: {mensaje}"
-        await broadcast_todos(texto)
         await broadcast_chat_ws("global", player.nombre, mensaje)
 
 
@@ -1926,7 +2252,8 @@ async def guardar_cuenta_async(player: "Player"):
             "xp":         player.xp,
             "monedas":    player.monedas,
             "inventario": player.inventario,
-            "sala_id":    player.sala_id,
+            "sala_id":      player.sala_id,
+            "lore_mostrado": player.lore_mostrado,
             "personaje": {
                 "nombreClase": player.personaje["nombreClase"],
                 "vidaMax":     player.personaje["vidaMax"],
@@ -1966,8 +2293,9 @@ async def cargar_cuenta_async(player: "Player", usuario: str):
     player.nivel      = datos.get("nivel", 1)
     player.xp         = datos.get("xp", 0)
     player.monedas    = datos.get("monedas", 0)
-    player.inventario = datos.get("inventario", {})
-    player.sala_id    = datos.get("sala_id", 1)
+    player.inventario    = datos.get("inventario", {})
+    player.sala_id       = datos.get("sala_id", 1)
+    player.lore_mostrado = datos.get("lore_mostrado", False)
 
     clase = datos.get("personaje", {}).get("nombreClase", "guerrero")
     base  = deepcopy(CLASES[clase])
@@ -2108,6 +2436,10 @@ async def flujo_registro(player: "Player") -> bool:
         "manaActual":  base["manaMax"],
         **base,
     }
+
+    # Nuevo jugador comienza en sala tutorial 0.1
+    player.sala_id = 0.1
+    player.lore_mostrado = False
 
     # Guardar inmediatamente con los datos del personaje
     await guardar_cuenta_async(player)
@@ -2374,6 +2706,27 @@ async def mover_jugador(player: Player, direccion: str):
     await broadcast_sala(player.sala_id, f"  {player.nombre} ha llegado.", excluir=player)
     await notify_web_session(player)
     await broadcast_players_to_web()
+
+    # Lore de sala — primera vegada
+    await mostrar_lore_sala(player, player.sala_id)
+
+    # Unirse al combate en curso si existe en la nueva sala
+    if player.sala_id in combates_activos and not player.muerto:
+        combate_en_curso = combates_activos[player.sala_id]
+        if player not in combate_en_curso.jugadores and combate_en_curso.estado != EstadoCombate.FINALIZADO:
+            combate_en_curso.jugadores.append(player)
+            player.combate = combate_en_curso
+            await player.send("  ⚔️  Te has unido al combate en curso en esta sala!")
+            await broadcast_sala(player.sala_id, f"  {player.nombre} se ha unido al combate!", excluir=player)
+            enemigos_info = [
+                {"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")}
+                for e in combate_en_curso.enemigos_vivos()
+            ]
+            try:
+                await player.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
+            except Exception:
+                pass
+
     await describir_sala(player)
     # Quest check: nova sala
     await comprovar_quests(player, "sala", nueva)
@@ -2408,6 +2761,15 @@ async def iniciar_combate(sala_id: int):
     combates_activos[sala_id] = combate
     for p in jug:
         p.combate = combate
+
+    # Boss conversation — only for boss rooms with a single player (story moment)
+    if sala_id in BOSS_CONVERSACIONES and len(jug) == 1:
+        continuar = await iniciar_conversacion_boss(jug[0], sala_id)
+        if not continuar:
+            del combates_activos[sala_id]
+            for p in jug:
+                p.combate = None
+            return
 
     await broadcast_sala(sala_id, "\n" + "=" * 52)
     await broadcast_sala(sala_id, "  COMBATE!")
@@ -2527,6 +2889,10 @@ async def loop_combate(combate: Combate):
         await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
         await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
 
+        # ── LORE post-combat per salas de boss ──
+        for p in combate.jugadores_vivos():
+            await mostrar_lore_post_combate(p, sala_id)
+
         # ── LOOT DROP per cada enemic derrotat ──
         for p in combate.jugadores_vivos():
             for e in combate.enemigos:
@@ -2566,15 +2932,26 @@ async def pedir_accion(player: Player, combate: Combate):
         "  decir <msg>  |  g <msg>"
     )
 
-    deadline = asyncio.get_event_loop().time() + 60  # 60s por turno
+    deadline = asyncio.get_event_loop().time() + 30  # 30s por turno
 
     while True:
         tiempo_restante = max(0.1, deadline - asyncio.get_event_loop().time())
         try:
             raw = await asyncio.wait_for(player.recv(), timeout=tiempo_restante)
         except asyncio.TimeoutError:
+            # Expulsar del combate por inactividad
             combate.acciones[player.id] = "3"
-            await player.send("  ⏱ Tiempo agotado — turno pasado automáticamente.")
+            if player in combate.jugadores:
+                combate.jugadores.remove(player)
+            player.combate = None
+            await player.send(
+                "\n  ⚠️  Has sido expulsado del combate por inactividad (30 segundos sin acción)."
+                "\n  Has sido trasladado a la sala segura."
+            )
+            await broadcast_sala(combate.sala_id, f"  {player.nombre} fue expulsado del combate por inactividad.", excluir=player)
+            player.sala_id = SALA_RESPAWN
+            await player.send_status()
+            await describir_sala(player)
             return
 
         # Desconexión durante combate → pasar turno automáticamente
@@ -2857,8 +3234,11 @@ async def cmd_gchat(player: Player, mensaje: str):
         await player.send("  Que quieres decir al grupo?")
         return
     mensaje = mensaje[:300]  # limit chat length
-    texto = f"  [Grupo] {player.nombre}: {mensaje}"
-    await broadcast_grupo(player.grupo, texto)
+    for p_m in list(player.grupo.miembros):
+        try:
+            await p_m.ws.send_json({"type":"chat","scope":"grupo","nombre":player.nombre,"text":mensaje})
+        except Exception:
+            pass
 
 
 async def _disolver_grupo(grupo: Grupo):
@@ -3453,6 +3833,9 @@ async def handle_game_ws(ws, usuario: str):
         f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
     )
     await player.send_status()
+    # Lore inicial — solo la primera vez
+    if not player.lore_mostrado:
+        await mostrar_lore_inicial(player)
     # Enviar leaderboard global al conectar
     lb = await get_leaderboard_async()
     try:
@@ -3726,7 +4109,7 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 #minimap-btn:hover{border-color:var(--gold2);}
 #minimap-label{position:absolute;bottom:2px;left:0;right:0;text-align:center;
                font-size:7px;color:var(--orange);pointer-events:none;}
-#glog{flex:1;overflow-y:auto;padding:7px 10px;font-size:12px;line-height:1.6;padding-right:96px;}
+#glog{flex:1;overflow-y:auto;padding:7px 10px;font-size:12px;line-height:1.6;}
 #glog::-webkit-scrollbar{width:3px;}
 #glog::-webkit-scrollbar-thumb{background:var(--border);}
 .gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
@@ -3767,6 +4150,8 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 .ctab.cs{background:#0d1f0d;color:var(--green);border-color:var(--green);}
 .ctab.cg{background:#1f1500;color:var(--orange);border-color:var(--orange);}
 .ctab.cgr{background:#0d0d1f;color:var(--mana);border-color:var(--mana);}
+#chat-pane{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:4px;
+           margin-top:6px;background:var(--bg2);min-height:160px;max-height:220px;}
 #chat-log{flex:1;overflow-y:auto;padding:3px 6px;font-size:10px;line-height:1.5;}
 #chat-log::-webkit-scrollbar{width:3px;}
 #chat-log::-webkit-scrollbar-thumb{background:var(--border);}
@@ -3882,6 +4267,32 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
             border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
 #pvp-reject{background:var(--red);color:#fff;border:none;padding:7px 18px;
             border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
+
+/* LORE POPUP */
+#lore-popup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:800;
+            align-items:center;justify-content:center;}
+#lore-popup.open{display:flex;}
+#lore-inner{background:var(--bg2);border:2px solid var(--gold);border-radius:8px;
+            padding:28px 32px;max-width:600px;width:90%;max-height:80vh;
+            overflow-y:auto;position:relative;text-align:left;
+            box-shadow:0 8px 40px rgba(0,0,0,.8);}
+#lore-title{color:var(--gold);font-size:15px;font-weight:bold;margin-bottom:16px;
+            text-align:center;letter-spacing:1px;}
+#lore-text{color:var(--text);font-size:11px;line-height:1.8;white-space:pre-wrap;}
+#lore-close{display:block;margin:20px auto 0;background:var(--gold);color:#000;
+            border:none;padding:9px 28px;border-radius:4px;cursor:pointer;
+            font-weight:bold;font-family:monospace;font-size:12px;}
+#lore-close:hover{background:var(--gold2);}
+
+/* BOSS CONVERSATION POPUP */
+#boss-conv-popup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
+                 z-index:750;align-items:center;justify-content:center;}
+#boss-conv-popup.open{display:flex;}
+#boss-conv-inner{background:var(--bg2);border:2px solid var(--red);border-radius:8px;
+                 padding:22px 28px;max-width:520px;width:90%;
+                 box-shadow:0 6px 32px rgba(0,0,0,.8);}
+#boss-conv-name{color:var(--red);font-size:14px;font-weight:bold;margin-bottom:10px;}
+#boss-conv-text{color:var(--text);font-size:11px;line-height:1.7;margin-bottom:14px;white-space:pre-wrap;}
 </style>
 </head>
 <body>
@@ -3908,6 +4319,23 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
       <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
     </div>
     <div id="lerr"></div>
+  </div>
+</div>
+
+<!-- LORE POPUP -->
+<div id="lore-popup">
+  <div id="lore-inner">
+    <div id="lore-title">⚔ EL RETORNO A HIGHDOWN</div>
+    <div id="lore-text"></div>
+    <button id="lore-close" onclick="closeLorePopup()">Comenzar la aventura</button>
+  </div>
+</div>
+
+<!-- BOSS CONVERSATION POPUP -->
+<div id="boss-conv-popup">
+  <div id="boss-conv-inner">
+    <div id="boss-conv-name"></div>
+    <div id="boss-conv-text"></div>
   </div>
 </div>
 
@@ -4042,17 +4470,21 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
 
   <!-- CENTER -->
   <div id="center">
-    <div id="minimap-btn" onclick="openMap()" title="Clic para ampliar">
-      <svg id="map-svg-mini" viewBox="0 0 860 820" xmlns="http://www.w3.org/2000/svg">
-        <rect x="5" y="5"   width="840" height="312" rx="4" fill="#06090f" stroke="#1a3a4a" stroke-width="1"/>
-        <rect x="5" y="320" width="840" height="218" rx="4" fill="#06060f" stroke="#1a2a4a" stroke-width="1"/>
-        <rect x="5" y="540" width="840" height="8"   rx="2" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
-        <rect x="5" y="552" width="840" height="205" rx="4" fill="#0f0700" stroke="#302000" stroke-width="1"/>
-        <g id="map-conn-mini"></g><g id="map-rooms-mini"></g>
-      </svg>
-      <div id="minimap-label">🗺 MAPA</div>
-    </div>
     <div id="glog"></div>
+    <!-- CHAT integrado en center -->
+    <div id="chat-pane">
+      <div id="chat-tabs">
+        <button class="ctab cs" id="ct-sala"   onclick="setChatTab('sala')">💬 Sala</button>
+        <button class="ctab"    id="ct-global" onclick="setChatTab('global')">🌐 Global</button>
+        <button class="ctab"    id="ct-grupo"  onclick="setChatTab('grupo')">👥 Grupo</button>
+      </div>
+      <div id="chat-log"></div>
+      <div id="chat-in-row">
+        <input id="chat-in" type="text" placeholder="Escribe un mensaje... (Enter para enviar)" disabled
+               onkeydown="if(event.key==='Enter')sendChat()">
+        <button id="chat-send" onclick="sendChat()" disabled>↵</button>
+      </div>
+    </div>
   </div>
 
   <!-- RIGHT -->
@@ -4060,19 +4492,6 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
     <div id="lb-pane">
       <div id="lb-hdr">🏆 Ranking Global</div>
       <div id="lb-list"><div style="color:var(--dim);font-size:9px;padding:5px">Cargando...</div></div>
-    </div>
-    <div id="chat-pane">
-      <div id="chat-tabs">
-        <button class="ctab cs" id="ct-sala"   onclick="setChatTab('sala')">Sala</button>
-        <button class="ctab"    id="ct-global" onclick="setChatTab('global')">Global</button>
-        <button class="ctab"    id="ct-grupo"  onclick="setChatTab('grupo')">Grupo</button>
-      </div>
-      <div id="chat-log"></div>
-      <div id="chat-in-row">
-        <input id="chat-in" type="text" placeholder="Mensaje..." disabled
-               onkeydown="if(event.key==='Enter')sendChat()">
-        <button id="chat-send" onclick="sendChat()" disabled>↵</button>
-      </div>
     </div>
   </div>
 
@@ -4487,9 +4906,11 @@ function handle(m){
   } else if(m.type==="status"||m.type==="stats"){
     updateStats(m);
   } else if(m.type==="chat"){
-    const tag=m.scope==="sala"?"[Sala]":m.scope==="global"?"[Global]":"[Grupo]";
-    appendLog(tag+" "+(m.nombre||"")+(m.nombre?": ":"")+(m.text||m.mensaje||""),"gi");
     appendChat(m.nombre,m.scope,m.text||m.mensaje||"");
+  } else if(m.type==="lore"){
+    openLorePopup(m.titulo||"LORE",m.text||"");
+  } else if(m.type==="boss_conv"){
+    openBossConvPopup(m.boss||"",m.text||"");
   } else if(m.type==="leaderboard"){
     renderLeaderboard(m.ranking);
   } else if(m.type==="combat_start"){
@@ -4707,6 +5128,24 @@ function promptDuelo(){
 
 /* MAP */
 function openMap(){document.getElementById("map-modal").classList.add("open");}
+
+/* LORE POPUP */
+function openLorePopup(titulo,texto){
+  document.getElementById("lore-title").textContent=titulo;
+  document.getElementById("lore-text").textContent=texto;
+  document.getElementById("lore-popup").classList.add("open");
+}
+function closeLorePopup(){
+  document.getElementById("lore-popup").classList.remove("open");
+}
+
+/* BOSS CONVERSATION POPUP */
+function openBossConvPopup(boss,texto){
+  document.getElementById("boss-conv-name").textContent=boss.toUpperCase()+":";
+  document.getElementById("boss-conv-text").textContent=texto;
+  document.getElementById("boss-conv-popup").classList.add("open");
+  setTimeout(()=>{document.getElementById("boss-conv-popup").classList.remove("open");},5000);
+}
 function closeMapBtn(){document.getElementById("map-modal").classList.remove("open");}
 function openHelp(){document.getElementById("help-modal").classList.add("open");}
 function closeHelpBtn(){document.getElementById("help-modal").classList.remove("open");}
