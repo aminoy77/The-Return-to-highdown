@@ -166,7 +166,6 @@ async def get_leaderboard_async(limit: int = 20) -> list:
 async def broadcast_leaderboard():
     """Envía el leaderboard a todos los jugadores conectados."""
     lb = await get_leaderboard_async()
-    payload = json.dumps({"type": "leaderboard", "ranking": lb})
     for p in jugadores_conectados:
         try:
             await p.ws.send_json({"type": "leaderboard", "ranking": lb})
@@ -2821,8 +2820,17 @@ async def mover_jugador(player: Player, direccion: str):
 # ============================================================
 
 async def iniciar_combate(sala_id: int):
-    if sala_id in combates_activos:
-        return
+    # Si ya hay un combate activo, no iniciar uno nuevo
+    if sala_id in combats_activos:
+        # Pero verificar si el combate tiene enemigos - si no, limpiar y crear nuevo
+        combate_existente = combats_activos[sala_id]
+        if not combate_existente.enemigos_vivos():
+            # Limpiar combate finalizado
+            del combats_activos[sala_id]
+            for p in list(combate_existente.jugadores):
+                p.combate = None
+        else:
+            return  # Hay combate activo, otros pueden unirse desde mover_jugador
     sala = SALAS.get(sala_id)
     if not sala:
         return
@@ -2958,8 +2966,12 @@ async def loop_combate(combate: Combate):
             await p.ws.send_json({"type": "combat_end"})
         except Exception:
             pass
-
-    if combate.enemigos_vivos():
+    
+    # Verificar resultado: si NO hay enemigos vivos = victoria
+    enemigos_derrotados = len(combate.enemigos) > 0 and not combate.enemigos_vivos()
+    jugadores_sobrevivieron = bool(combate.jugadores_vivos())
+    
+    if not enemigos_derrotados or not jugadores_sobrevivieron:
         await broadcast_sala(sala_id, "\n  DERROTA.")
     else:
         await broadcast_sala(sala_id, "\n  VICTORIA!")
@@ -2972,6 +2984,10 @@ async def loop_combate(combate: Combate):
             await p.send_status()   # actualizar HP tras +20
         await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
         await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
+        
+        # IMPORTANTE: Limpiar la战斗 del diccionario global
+        if sala_id in combats_activos:
+            del combats_activos[sala_id]
 
         # ── LORE post-combat per salas de boss ──
         for p in combate.jugadores_vivos():
@@ -3013,7 +3029,7 @@ async def pedir_accion(player: Player, combate: Combate):
 
     await player.send(
         "  1-Atacar  2-Especial  3-Pasar  4-Objeto\n"
-        "  decir <msg>  |  g <msg>"
+        "  decir <msg>  |  g <msg>  |  gc <msg>"
     )
 
     deadline = asyncio.get_event_loop().time() + 60  # 60s por turno
@@ -3052,6 +3068,9 @@ async def pedir_accion(player: Player, combate: Combate):
             continue
         if accion.lower().startswith("g "):
             await cmd_chat(player, accion[2:], sala_solo=False)
+            continue
+        if accion.lower().startswith("gc "):
+            await cmd_gchat(player, accion[3:].strip())
             continue
         if accion == "4":
             await cmd_mochila(player)
