@@ -3553,9 +3553,6 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
 # Rate limiting: max 1 comando cada 0.5s per jugador
 _last_cmd_time: dict = {}
 
-# Periodic cleanup task
-_cleanup_task = None
-
 async def _periodic_cleanup():
     """Periodically clean up completed tasks to prevent memory leaks."""
     global _background_tasks, _cleanup_tasks
