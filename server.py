@@ -3697,10 +3697,29 @@ async def procesar_comando(player: Player, cmd: str):
         tiene_combate = sala and ("bioma" in sala or bool(sala.get("encuentros")))
         if not tiene_combate:
             await player.send("  No hay enemigos en esta sala.")
-        elif player.sala_id in combates_activos:
-            await player.send("  Ya hay un combate en curso aqui.")
-        else:
-            await iniciar_combate(player.sala_id)
+            return
+        # Si ya hay combate activo, unirse o continuar
+        if player.sala_id in combats_activos:
+            combate_existente = combats_activos[player.sala_id]
+            # Si no estás en el combate, únete
+            if player not in combate_existente.jugadores and combate_existente.enemigos_vivos():
+                if not player.muerto:
+                    combate_existente.jugadores.append(player)
+                    player.combate = combate_existente
+                    await player.send("  Te has unido al combate en curso!")
+                    await broadcast_sala(player.sala_id, f"  {player.nombre} se une al combate!")
+                    # Mostrar enemigos
+                    for e in combate_existente.enemigos_vivos():
+                        await player.send(f"  {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
+                    return
+            # Si ya estás, mostrar estado
+            if player in combate_existente.jugadores:
+                await player.send(f"  Ya estas en combate!HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}")
+                for e in combate_existente.enemigos_vivos():
+                    await player.send(f"  {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
+                return
+        # Iniciar nuevo combate si no hay
+        await iniciar_combate(player.sala_id)
 
     elif ac in ("decir", "d"):
         await cmd_chat(player, cmd[len(ac):].strip(), sala_solo=True)
@@ -5029,7 +5048,11 @@ function handle(m){
   if(m.type==="auth_ok"){
     document.getElementById("lo").style.display="none";
     setConn(true);enableUI();
-    if(m.stats)updateStats(m.stats);
+    if(m.stats){
+      saveLocal(m.stats);  // Save locally first for optimistic UI
+    }
+    startSync();  // Start 5s sync interval
+    setupServerSync();  // Listen for server updates
     document.getElementById("cmd").focus();
   } else if(m.type==="auth_fail"){
     document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
@@ -5089,6 +5112,85 @@ function appendLog(text,cls){
     const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
   });
   log.scrollTop=log.scrollHeight;
+}
+
+/* LOCAL-FIRST SYNC SYSTEM */
+let _localData = {};  // Local copy of player data
+let _dirtyFields = new Set();  // Fields that changed locally
+let _syncInterval = null;
+
+// Save data locally instantly (optimistic UI)
+function saveLocal(data){
+  _localData = {..._localData, ...data};
+  // Mark all received fields as dirty
+  Object.keys(data).forEach(k => _dirtyFields.add(k));
+  // Save to localStorage
+  try{
+    localStorage.setItem('playerData', JSON.stringify(_localData));
+  }catch(e){}
+  // Update UI immediately
+  if(data.hp!==undefined || data.hpMax!==undefined || data.mana!==undefined || 
+     data.manaMax!==undefined || data.nivel!==undefined || data.xp!==undefined ||
+     data.monedas!==undefined){
+    updateStats(_localData);
+  }
+}
+
+// Load local data
+function loadLocal(){
+  try{
+    const saved = localStorage.getItem('playerData');
+    if(saved){
+      _localData = JSON.parse(saved);
+      // Apply to UI
+      if(_localData.hp)updateStats(_localData);
+    }
+  }catch(e){}
+}
+
+// Sync with server every 5 seconds
+async function startSync(){
+  if(_syncInterval)return;
+  
+  // Initial load
+  loadLocal();
+  
+  // Sync every 5 seconds
+  _syncInterval = setInterval(async ()=>{
+    if(!ws || ws.readyState!==WebSocket.OPEN || _dirtyFields.size===0)return;
+    
+    // Build diff with only changed fields
+    const diff = {};
+    _dirtyFields.forEach(k => {
+      if(_localData[k]!==undefined)diff[k] = _localData[k];
+    });
+    
+    if(Object.keys(diff).length===0)return;
+    
+    // Send diff to server
+    ws.send(JSON.stringify({type:'sync', data:diff}));
+    
+    // Clear dirty flag (server will confirm)
+    _dirtyFields.clear();
+  }, 5000);
+}
+
+// Listen for server updates (for leaderboard, etc.)
+function setupServerSync(){
+  // Override original handle to add server→local sync
+  const origHandle = handle;
+  handle = function(m){
+    origHandle(m);
+    // Update local data from server broadcasts
+    if(m.type==='status' || m.type==='stats'){
+      // Server has authoritative data, update local
+      _localData = {..._localData, ...m};
+      _dirtyFields.clear();
+      try{
+        localStorage.setItem('playerData', JSON.stringify(_localData));
+      }catch(e){}
+    }
+  };
 }
 
 /* STATS */
@@ -5360,6 +5462,30 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     msg_type = data.get("type", "")
     usuario  = data.get("usuario", "").strip().lower()
     password = data.get("password", "").strip()
+
+    # ── Local-first sync handler (batch updates) ────────────────
+    if msg_type == "sync":
+        # Client sends local diff, process in batch
+        sync_data = data.get("data", {})
+        # Find player
+        player = next((p for p in jugadores_conectados if p.usuario == usuario), None)
+        if player and sync_data:
+            # Apply changes locally (no DB write yet)
+            for key, value in sync_data.items():
+                if key == "xp":
+                    player.xp = value
+                elif key == "nivel":
+                    player.nivel = value
+                elif key == "monedas":
+                    player.monedas = value
+                elif key == "inventario":
+                    player.inventario = value
+            # DB save will happen on disconnect or periodic
+            try:
+                await player.ws.send_json({"type": "sync_ok"})
+            except Exception:
+                pass
+        return ws
 
     # ── Auth ──────────────────────────────────────────────────
     if msg_type == "game_register":
