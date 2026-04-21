@@ -48,34 +48,50 @@ def _get_sb_session() -> aiohttp.ClientSession:
         _sb_session = aiohttp.ClientSession(timeout=timeout)
     return _sb_session
 
-async def _sb_get(usuario: str) -> dict | None:
+async def _sb_get(usuario: str, retries=3) -> dict | None:
     """Lee una fila de Supabase. Devuelve el dict o None si no existe."""
-    url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
-    try:
-        s = _get_sb_session()
-        async with s.get(url, headers=_sb_headers()) as r:
-            if r.status == 200:
-                rows = await r.json()
-                return rows[0] if rows else None
-    except Exception as e:
-        print(f"[SB] Error _sb_get({usuario}): {e}")
+    for attempt in range(retries + 1):
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
+            s = _get_sb_session()
+            async with s.get(url, headers=_sb_headers(), timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status == 200:
+                    rows = await r.json()
+                    return rows[0] if rows else None
+                elif attempt < retries:
+                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+        except Exception as e:
+            if attempt < retries:
+                print(f"[SB] Reintentando _sb_get({usuario}), intento {attempt + 1}: {e}")
+                await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+            else:
+                print(f"[SB] Error _sb_get({usuario}): {e}")
     return None
 
-async def _sb_upsert(row: dict):
+async def _sb_upsert(row: dict, retries=3):
     """Inserta o actualiza una fila en Supabase."""
-    url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
-    headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
-    try:
-        s = _get_sb_session()
-        await s.post(url, headers=headers, json=row)
-    except Exception as e:
-        print(f"[SB] Error _sb_upsert: {e}")
+    for attempt in range(retries + 1):
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
+            headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
+            s = _get_sb_session()
+            async with s.post(url, headers=headers, json=row, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status in (200, 201):
+                    return
+                elif attempt < retries:
+                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+        except Exception as e:
+            if attempt < retries:
+                print(f"[SB] Reintentando _sb_upsert, intento {attempt + 1}: {e}")
+                await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+            else:
+                print(f"[SB] Error _sb_upsert: {e}")
 
 
-# Leaderboard cache (30s TTL)
+# Leaderboard cache (5min TTL)
 _lb_cache: list = []
 _lb_cache_ts: float = 0.0
-_LB_CACHE_TTL = 60
+_LB_CACHE_TTL = 300  # 5 minutes
 
 async def get_leaderboard_async(limit: int = 20) -> list:
     """Ranking global ordenado por nivel desc (cached 30s)."""
@@ -87,10 +103,10 @@ async def get_leaderboard_async(limit: int = 20) -> list:
     if USAR_SUPABASE:
         # PostgREST: traemos todos y ordenamos en Python
         # (ordenar por campo JSONB anidado no es directo en PostgREST)
-        url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=200"
+        url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=50&order=data->nivel.desc.nulls.last"
         try:
             s = _get_sb_session()
-            async with s.get(url, headers=_sb_headers()) as r:
+            async with s.get(url, headers=_sb_headers(), timeout=aiohttp.ClientTimeout(total=10)) as r:
                     if r.status == 200:
                         rows = await r.json()
                         result = []
@@ -120,9 +136,13 @@ async def get_leaderboard_async(limit: int = 20) -> list:
     # Fallback: ficheros locales
     result = []
     if os.path.isdir(SAVES_DIR):
-        for fname in os.listdir(SAVES_DIR):
-            if not fname.endswith(".json"):
-                continue
+        # Only process top files to avoid excessive processing
+        files = os.listdir(SAVES_DIR)
+        files = [f for f in files if f.endswith(".json")]
+        # Limit to 100 files to prevent excessive processing
+        files = files[:100]
+        
+        for fname in files:
             try:
                 with open(os.path.join(SAVES_DIR, fname)) as f:
                     save_raw = json.load(f)
@@ -289,7 +309,7 @@ async def mostrar_lore_inicial(player):
     except Exception:
         pass
     player.lore_mostrado = True
-    await guardar_cuenta_async(player)
+    await guardar_cuenta_async(player)  # Batch save OK
 
 
 TIEMPO_RESPAWN = 5
@@ -667,7 +687,8 @@ async def iniciar_conversacion_boss(player, sala_id: int) -> bool:
 # ============================================================
 # sala_id → asyncio.Task de respawn (None si no hay timer activo)
 _boss_respawn_tasks: dict = {}
-_background_tasks: set = {}  # Keeps strong refs so GC can't collect running tasks
+_background_tasks: set = set()  # Keeps strong refs so GC can't collect running tasks
+_cleanup_tasks: set = set()     # Cleanup tasks separately to avoid accumulation
 # sala_id → True si el boss está vivo (para evitar doble spawn)
 _boss_vivo: dict = {}
 
@@ -1692,6 +1713,11 @@ chat_ws_clients      = set()
 web_sessions         = {}   # usuario → websocket (navegadores autenticados)
 grupos               = {}   # grupo_id → Grupo
 
+# Batch database update queue
+_save_queue: dict = {}     # usuario → datos a guardar
+_save_timer: asyncio.Task = None
+_SAVE_BATCH_DELAY = 5.0    # segundos entre guardados en batch
+
 
 class Grupo:
     """Grupo de jugadores. El líder es quien lo creó."""
@@ -1948,9 +1974,16 @@ async def broadcast_players_to_web():
         if pid in _players_snapshot and current[pid] != _players_snapshot[pid]
     ]
 
-    # Si no hi ha canvis, no enviem res
-    if not added and not removed and not changed:
+    # Si no hi ha canvis significatius, no enviem res
+    # Only send updates if there are significant changes or if 30 seconds have passed
+    import time
+    should_send = added or removed or changed or getattr(broadcast_players_to_web, '_last_send', 0) < time.time() - 30
+    
+    if not should_send:
         return
+
+    # Update last send time
+    broadcast_players_to_web._last_send = time.time()
 
     # Actualitzar snapshot
     _players_snapshot = current
@@ -2034,9 +2067,13 @@ async def dar_xp(player: Player, cantidad: int):
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
         await comprovar_quests(player, "nivell", player.nivel)
     await notify_web_session(player)
-    _t = asyncio.create_task(broadcast_leaderboard())
-    _background_tasks.add(_t)
-    _t.add_done_callback(_background_tasks.discard)
+    
+    # Only update leaderboard occasionally to reduce load
+    import random
+    if random.random() < 0.1:  # 10% chance to update leaderboard
+        _t = asyncio.create_task(broadcast_leaderboard())
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
 
 
 # ============================================================
@@ -2232,9 +2269,31 @@ async def verificar_password_async(usuario: str, password: str) -> bool:
         return False
     return _hash_password(password, row.get("salt", "")) == row.get("password_hash", "")
 
-async def guardar_cuenta_async(player: "Player"):
+async def _flush_save_queue():
+    """Flush all pending saves to database."""
+    global _save_queue
+    if not _save_queue:
+        return
+    
+    # Process all queued saves
+    for usuario, datos in _save_queue.items():
+        try:
+            if USAR_SUPABASE:
+                await _sb_upsert(datos)
+            else:
+                merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
+                merged["nombre"] = datos["data"]["nombre"]
+                _escribir_fichero(merged)
+        except Exception as e:
+            print(f"[SAVE] Error guardando {usuario}: {e}")
+    
+    # Clear queue
+    _save_queue.clear()
+
+async def guardar_cuenta_async(player: "Player", immediate=False):
     if not player.usuario or not player.personaje:
         return
+    
     # Leer salt/hash previos
     if USAR_SUPABASE:
         prev = await _sb_get(player.usuario)
@@ -2264,12 +2323,27 @@ async def guardar_cuenta_async(player: "Player"):
             },
         }
     }
-    if USAR_SUPABASE:
-        await _sb_upsert(datos)
+    
+    if immediate:
+        # Save immediately (for critical operations)
+        if USAR_SUPABASE:
+            await _sb_upsert(datos)
+        else:
+            merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
+            merged["nombre"] = datos["data"]["nombre"]
+            _escribir_fichero(merged)
     else:
-        merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
-        merged["nombre"] = datos["data"]["nombre"]
-        _escribir_fichero(merged)
+        # Queue for batch save
+        _save_queue[player.usuario] = datos
+        
+        # Start timer if not already running
+        global _save_timer
+        if _save_timer is None or _save_timer.done():
+            async def _batch_save_delayed():
+                await asyncio.sleep(_SAVE_BATCH_DELAY)
+                await _flush_save_queue()
+            
+            _save_timer = asyncio.create_task(_batch_save_delayed())
 
 async def cargar_cuenta_async(player: "Player", usuario: str):
     if USAR_SUPABASE:
@@ -2442,7 +2516,7 @@ async def flujo_registro(player: "Player") -> bool:
     player.lore_mostrado = False
 
     # Guardar inmediatamente con los datos del personaje
-    await guardar_cuenta_async(player)
+    await guardar_cuenta_async(player, immediate=True)
 
     await player.send(
         f"\n  Cuenta creada! Bienvenido, {nombre} el {clase_elegida.capitalize()}.\n"
@@ -2714,18 +2788,25 @@ async def mover_jugador(player: Player, direccion: str):
     if player.sala_id in combates_activos and not player.muerto:
         combate_en_curso = combates_activos[player.sala_id]
         if player not in combate_en_curso.jugadores and combate_en_curso.estado != EstadoCombate.FINALIZADO:
-            combate_en_curso.jugadores.append(player)
-            player.combate = combate_en_curso
-            await player.send("  ⚔️  Te has unido al combate en curso en esta sala!")
-            await broadcast_sala(player.sala_id, f"  {player.nombre} se ha unido al combate!", excluir=player)
-            enemigos_info = [
-                {"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")}
-                for e in combate_en_curso.enemigos_vivos()
-            ]
-            try:
-                await player.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
-            except Exception:
-                pass
+            # Verificar que el combate aún tiene enemigos vivos
+            if combate_en_curso.enemigos_vivos():
+                combate_en_curso.jugadores.append(player)
+                player.combate = combate_en_curso
+                await player.send("  ⚔️  Te has unido al combate en curso en esta sala!")
+                await broadcast_sala(player.sala_id, f"  {player.nombre} se ha unido al combate!", excluir=player)
+                enemigos_info = [
+                    {"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")}
+                    for e in combate_en_curso.enemigos_vivos()
+                ]
+                try:
+                    await player.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
+                except Exception:
+                    pass
+            else:
+                # Si no hay enemigos vivos, limpiar el combate
+                del combates_activos[player.sala_id]
+                for p in combate_en_curso.jugadores:
+                    p.combate = None
 
     await describir_sala(player)
     # Quest check: nova sala
@@ -2932,7 +3013,7 @@ async def pedir_accion(player: Player, combate: Combate):
         "  decir <msg>  |  g <msg>"
     )
 
-    deadline = asyncio.get_event_loop().time() + 30  # 30s por turno
+    deadline = asyncio.get_event_loop().time() + 60  # 60s por turno
 
     while True:
         tiempo_restante = max(0.1, deadline - asyncio.get_event_loop().time())
@@ -2945,7 +3026,7 @@ async def pedir_accion(player: Player, combate: Combate):
                 combate.jugadores.remove(player)
             player.combate = None
             await player.send(
-                "\n  ⚠️  Has sido expulsado del combate por inactividad (30 segundos sin acción)."
+                "\n  ⚠️  Has sido expulsado del combate por inactividad (60 segundos sin acción)."
                 "\n  Has sido trasladado a la sala segura."
             )
             await broadcast_sala(combate.sala_id, f"  {player.nombre} fue expulsado del combate por inactividad.", excluir=player)
@@ -3469,6 +3550,42 @@ async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
 # Rate limiting: max 1 comando cada 0.5s per jugador
 _last_cmd_time: dict = {}
 
+# Periodic cleanup task
+_cleanup_task = None
+
+async def _periodic_cleanup():
+    """Periodically clean up completed tasks to prevent memory leaks."""
+    global _background_tasks, _cleanup_tasks
+    leaderboard_update_count = 0
+    
+    while True:
+        await asyncio.sleep(60)  # Check every minute
+        
+        # Clean up completed background tasks
+        completed_tasks = {t for t in _background_tasks if t.done()}
+        _background_tasks -= completed_tasks
+        
+        # Clean up completed cleanup tasks
+        completed_cleanup = {t for t in _cleanup_tasks if t.done()}
+        _cleanup_tasks -= completed_cleanup
+        
+        # Also clean up old rate limiting entries (older than 1 hour)
+        import time
+        cutoff_time = time.time() - 3600
+        old_entries = [k for k, v in _last_cmd_time.items() if v < cutoff_time]
+        for k in old_entries:
+            _last_cmd_time.pop(k, None)
+        
+        # Update leaderboard every 5 minutes
+        leaderboard_update_count += 1
+        if leaderboard_update_count >= 5:
+            leaderboard_update_count = 0
+            try:
+                await broadcast_leaderboard()
+            except Exception as e:
+                print(f"[LB] Error actualizando leaderboard periódicamente: {e}")
+
+
 async def procesar_comando(player: Player, cmd: str):
     # Rate limit
     now = asyncio.get_event_loop().time()
@@ -3606,7 +3723,7 @@ async def procesar_comando(player: Player, cmd: str):
             f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}")
 
     elif ac in ("guardar", "save"):
-        await guardar_cuenta_async(player)
+        await guardar_cuenta_async(player, immediate=True)
         await player.send("  Progreso guardado.")
 
     elif ac == "ayuda":
@@ -3869,7 +3986,7 @@ async def handle_game_ws(ws, usuario: str):
         print(f"[GAME] Error: {e}")
     finally:
         if player.usuario and player.personaje:
-            await guardar_cuenta_async(player)
+            await guardar_cuenta_async(player, immediate=True)
             print(f"[SAVE] {player.usuario}")
         if player.grupo:
             asyncio.create_task(cmd_salirgrupo(player))
@@ -5361,6 +5478,11 @@ async def main():
     print(f"[SERVER] Salas con acertijos: 33, 37")
     print("[SERVER] Listo.\n")
 
+    # Start periodic cleanup task
+    global _cleanup_task
+    _cleanup_task = asyncio.create_task(_periodic_cleanup())
+    _cleanup_tasks.add(_cleanup_task)
+
     # ── Graceful shutdown on SIGTERM (Render sends this on restart/deploy) ──
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
@@ -5383,11 +5505,21 @@ async def main():
     for player in list(jugadores_conectados):
         if player.usuario and player.personaje:
             try:
-                await guardar_cuenta_async(player)
+                await guardar_cuenta_async(player, immediate=True)
                 saved += 1
             except Exception as e:
-                print(f"[SAVE] Error guardant {player.usuario}: {e}")
-    print(f"[SERVER] {saved} jugadors guardats. Apagant...")
+                print(f"[SAVE] Error guardando {player.usuario}: {e}")
+    print(f"[SERVER] {saved} jugadores guardados. Apagant...")
+    
+    # Cancel cleanup task
+    global _cleanup_task
+    if _cleanup_task and not _cleanup_task.done():
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+    
     await runner.cleanup()
 
 if __name__ == "__main__":
