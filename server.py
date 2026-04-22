@@ -1017,207 +1017,221 @@ HTML = """<!DOCTYPE html>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0d0d0d;--bg2:#141414;--bg3:#1c1c1c;--bg4:#222;
-  --text:#e0e0e0;--text2:#888;--accent:#c9a227;--accent2:#8b5cf6;
-  --danger:#ef4444;--success:#22c55e;--info:#3b82f6;
-  --hp:#dc2626;--mana:#2563eb;
+  --bg:#0a0a0f;--bg2:#13131a;--bg3:#1a1a24;--bg4:#222230;
+  --text:#e8e8f0;--text2:#a0a0b0;--accent:#d4af37;--accent2:#c084fc;
+  --danger:#ef4444;--success:#10b981;--info:#3b82f6;
+  --hp:#ef4444;--mana:#3b82f6;
 }
-body{font-family:'Courier New',monospace;background:var(--bg);color:var(--text);min-height:100vh}
-#app{max-width:1200px;margin:0 auto;padding:10px;display:grid;grid-template-columns:1fr 300px;gap:10px;min-height:100vh}
-#main{flex:1;display:flex;flex-direction:column;gap:10px}
-#sidebar{display:flex;flex-direction:column;gap:10px}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:radial-gradient(circle at center, #1a1a24 0%, #0a0a0f 100%);color:var(--text);min-height:100vh}
+::selection{background:var(--accent);color:#000}
+
+/* Main Layout */
+#app{max-width:1400px;margin:0 auto;padding:15px;min-height:100vh}
+#main{flex:1;display:flex;flex-direction:column;gap:12px;max-width:900px;margin:0 auto}
+#sidebar{display:flex;flex-direction:column;gap:12px;width:320px}
 
 /* Login */
-#login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000}
-#login-screen.hidden{display:none}
-.login-box{background:var(--bg2);padding:30px;border-radius:10px;border:1px solid var(--accent);width:350px;text-align:center}
-.login-box h1{color:var(--accent);margin-bottom:20px;font-size:24px}
-.login-box input,.login-box select{width:100%;padding:12px;margin:8px 0;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:5px;font-size:14px}
-.login-box button{width:100%;padding:12px;margin:8px 0;background:var(--accent);color:#000;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:14px;transition:transform 0.1s}
-.login-box button:hover{transform:scale(1.02)}
-.login-box button.secondary{background:var(--bg3);color:var(--text);border:1px solid #444}
+#login-screen{position:fixed;inset:0;background:radial-gradient(circle, #1a1a24 0%, #0a0a0f 100%);display:flex;align-items:center;justify-content:center;z-index:1000}
+.login-box{background:linear-gradient(145deg, #1a1a24, #13131a);padding:40px;border-radius:20px;border:2px solid var(--accent);box-shadow:0 0 40px rgba(212, 175, 55, 0.2);width:400px;text-align:center}
+.login-box h1{color:var(--accent);margin-bottom:30px;font-size:28px;font-weight:bold;letter-spacing:2px}
+.login-box input{width:100%;padding:15px;margin:12px 0;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:10px;font-size:14px;transition:all 0.3s}
+.login-box input:focus{outline:none;box-shadow:0 0 15px rgba(212, 175, 55, 0.4)}
+.login-box select{width:100%;padding:15px;margin:12px 0;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:10px;font-size:14px}
+.login-box button{width:100%;padding:15px;margin:12px 0;background:var(--accent);color:#000;border:none;border-radius:10px;cursor:pointer;font-weight:bold;font-size:16px;transition:all 0.3s}
+.login-box button:hover{transform: translateY(-2px);box-shadow:0 5px 20px rgba(212, 175, 55, 0.6)}
+.login-box button.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--accent)}
+.login-box button.secondary:hover{background:var(--accent);color:#000}
 
 /* Header */
-header{background:var(--bg2);padding:15px;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
-header h1{color:var(--accent);font-size:18px}
-#player-info{display:flex;gap:15px;align-items:center;font-size:13px}
-.stat{background:var(--bg3);padding:5px 10px;border-radius:4px}
-.stat.hp{color:var(--hp)}
-.stat.mana{color:var(--mana)}
-
-/* Stats Panel */
-#stats-panel{background:var(--bg2);padding:15px;border-radius:8px}
-#stats-panel h3{color:var(--accent);margin-bottom:10px;font-size:14px}
-.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px}
-.stat-row{display:flex;justify-content:space-between}
-.stat-label{color:var(--text2)}
+header{background:var(--bg2);padding:15px;border-radius:15px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 15px rgba(0,0,0,0.3)}
+header h1{color:var(--accent);font-size:20px;font-weight:bold}
+#player-info{display:flex;gap:12px;align-items:center}
+.stat{background:var(--bg);padding:8px 15px;border-radius:8px;min-width:100px;text-align:center;transition:all 0.3s}
+.stat.hp{color:var(--hp);border:1px solid var(--hp);box-shadow:0 0 10px rgba(239, 68, 68, 0.2)}
+.stat.mana{color:var(--mana);border:1px solid var(--mana);box-shadow:0 0 10px rgba(59, 130, 246, 0.2)}
+.stat.gold{color:var(--accent);border:1px solid var(--accent);box-shadow:0 0 10px rgba(212, 175, 55, 0.2)}
 
 /* Room */
-#room{background:var(--bg2);padding:15px;border-radius:8px;flex:1}
-#room-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-#room-name{color:var(--accent);font-size:16px;font-weight:bold}
-#room-desc{color:var(--text2);font-size:13px;margin-bottom:10px;line-height:1.5}
-#exits{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.exit-btn{background:var(--bg3);border:1px solid #333;padding:8px 12px;border-radius:4px;color:var(--text);cursor:pointer;font-size:12px;transition:all 0.1s}
-.exit-btn:hover{background:var(--accent);color:#000}
-.room-features{display:flex;gap:10px;margin:10px 0}
-.feature{background:var(--bg3);padding:5px 10px;border-radius:4px;font-size:11px}
-.feature.hospital{color:var(--success)}
-.feature.enemy{color:var(--danger)}
-.feature.store{color:var(--accent)}
-
-/* Players in room */
-#players-in-room{margin-top:10px;font-size:12px;color:var(--text2)}
-#group-info{margin-top:10px;font-size:12px;color:var(--accent2)}
-
-/* Chat */
-#chat{background:var(--bg2);padding:15px;border-radius:8px;display:flex;flex-direction:column;max-height:300px}
-#chat-tabs{display:flex;gap:5px;margin-bottom:10px}
-.chat-tab{background:var(--bg3);border:none;padding:8px 15px;border-radius:4px;color:var(--text2);cursor:pointer;font-size:12px}
-.chat-tab.active{background:var(--accent);color:#000}
-#chat-messages{flex:1;overflow-y:auto;background:var(--bg3);padding:10px;border-radius:4px;font-size:12px;min-height:150px;max-height:200px}
-.chat-msg{margin:5px 0;word-break:break-word}
-.chat-msg .from{color:var(--accent);font-weight:bold}
-.chat-msg.global .from{color:var(--info)}
-.chat-msg.grupo .from{color:var(--accent2)}
-#chat-input{display:flex;gap:5px;margin-top:10px}
-#chat-input input{flex:1;padding:10px;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:4px}
-#chat-input button{background:var(--accent);border:none;padding:10px 20px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold}
-
-/* Combat */
-#combat{background:var(--bg3);padding:15px;border-radius:8px;border:2px solid var(--danger);display:none;margin:10px 0}
-#combat.active{display:block}
-#combat.hidden{display:none}
-#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-#combat-title{color:var(--danger);font-weight:bold}
-#combat-turn{color:var(--text2);font-size:12px}
-#enemies{background:var(--bg2);padding:10px;border-radius:4px;margin-bottom:10px}
-.enemy-row{display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--bg3);margin:5px 0;border-radius:4px}
-.enemy-name{color:var(--danger)}
-.enemy-hp{color:var(--text2);font-size:12px}
-.enemy-hp-bar{width:100px;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
-.enemy-hp-fill{height:100%;background:var(--hp);transition:width 0.3s}
-#combat-actions{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
-.combat-btn{background:var(--bg2);border:1px solid var(--danger);padding:15px;border-radius:4px;color:var(--text);cursor:pointer;text-align:center;transition:all 0.1s;font-size:13px}
-.combat-btn:hover{background:var(--danger);color:#fff}
-.combat-btn.selected{background:var(--danger);color:#fff}
-.attack-btn{background:var(--danger);animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}}
+#room{background:var(--bg2);padding:20px;border-radius:15px;min-height:300px;box-shadow:0 4px 15px rgba(0,0,0,0.3);flex:1}
+#room-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}
+#room-name{color:var(--accent);font-size:22px;font-weight:bold}
+#room-desc{color:var(--text2);font-size:15px;margin:15px 0;line-height:1.8}
+#room-features{display:flex;gap:10px;flex-wrap:wrap;margin:15px 0}
+.feature{background:var(--bg);padding:8px 16px;border-radius:8px;font-size:13px;transition:all 0.3s}
+.feature.hospital{border-left:3px solid var(--success);color:var(--success)}
+.feature.enemy{border-left:3px solid var(--danger);color:var(--danger)}
+.feature.store{border-left:3px solid var(--accent);color:var(--accent)}
+#exits{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
+.exit-btn{background:var(--bg);border:1px solid var(--accent);padding:12px 20px;border-radius:10px;color:var(--text);cursor:pointer;font-weight:bold;transition:all 0.2s}
+.exit-btn:hover{background:var(--accent);color:#000;transform:scale(1.05)}
+#room-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
+.attack-btn{background:var(--danger);padding:15px 30px;border-radius:10px;color:#fff;font-weight:bold;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.7)}50%{box-shadow:0 0 0 12px rgba(239,68,68,0)}}
 
 /* Log */
-#log{background:var(--bg2);padding:15px;border-radius:8px;max-height:350px;min-height:200px;overflow-y:auto;flex:1;display:flex;flex-direction:column}
-#log-entries{font-size:13px;line-height:1.5;flex:1;overflow-y:auto}
-#log-input{display:flex;gap:5px;margin-top:8px}
-#log-input input{flex:1;padding:8px;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:4px}
-#log-input button{background:var(--accent);border:none;padding:8px 15px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold}
-#log-input button.secondary{background:var(--bg3);color:var(--text)}
-.log-entry{color:var(--text2);margin:3px 0}
-.log-entry.error{color:var(--danger)}
-.log-entry.success{color:var(--success)}
-.log-entry.info{color:var(--info)}
-.log-entry.combat{color:var(--danger)}
-.log-entry.loot{color:var(--accent)}
+#log{background:var(--bg2);padding:20px;border-radius:15px;min-height:250px;box-shadow:0 4px 15px rgba(0,0,0,0.3)}
+#log-entries{font-size:14px;line-height:1.7;max-height:200px;overflow-y:auto;min-height:100px}
+.log-entry{margin:8px 0;padding:8px 12px;background:var(--bg);border-left:3px solid var(--text2);border-radius:4px}
+.log-entry.error{border-color:var(--danger);color:var(--danger)}
+.log-entry.success{border-color:var(--success);color:var(--success)}
+.log-entry.combat{border-color:var(--danger);color:var(--danger)}
+.log-entry.loot{border-color:var(--accent);color:var(--accent)}
+.log-input{display:flex;gap:8px;margin-top:15px}
+.log-input input{flex:1;padding:10px;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:8px}
+.log-input button{padding:10px 20px;border:1px solid var(--accent);background:var(--bg);color:var(--text);border-radius:8px;cursor:pointer;transition:0.2s}
+.log-input button:hover{background:var(--accent);color:#000}
+
+/* Combat */
+#combat{background:linear-gradient(135deg, #1a1a24, #13131a);padding:20px;border-radius:15px;border-left:5px solid var(--danger);box-shadow:0 0 30px rgba(239, 68, 68, 0.3);margin:10px 0;animation:combatShake 0.3s}
+@keyframes combatShake{0%{transform:translateX(0)}25%{transform:translateX(-3px)}50%{transform:translateX(3px)}75%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+#combat-title{color:var(--danger);font-size:24px;font-weight:bold}
+#combat-turn{color:var(--text2);font-size:14px}
+#enemies{background:var(--bg3);padding:15px;border-radius:10px;margin-bottom:20px}
+.enemy-row{display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);margin:8px 0;border-radius:8px}
+.enemy-name{color:var(--danger);font-weight:bold;font-size:16px}
+.enemy-hp-bar{width:150px;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;margin-top:5px}
+.enemy-hp-fill{height:100%;background:linear-gradient(90deg, #ef4444, #dc2626);transition:width 0.3s}
+#combat-actions{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
+.combat-btn{background:var(--bg);border:2px solid var(--accent);padding:20px 10px;border-radius:12px;color:var(--text);cursor:pointer;font-weight:bold;font-size:14px;transition:all 0.2s}
+.combat-btn:hover{background:var(--accent);color:#000;border-color:var(--accent)}
+.combat-btn:active{transform:scale(0.98)}
+
+/* Sidebar */
+#sidebar{background:var(--bg2);padding:15px;border-radius:15px;box-shadow:0 4px 15px rgba(0,0,0,0.3)}
+#stats-panel h3,#chat h3,#ranking h3{color:var(--accent);font-size:16px;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px solid var(--bg4)}
+.stat-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bg4)}
+.stat-label{color:var(--text2);font-size:13px}
+.stat-value{font-weight:bold;color:var(--text);font-size:13px}
+#char-class{color:var(--accent)}
+
+/* Chat */
+#chat{background:var(--bg3);padding:15px;border-radius:10px}
+#chat-tabs{display:flex;gap:8px;margin-bottom:10px}
+.chat-tab{background:var(--bg);border:1px solid var(--accent);padding:8px 12px;border-radius:6px;color:var(--text2);cursor:pointer;font-size:12px;flex:1}
+.chat-tab.active{background:var(--accent);color:#000}
+#chat-messages{background:var(--bg);padding:10px;border-radius:8px;flex:1;overflow-y:auto;max-height:200px;min-height:100px}
+.chat-msg{margin:8px 0;padding:8px 12px;background:var(--bg3);border-radius:6px;font-size:13px}
+.chat-msg .from{color:var(--accent);font-weight:bold;display:block;margin-bottom:3px}
+.chat-msg.global .from{color:var(--info)}
+.chat-msg.grupo .from{color:var(--accent2)}
+.chat-input{display:flex;gap:8px;margin-top:8px}
+.chat-input input{flex:1;background:var(--bg);border:1px solid var(--accent);padding:8px;border-radius:6px;color:var(--text)}
+.chat-input button{background:var(--accent);border:none;padding:8px 15px;border-radius:6px;color:#000;cursor:pointer;font-weight:bold}
 
 /* Ranking */
-#ranking{background:var(--bg2);padding:15px;border-radius:8px}
-#ranking h3{color:var(--accent);margin-bottom:10px;font-size:14px}
-#ranking-list{font-size:12px}
-.ranking-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bg3)}
-.ranking-row:nth-child(1){color:var(--accent);font-weight:bold}
-.ranking-pos{color:var(--text2);margin-right:10px}
+#ranking{background:var(--bg3);padding:15px;border-radius:10px}
+.ranking-row{display:flex;justify-content:space-between;padding:10px 8px;background:var(--bg);margin:5px 0;border-radius:6px;transition:all 0.2s}
+.ranking-row:hover{background:var(--bg4)}
+.ranking-row:nth-child(1){background:var(--accent);color:#000;font-weight:bold}
+.ranking-row:nth-child(2){background:var(--bg4)}
+.ranking-row:nth-child(3){background:var(--bg4)}
+.ranking-pos{color:var(--text2);font-weight:bold}
+.ranking-name{font-weight:bold}
+.ranking-nivel{color:var(--accent)}
 
-/* Buttons */
-.btn{background:var(--accent);border:none;padding:8px 16px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold;font-size:12px;transition:transform 0.1s}
-.btn:hover{transform:scale(1.05)}
-.btn.secondary{background:var(--bg3);color:var(--text);border:1px solid #444}
-
-/* Popups */
-.popup{position:fixed;inset:0;background:rgba(0,0,0,0.9);display:none;align-items:center;justify-content:center;z-index:500;padding:20px}
-.popup.active{display:flex}
-.popup-content{background:var(--bg2);padding:30px;border-radius:10px;max-width:600px;max-height:80vh;overflow-y:auto;border:2px solid var(--accent)}
-.popup-title{color:var(--accent);font-size:20px;margin-bottom:15px}
-.popup-text{line-height:1.8;white-space:pre-wrap;color:var(--text2)}
-.popup-close{background:var(--accent);border:none;padding:10px 30px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold;margin-top:20px}
-
-/* Inventory */
-#inventory{background:var(--bg2);padding:15px;border-radius:8px}
-#inventory h3{color:var(--accent);margin-bottom:10px;font-size:14px}
-.inventory-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.inventory-item{background:var(--bg3);padding:10px;border-radius:4px;text-align:center;cursor:pointer;transition:all 0.1s}
-.inventory-item:hover{background:var(--accent);color:#000}
-.inventory-item .emoji{font-size:20px}
-.inventory-item .name{font-size:10px;margin-top:5px}
+/* Modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:500;padding:20px}
+.modal.active{display:flex}
+.modal-content{background:var(--bg2);padding:30px;border-radius:20px;max-width:600px;max-height:80vh;overflow-y:auto;border:2px solid var(--accent);box-shadow:0 0 50px rgba(0,0,0,0.8)}
+.modal-title{color:var(--accent);font-size:24px;margin-bottom:20px;text-align:center}
+.modal-text{line-height:1.8;white-space:pre-wrap;color:var(--text2);font-size:15px}
+.modal-close{width:100%;padding:12px;background:var(--accent);border:none;border-radius:10px;color:#000;cursor:pointer;font-weight:bold;font-size:16px;transition:0.3s}
 
 /* Shop */
-#shop{background:var(--bg2);padding:15px;border-radius:8px;display:none}
-#shop.active{display:block}
-#shop h3{color:var(--accent);margin-bottom:15px}
-.shop-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);margin:5px 0;border-radius:4px}
-.shop-item-info{display:flex;align-items:center;gap:10px}
-.shop-item-emoji{font-size:24px}
-.shop-item-name{font-size:13px}
-.shop-item-price{color:var(--accent);font-size:12px}
-.shop-buy-btn{background:var(--accent);border:none;padding:5px 15px;border-radius:4px;color:#000;cursor:pointer;font-size:11px}
+.shop-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:15px}
+.shop-item{background:var(--bg);padding:15px;border-radius:10px;text-align:center;transition:all 0.2s;cursor:pointer}
+.shop-item:hover{transform:translateY(-3px);box-shadow:0 5px 20px rgba(0,0,0,0.4)}
+.shop-item.emoji{font-size:40px;margin-bottom:10px}
+.shop-item-name{font-size:14px;color:var(--text);font-weight:bold}
+.shop-item-price{color:var(--accent);font-size:13px;margin-top:10px;display:block}
 
-/* Health/Mana bars */
-.bar-container{width:100%;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;margin:2px 0}
-.bar-fill{height:100%;transition:width 0.3s}
-.bar-fill.hp{background:var(--hp)}
-.bar-fill.mana{background:var(--mana)}
+/* Buttons */
+.btn{background:var(--accent);border:none;padding:10px 20px;border-radius:8px;color:#000;cursor:pointer;font-weight:bold;transition:all 0.2s}
+.btn:hover{transform:scale(1.05);box-shadow:0 5px 15px rgba(212, 175, 55, 0.4)}
+.btn.secondary{background:var(--bg);color:var(--text);border:1px solid var(--accent)}
+.btn.secondary:hover{background:var(--bg4)}
+
+/* Popups */
+.popup{position:fixed;inset:0;background:rgba(0,0,0,0.95);display:none;align-items:center;justify-content:center;z-index:500;padding:20px}
+.popup.active{display:flex}
+.popup-content{background:linear-gradient(145deg, #1a1a24, #13131a);padding:30px;border-radius:20px;max-width:600px;max-height:80vh;overflow-y:auto;border:2px solid var(--accent);box-shadow:0 0 40px rgba(212, 175, 55, 0.3)}
+.popup-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.popup-title{color:var(--accent);font-size:24px;text-align:center}
+.popup-close{background:var(--bg4);color:var(--text);border:1px solid var(--accent);padding:8px 16px;border-radius:8px;cursor:pointer}
+.popup-close:hover{background:var(--danger);color:#fff}
 
 /* Responsive */
 @media(max-width:768px){
-  #app{grid-template-columns:1fr}
-  #sidebar{display:none}
+  #app{padding:5px}
+  #main{max-width:none}
+  .login-box{width:95%}
+  #sidebar{width:100%;max-width:320px;margin:0 auto}
+  #room-actions{justify-content:space-between}
 }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="main">
-<!-- Login -->
-    <div id="login-screen">
-      <div class="login-box">
-        <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
-        <input type="text" id="username" placeholder="Usuario">
-        <input type="password" id="password" placeholder="Contrasena">
-        <input type="text" id="char-name" placeholder="Nombre de personaje">
-        <select id="char-class">
-          <option value="guerrero">Guerrero - Alta vida, dano medio</option>
-          <option value="mago">Mago - Baja vida, magia poderosa</option>
-          <option value="arquero">Arquero - Dano bajo, ataques rapidos</option>
-          <option value="curandero">Curandero - Pode curarse</option>
-          <option value="nigromante">Nigromante - Mucho mana, ataques multiples</option>
-          <option value="hechicero">Hechicero - Magia avanzada</option>
-          <option value="caballero">Caballero - Equilibrado</option>
-          <option value="cazador">Cazador - Alto dano fisico</option>
-          <option value="asesino">Asesino - Criticos letales</option>
-          <option value="barbaro">Barbaro - Dano brutal</option>
-        </select>
-        <button onclick="login()">🎮 JUGAR</button>
-        <button class="secondary" onclick="register()">Crear cuenta</button>
-        <div id="multiplayer-status" style="margin-top:15px;font-size:11px;color:var(--text2)">
-          🌐 Multijugador en vivo - <span id="online-count">0</span> jugadores online
-        </div>
-        <div id="login-error" style="color:var(--danger);font-size:12px;margin-top:10px;display:none"></div>
+  <!-- Login Modal -->
+  <div id="login-screen">
+    <div class="login-box">
+      <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
+      <input type="text" id="username" placeholder="Usuario">
+      <input type="password" id="password" placeholder="Contrasena">
+      <input type="text" id="char-name" placeholder="Nombre de personaje">
+      <select id="char-class">
+        <option value="guerrero">⚔️ Guerrero - Alta vida, dano medio</option>
+        <option value="mago">🔮 Mago - Baja vida, magia poderosa</option>
+        <option value="arquero">🏹 Arquero - Dano bajo, ataques rapidos</option>
+        <option value="curandero">💚 Curandero - Pode curarse</option>
+        <option value="nigromante">💀 Nigromante - Mucho mana, ataques multiples</option>
+        <option value="hechicero">✨ Hechicero - Magia avanzada</option>
+        <option value="caballero">🛡️ Caballero - Equilibrado</option>
+        <option value="cazador">🎯 Cazador - Alto dano fisico</option>
+        <option value="asesino">🗡️ Asesino - Criticos letales</option>
+        <option value="barbaro">🔥 Barbaro - Dano brutal</option>
+      </select>
+      <button onclick="login()">🎮 JUGAR</button>
+      <button class="secondary" onclick="register()">➕ Crear cuenta</button>
+      <div style="margin-top:20px;font-size:13px;color:var(--text2);padding:10px;background:var(--bg);border-radius:8px">
+        🌐 <strong>Multijugador en vivo</strong> - <span id="online-count">0</span> jugadores online
       </div>
+      <div id="login-error" style="color:var(--danger);font-size:13px;margin-top:10px;display:none"></div>
     </div>
-    </div>
-    
+  </div>
+  
+  <div id="main">
+    <!-- Header -->
     <header>
       <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
       <div id="player-info">
-        <span class="stat" id="stat-level">Nivel 1</span>
-        <span class="stat hp" id="stat-hp">HP: 0/0</span>
-        <span class="stat mana">Mana: 0/0</span>
-        <span class="stat" id="stat-medas">💰 0</span>
+        <span class="stat" id="stat-level">⭐ Nv 1</span>
+        <span class="stat hp" id="stat-hp">❤️ 0/0</span>
+        <span class="stat mana" id="stat-mana">💧 0/0</span>
+        <span class="stat gold" id="stat-medas">💰 0</span>
       </div>
     </header>
     
-    <!-- Combat -->
-    <div id="combat">
+    <!-- Room Info -->
+    <div id="room">
+      <div id="room-header">
+        <span id="room-name">Cargando...</span>
+        <button class="btn" onclick="refreshRoom()">🔄 Ver</button>
+      </div>
+      <div id="room-desc"></div>
+      <div id="room-features"></div>
+      <div id="room-actions"></div>
+      <div id="exits"></div>
+      <div id="players-in-room" style="margin:15px 0;color:var(--text2);font-size:14px"></div>
+      <div id="group-info" style="margin:15px 0;color:var(--accent2);font-size:14px"></div>
+    </div>
+    
+    <!-- Combat Section -->
+    <div id="combat" style="display:none">
       <div id="combat-header">
-        <span id="combat-title">⚔️ COMBATE</span>
+        <span id="combat-title">⚔️ COMBATE - <span id="enemy-count">0</span> enemigos</span>
         <span id="combat-turn">Turno 1</span>
       </div>
       <div id="enemies"></div>
@@ -1225,36 +1239,19 @@ header h1{color:var(--accent);font-size:18px}
         <button class="combat-btn" onclick="sendAction('1')">⚔️ ATACAR</button>
         <button class="combat-btn" onclick="sendAction('2')">✨ ESPECIAL</button>
         <button class="combat-btn" onclick="sendAction('3')">💤 PASAR</button>
-        <button class="combat-btn" onclick="showInventory()">🎒 OBJETO</button>
+        <button class="combat-btn" onclick="openInventory()">🎒 OBJETO</button>
       </div>
     </div>
     
-    <!-- Room -->
-    <div id="room">
-      <div id="room-header">
-        <span id="room-name">Cargando...</span>
-        <button class="btn" onclick="refreshRoom()">🔄</button>
-      </div>
-      <div id="room-desc"></div>
-      <div class="room-features" id="room-features"></div>
-      <div id="room-actions">
-        <button class="btn attack-btn" id="btn-atacar" onclick="attack()" style="display:none">⚔️ ATACAR</button>
-        <button class="btn secondary" id="btn-hospital" onclick="hospital()" style="display:none">🏥 Hospital</button>
-        <button class="btn secondary" id="btn-tienda" onclick="openTienda()" style="display:none">🏪 Tienda</button>
-      </div>
-      <div id="exits"></div>
-      <div id="players-in-room"></div>
-      <div id="group-info"></div>
-    </div>
-    
-    <!-- Log / Console -->
+    <!-- Log -->
     <div id="log">
       <div id="log-entries"></div>
-      <div id="log-input">
-        <input type="text" id="cmd-input" placeholder="Comando o mensaje..." onkeypress="if(event.key==='Enter')sendCmd()">
+      <div class="log-input">
+        <input type="text" id="cmd-input" placeholder="Escribe un comando o mensaje..." onkeypress="if(event.key==='Enter')sendCmd()">
         <button onclick="sendCmd()">➤</button>
         <button class="secondary" onclick="sendCmd('stats')">Stats</button>
-        <button class="secondary" onclick="sendCmd('ranking')">Ranking</button>
+        <button class="secondary" onclick="sendCmd('ranking')">🏆</button>
+        <button class="secondary" onclick="sendCmd('ayuda')">?</button>
       </div>
     </div>
   </div>
@@ -1262,26 +1259,26 @@ header h1{color:var(--accent);font-size:18px}
   <div id="sidebar">
     <!-- Stats -->
     <div id="stats-panel">
-      <h3>📊 TUS ESTADISTICAS</h3>
+      <h3>📊 ESTADISTICAS</h3>
       <div class="stats-grid">
-        <div class="stat-row"><span class="stat-label">Nombre:</span><span id="sp-nombre">-</span></div>
-        <div class="stat-row"><span class="stat-label">Clase:</span><span id="sp-clase">-</span></div>
-        <div class="stat-row"><span class="stat-label">Nivel:</span><span id="sp-nivel">1</span></div>
-        <div class="stat-row"><span class="stat-label">XP:</span><span id="sp-xp">0/150</span></div>
-        <div class="stat-row"><span class="stat-label">Daño:</span><span id="sp-dano">0</span></div>
-        <div class="stat-row"><span class="stat-label">Monedas:</span><span id="sp-medas">0</span></div>
+        <div class="stat-row"><span class="stat-label">Nombre:</span><span class="stat-value" id="sp-nombre">-</span></div>
+        <div class="stat-row"><span class="stat-label">Clase:</span><span class="stat-value" id="sp-clase">-</span></div>
+        <div class="stat-row"><span class="stat-label">Nivel:</span><span class="stat-value" id="sp-nivel">1</span></div>
+        <div class="stat-row"><span class="stat-label">XP:</span><span class="stat-value" id="sp-xp">0/150</span></div>
+        <div class="stat-row"><span class="stat-label">Habilidades:</span><span class="stat-value" id="sp-habilidades">-</span></div>
       </div>
     </div>
     
     <!-- Chat -->
     <div id="chat">
+      <h3>💬 CHAT</h3>
       <div id="chat-tabs">
-        <button class="chat-tab active" onclick="setChat('sala')">Sala</button>
-        <button class="chat-tab" onclick="setChat('global')">Global</button>
-        <button class="chat-tab" onclick="setChat('grupo')">Grupo</button>
+        <button class="chat-tab active" onclick="setChat('sala')">🏠</button>
+        <button class="chat-tab" onclick="setChat('global')">🌍</button>
+        <button class="chat-tab" onclick="setChat('grupo')">👥</button>
       </div>
       <div id="chat-messages"></div>
-      <div id="chat-input">
+      <div class="chat-input">
         <input type="text" id="chat-msg" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter')sendChat()">
         <button onclick="sendChat()">➤</button>
       </div>
@@ -1295,12 +1292,22 @@ header h1{color:var(--accent);font-size:18px}
   </div>
 </div>
 
-<!-- Lore Popup -->
-<div id="lore-popup" class="popup">
-  <div class="popup-content">
-    <div class="popup-title" id="lore-title"></div>
-    <div class="popup-text" id="lore-text"></div>
-    <button class="popup-close" onclick="closeLore()">CONTINUAR</button>
+<!-- Lore Modal -->
+<div id="lore-modal" class="modal">
+  <div class="modal-content">
+    <h2 class="modal-title" id="lore-title"></h2>
+    <div class="modal-text" id="lore-text"></div>
+    <button class="modal-close" onclick="closeModal()">CONTINUAR</button>
+  </div>
+</div>
+
+<!-- Shop Modal -->
+<div id="shop-modal" class="modal">
+  <div class="modal-content">
+    <h2 class="modal-title">🏪 TIENDA</h2>
+    <p style="text-align:center;color:var(--accent);margin-bottom:15px" id="shop-money">💰 0 monedas</p>
+    <div class="shop-grid" id="shop-grid"></div>
+    <button class="modal-close" onclick="closeModal()">cerrar</button>
   </div>
 </div>
 
@@ -1342,7 +1349,6 @@ function login(){
   
   ws.onclose = () => {
     log('Conexion perdida','error');
-    setTimeout(()=>location.reload(), 2000);
   };
 }
 
@@ -1355,8 +1361,7 @@ function register(){
   if(!usuario){showLoginError('Introduce tu usuario');return;}
   if(!password || password.length < 4){showLoginError('Contrasena minimo 4 caracteres');return;}
   
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+  ws = new WebSocket(window.location.protocol === 'https:' ? 'wss:' + '//' + window.location.host + '/ws' : 'ws:' + '//' + window.location.host + '/ws');
   
   ws.onopen = () => {
     ws.send(JSON.stringify({type:'register', usuario, password, nombre, clase}));
@@ -1366,90 +1371,40 @@ function register(){
     const data = JSON.parse(e.data);
     handleMessage(data);
   };
-  
-  ws.onclose = () => {
-    log('Conexion perdida','error');
-    setTimeout(()=>location.reload(), 2000);
-  };
 }
 
 function showLoginError(msg){
   const el = document.getElementById('login-error');
   el.textContent = msg;
   el.style.display = 'block';
-}
-
-function sendCmd(cmd){
-  if(!cmd){
-    const input = document.getElementById('cmd-input');
-    cmd = input.value.trim();
-    if(!cmd) return;
-    input.value = '';
-  }
-  ws.send(JSON.stringify({type:'command', cmd}));
+  setTimeout(()=>el.style.display = 'none', 3000);
 }
 
 function handleMessage(data){
-  if(data.type === 'login_ok'){
+  if(data.type === 'login_ok' || data.type === 'register_ok'){
     document.getElementById('login-screen').classList.add('hidden');
     log('Bienvenido a The Return to Highdown!','success');
-  }
-  else if(data.type === 'register_ok'){
-    document.getElementById('login-screen').classList.add('hidden');
-    log('Cuenta creada! Bienvenido!','success');
   }
   else if(data.type === 'login_error'){
     showLoginError(data.text || 'Error de login');
   }
-  else if(data.type === 'message'){
-    log(data.text, data.text.includes('!') ? 'success' : 'info');
-  }
   else if(data.type === 'online_count'){
     document.getElementById('online-count').textContent = data.count;
   }
+  else if(data.type === 'message'){
+    log(data.text, data.text.includes('!') ? 'success' : 'info');
+  }
   else if(data.type === 'sala'){
-    document.getElementById('room-name').textContent = data.nombre;
-    document.getElementById('room-desc').textContent = data.descripcion;
-    
-    let exitsHtml = '';
-    for(let dir in data.conexiones){
-      exitsHtml += `<button class="exit-btn" onclick="move('${dir}')">${dir.toUpperCase()}</button>`;
-    }
-    document.getElementById('exits').innerHTML = exitsHtml;
-    
-    let features = '';
-    if(data.hospital) features += '<span class="feature hospital">🏥 Hospital</span>';
-    if(data.tienda) features += '<span class="feature store">🏪 Tienda</span>';
-    if(data.enemigos) features += '<span class="feature enemy">⚠️ ENEMIGOS</span>';
-    document.getElementById('room-features').innerHTML = features;
-    
-    if(data.others) document.getElementById('players-in-room').innerHTML = data.others;
-    else document.getElementById('players-in-room').innerHTML = '';
-    
-    if(data.grupo) document.getElementById('group-info').innerHTML = data.grupo;
-    else document.getElementById('group-info').innerHTML = '';
-    
-    document.getElementById('btn-atacar').style.display = data.enemigos ? 'block' : 'none';
-    document.getElementById('btn-hospital').style.display = data.hospital ? 'block' : 'none';
-    document.getElementById('btn-tienda').style.display = data.tienda ? 'block' : 'none';
+    updateRoom(data);
   }
   else if(data.type === 'status'){
     updateStats(data);
   }
   else if(data.type === 'combat_start'){
-    inCombat = true;
-    document.getElementById('combat').classList.add('active');
-    updateEnemies(data.enemigos);
-    log('COMBATE INICIADO!','combat');
+    showCombat(data.enemigos);
   }
   else if(data.type === 'combat_end'){
-    inCombat = false;
-    document.getElementById('combat').classList.remove('active');
-    if(data.victory){
-      log('VICTORIA! +' + data.xp + ' XP','loot');
-    }else{
-      log('DERROTA...','error');
-    }
+    hideCombat();
   }
   else if(data.type === 'combat_update'){
     updateEnemies(data.enemigos);
@@ -1462,35 +1417,76 @@ function handleMessage(data){
     updateRanking(data.ranking);
   }
   else if(data.type === 'lore'){
-    document.getElementById('lore-title').textContent = data.titulo;
-    document.getElementById('lore-text').textContent = data.text;
-    document.getElementById('lore-popup').classList.add('active');
+    showModal('lore-modal', data.titulo, data.text);
+  }
+  else if(data.type === 'shop'){
+    showShop(data.items, data.monedas);
   }
   else if(data.type === 'level_up'){
-    log('🎉 SUBISTE AL NIVEL ' + data.nivel + '!','success');
+    log('🎉 SUBISTE AL NIVEL ' + data.nivel + '!', 'success');
+  }
+  else if(data.type === 'inventory'){
+    showInventoryModal(data.items);
   }
   else if(data.type === 'respawn'){
     refreshRoom();
   }
-  else if(data.type === 'tienda'){
-    showShop(data.items, data.monedas);
+}
+
+function updateRoom(data){
+  document.getElementById('room-name').textContent = data.nombre;
+  document.getElementById('room-desc').textContent = data.descripcion;
+  
+  let exits = '';
+  for(let dir in data.conexiones){
+    exits += `<button class="exit-btn" onclick="move('${dir}')">${dir.toUpperCase()}</button>`;
   }
+  document.getElementById('exits').innerHTML = exits;
+  
+  let features = '';
+  if(data.hospital) features += '<span class="feature hospital">🏥 Hospital</span>';
+  if(data.tienda) features += '<span class="feature store">🏪 Tienda</span>';
+  if(data.enemigos) features += '<span class="feature enemy">⚠️ ENEMIGOS</span>';
+  document.getElementById('room-features').innerHTML = features;
+  
+  let actions = '';
+  if(data.enemigos) actions += `<button class="btn attack-btn" onclick="attack()">⚔️ ATACAR</button>`;
+  if(data.hospital) actions += `<button class="btn secondary" onclick="hospital()">🏥 Hospital</button>`;
+  if(data.tienda) actions += `<button class="btn secondary" onclick="openTienda()">🏪 Tienda</button>`;
+  document.getElementById('room-actions').innerHTML = actions;
+  
+  if(data.others) document.getElementById('players-in-room').innerHTML = '👥 Jugadores: ' + data.others;
+  else document.getElementById('players-in-room').innerHTML = '';
+  
+  if(data.grupo) document.getElementById('group-info').innerHTML = '👥 ' + data.grupo;
+  else document.getElementById('group-info').innerHTML = '';
 }
 
 function updateStats(data){
-  document.getElementById('stat-level').textContent = 'Nivel ' + (data.nivel || 1);
-  document.getElementById('stat-hp').textContent = 'HP: ' + (data.hp || 0) + '/' + (data.hpMax || 1);
+  document.getElementById('stat-level').textContent = '⭐ Nv ' + (data.nivel || 1);
+  document.getElementById('stat-hp').textContent = '❤️ ' + (data.hp || 0) + '/' + (data.hpMax || 1);
   document.getElementById('stat-medas').textContent = '💰 ' + (data.monedas || 0);
-  
-  const manaEl = document.querySelector('#player-info .stat:nth-child(3)');
-  if(manaEl) manaEl.textContent = 'Mana: ' + (data.mana || 0) + '/' + (data.manaMax || 1);
+  document.getElementById('stat-mana').textContent = '💧 ' + (data.mana || 0) + '/' + (data.manaMax || 1);
   
   document.getElementById('sp-nombre').textContent = data.nombre || '-';
   document.getElementById('sp-clase').textContent = data.clase || '-';
   document.getElementById('sp-nivel').textContent = data.nivel || 1;
   document.getElementById('sp-xp').textContent = (data.xp || 0) + '/' + (data.xpMax || 150);
-  document.getElementById('sp-dano').textContent = data.danio || 0;
-  document.getElementById('sp-medas').textContent = data.monedas || 0;
+  document.getElementById('sp-habilidades').textContent = data.habilidades || '-';
+}
+
+function showCombat(enemies){
+  inCombat = true;
+  document.getElementById('combat').style.display = 'block';
+  document.getElementById('enemy-count').textContent = enemies.length;
+  updateEnemies(enemies);
+  log('⚔️ COMBATE INICIADO!','combat');
+}
+
+function hideCombat(){
+  inCombat = false;
+  document.getElementById('combat').style.display = 'none';
+  log('Combate finalizado','info');
 }
 
 function updateEnemies(enemies){
@@ -1499,11 +1495,13 @@ function updateEnemies(enemies){
   enemies.forEach(e => {
     const pct = (e.hp / e.hpMax) * 100;
     html += `<div class="enemy-row">
-      <span class="enemy-name">${e.nombre}</span>
       <div>
-        <span class="enemy-hp">${e.hp}/${e.hpMax}</span>
-        <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${pct}%"></div></div>
+        <span class="enemy-name">${e.nombre}</span>
+        <div class="enemy-hp-bar">
+          <div class="enemy-hp-fill" style="width:${pct}%"></div>
+        </div>
       </div>
+      <span class="enemy-hp">${e.hp}/${e.hpMax}</span>
     </div>`;
   });
   el.innerHTML = html;
@@ -1555,7 +1553,7 @@ function addChatMessage(scope, from, text){
   const el = document.getElementById('chat-messages');
   const div = document.createElement('div');
   div.className = 'chat-msg ' + scope;
-  div.innerHTML = `<span class="from">[${scope.toUpperCase()}] ${from}:</span> ${text}`;
+  div.innerHTML = `<span class="from">[${scope.toUpperCase()} ${from}]</span> ${text}`;
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
 }
@@ -1565,52 +1563,75 @@ function updateRanking(ranking){
   let html = '';
   ranking.forEach((r,i) => {
     html += `<div class="ranking-row">
-      <span><span class="ranking-pos">${i+1}.</span>${r.nombre}</span>
-      <span>Nv.${r.nivel}</span>
+      <span><span class="ranking-pos">${i+1}.</span> <span class="ranking-name">${r.nombre}</span></span>
+      <span class="ranking-nivel">Nv.${r.nivel} (${r.clase})</span>
     </div>`;
   });
   el.innerHTML = html;
 }
 
-function closeLore(){
-  document.getElementById('lore-popup').classList.remove('active');
+function showModal(id, title, text){
+  document.getElementById(id + '-title').textContent = title;
+  document.getElementById(id + '-text').textContent = text;
+  document.getElementById(id).classList.add('active');
+  document.body.style.overflow = 'hidden';
 }
 
-function showInventory(){
-  ws.send(JSON.stringify({type:'command', cmd:'mochila'}));
+function closeModal(){
+  document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+  document.body.style.overflow = 'auto';
 }
 
-function showShop(items, monedas){
-  let html = '<h3>🏪 TIENDA (' + monedas + ' monedas)</h3>';
+function showShop(items, money){
+  document.getElementById('shop-money').textContent = '💰 ' + money + ' monedas';
+  const grid = document.getElementById('shop-grid');
+  grid.innerHTML = '';
   items.forEach(item => {
-    html += `<div class="shop-item">
-      <div class="shop-item-info">
-        <span class="shop-item-emoji">${item.emoji}</span>
-        <span class="shop-item-name">${item.nombre} (x${item.qty})</span>
-      </div>
-      <button class="shop-buy-btn" onclick="buy('${item.id}')">${item.precio}💰</button>
-    </div>`;
+    const div = document.createElement('div');
+    div.className = 'shop-item';
+    div.innerHTML = `
+      <div class="shop-item-emoji">${item.emoji}</div>
+      <div class="shop-item-name">${item.nombre}</div>
+      <span class="shop-item-price">${item.precio}💰</span>
+      <div style="font-size:11px;color:var(--text2);margin-top:5px">x${item.qty}</div>
+    `;
+    div.onclick = () => buyItem(item.id);
+    grid.appendChild(div);
   });
-  document.getElementById('shop').innerHTML = html;
-  document.getElementById('shop').classList.add('active');
+  showModal('shop-modal', 'Tienda', '');
 }
 
-function buy(item){
-  ws.send(JSON.stringify({type:'command', cmd:'comprar ' + item}));
+function buyItem(id){
+  ws.send(JSON.stringify({type:'command', cmd:'comprar ' + id}));
+}
+
+function showInventoryModal(items){
+  // Simplified
+  log('🎒 Inventario:', 'info');
+  items.forEach(i => log(`- ${i.name} x${i.qty}`, 'info'));
+}
+
+function sendCmd(cmd){
+  if(!cmd){
+    const input = document.getElementById('cmd-input');
+    cmd = input.value.trim();
+    if(!cmd) return;
+    input.value = '';
+  }
+  ws.send(JSON.stringify({type:'command', cmd}));
 }
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if(document.getElementById('login-screen').classList.contains('hidden')){
-    if(e.key === '1' && inCombat) sendAction('1');
-    if(e.key === '2' && inCombat) sendAction('2');
-    if(e.key === '3' && inCombat) sendAction('3');
-    if(e.key === '4' && inCombat) sendAction('4');
-    if(e.key === 'n') move('norte');
-    if(e.key === 's') move('sur');
-    if(e.key === 'e') move('este');
-    if(e.key === 'o') move('oeste');
-  }
+  if(!inCombat) return;
+  if(e.key === '1') sendAction('1');
+  if(e.key === '2') sendAction('2');
+  if(e.key === '3') sendAction('3');
+  if(e.key === '4') sendAction('4');
+  if(e.key === 'n') move('norte');
+  if(e.key === 's') move('sur');
+  if(e.key === 'e') move('este');
+  if(e.key === 'o') move('oeste');
 });
 </script>
 </body>
