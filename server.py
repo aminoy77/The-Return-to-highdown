@@ -1,14 +1,15 @@
 """
-server.py — MUD Multiplayer
-============================
-- WS   /ws?u=<user>  → joc WebSocket (navegador + client.py)
-- HTTP /             → serveix la interfície HTML del joc
+THE RETURN TO HIGHDOWN - MUD Game Server
+=========================================
+Optimized for: Render 512MB RAM, 0.1 CPU
 
-Uso:
-  pip install aiohttp
-  python3 server.py
-
-Jugar (navegador): http://<IP>:PORT/
+Features:
+- Single UI with all functionality
+- 3 Chat types: Global, Sala, Group
+- Ranking system
+- Stats screen
+- Combat with buttons (auto-attack)
+- Group system for multiplayer combat
 """
 
 import asyncio
@@ -17,5388 +18,1515 @@ import json
 import os
 import random
 from copy import deepcopy
-from enum import Enum
 from aiohttp import web
 import aiohttp
+import time
 
-SAVES_DIR = "saves"
-os.makedirs(SAVES_DIR, exist_ok=True)
-
-# ── Supabase config (se activa si hay variables de entorno) ──
+# ==================== CONFIG ====================
+PORT = int(os.environ.get("PORT", 8080))
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 USAR_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
-TABLA = "mud_saves"
+SAVES_DIR = "saves"
+os.makedirs(SAVES_DIR, exist_ok=True)
 
-def _sb_headers():
-    return {
-        "apikey":        SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type":  "application/json",
-        "Prefer":        "return=representation",
-    }
-
-# Sessió global reutilitzable (evita crear/destruir una sessió per cada petició)
-_sb_session: aiohttp.ClientSession | None = None
-
-def _get_sb_session() -> aiohttp.ClientSession:
-    global _sb_session
-    if _sb_session is None or _sb_session.closed:
-        timeout = aiohttp.ClientTimeout(total=10)  # 10s max per Supabase call
-        _sb_session = aiohttp.ClientSession(timeout=timeout)
-    return _sb_session
-
-async def _sb_get(usuario: str, retries=3) -> dict | None:
-    """Lee una fila de Supabase. Devuelve el dict o None si no existe."""
-    for attempt in range(retries + 1):
-        try:
-            url = f"{SUPABASE_URL}/rest/v1/{TABLA}?usuario=eq.{usuario}&select=*"
-            s = _get_sb_session()
-            async with s.get(url, headers=_sb_headers(), timeout=aiohttp.ClientTimeout(total=15)) as r:
-                if r.status == 200:
-                    rows = await r.json()
-                    return rows[0] if rows else None
-                elif attempt < retries:
-                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
-        except Exception as e:
-            if attempt < retries:
-                print(f"[SB] Reintentando _sb_get({usuario}), intento {attempt + 1}: {e}")
-                await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
-            else:
-                print(f"[SB] Error _sb_get({usuario}): {e}")
-    return None
-
-async def _sb_upsert(row: dict, retries=3):
-    """Inserta o actualiza una fila en Supabase."""
-    for attempt in range(retries + 1):
-        try:
-            url = f"{SUPABASE_URL}/rest/v1/{TABLA}"
-            headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
-            s = _get_sb_session()
-            async with s.post(url, headers=headers, json=row, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                if r.status in (200, 201):
-                    return
-                elif attempt < retries:
-                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
-        except Exception as e:
-            if attempt < retries:
-                print(f"[SB] Reintentando _sb_upsert, intento {attempt + 1}: {e}")
-                await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
-            else:
-                print(f"[SB] Error _sb_upsert: {e}")
-
-
-# Leaderboard cache (5min TTL)
-_lb_cache: list = []
-_lb_cache_ts: float = 0.0
-_LB_CACHE_TTL = 300  # 5 minutes
-
-async def get_leaderboard_async(limit: int = 20) -> list:
-    """Ranking global ordenado por nivel desc (cached 30s)."""
-    global _lb_cache, _lb_cache_ts
-    import time as _time
-    now = _time.monotonic()
-    if _lb_cache and (now - _lb_cache_ts) < _LB_CACHE_TTL:
-        return _lb_cache[:limit]
-    if USAR_SUPABASE:
-        # PostgREST: traemos todos y ordenamos en Python
-        # (ordenar por campo JSONB anidado no es directo en PostgREST)
-        url = f"{SUPABASE_URL}/rest/v1/{TABLA}?select=usuario,data&limit=50&order=data->nivel.desc.nulls.last"
-        try:
-            s = _get_sb_session()
-            async with s.get(url, headers=_sb_headers(), timeout=aiohttp.ClientTimeout(total=10)) as r:
-                    if r.status == 200:
-                        rows = await r.json()
-                        result = []
-                        for row in rows:
-                            d = row.get("data") or {}
-                            if isinstance(d, str):
-                                try:
-                                    d = json.loads(d)
-                                except Exception:
-                                    continue
-                            if not d.get("nombre"):
-                                continue
-                            result.append({
-                                "nombre":  d.get("nombre", row["usuario"]),
-                                "clase":   d.get("personaje", {}).get("nombreClase", "?"),
-                                "nivel":   int(d.get("nivel", 1)),
-                                "usuario": row["usuario"],
-                            })
-                        result.sort(key=lambda x: x["nivel"], reverse=True)
-                        _lb_cache = result[:limit]
-                        _lb_cache_ts = _time.monotonic()
-                        return _lb_cache
-                    else:
-                        print(f"[LB] Supabase error {r.status}")
-        except Exception as e:
-            print(f"[LB] Error: {e}")
-    # Fallback: ficheros locales
-    result = []
-    if os.path.isdir(SAVES_DIR):
-        # Only process top files to avoid excessive processing
-        files = os.listdir(SAVES_DIR)
-        files = [f for f in files if f.endswith(".json")]
-        # Limit to 100 files to prevent excessive processing
-        files = files[:100]
-        
-        for fname in files:
-            try:
-                with open(os.path.join(SAVES_DIR, fname)) as f:
-                    save_raw = json.load(f)
-                d = save_raw.get("data", save_raw) or {}
-                if not d.get("nombre"):
-                    continue
-                result.append({
-                    "nombre":  d.get("nombre", fname),
-                    "clase":   d.get("personaje", {}).get("nombreClase", "?"),
-                    "nivel":   int(d.get("nivel", 1)),
-                    "usuario": save_raw.get("usuario", fname),
-                })
-            except Exception:
-                pass
-    result.sort(key=lambda x: x["nivel"], reverse=True)
-    _lb_cache = result[:limit]
-    _lb_cache_ts = _time.monotonic()
-    return _lb_cache
-
-
-async def broadcast_leaderboard():
-    """Envía el leaderboard a todos los jugadores conectados."""
-    lb = await get_leaderboard_async()
-    for p in jugadores_conectados:
-        try:
-            await p.ws.send_json({"type": "leaderboard", "ranking": lb})
-        except Exception:
-            pass
-
-# ============================================================
-# DATOS — CLASES COMPLETAS
-# ============================================================
-CLASES = {
-    "guerrero": {
-        "vidaMax": 90, "danioBase": 40, "manaMax": 30, "manaTurno": 10,
-        "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "golpe_tanque"
-    },
-    "mago": {
-        "vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 20,
-        "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 60,
-        "habilidad": "magia_antigua"
-    },
-    "arquero": {
-        "vidaMax": 40, "danioBase": 10, "manaMax": 40, "manaTurno": 15,
-        "danioEspecial": 10, "ataquesTurno": [1, 4], "costoEspecial": 40,
-        "habilidad": "flecha_ignea", "danioEfecto": 10, "duracionEfecto": 2
-    },
-    "curandero": {
-        "vidaMax": 50, "danioBase": 20, "manaMax": 50, "manaTurno": 20,
-        "danioEspecial": 20, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "absorcion", "curacionEspecial": 20
-    },
-    "nigromante": {
-        "vidaMax": 50, "danioBase": 10, "manaMax": 80, "manaTurno": 20,
-        "danioEspecial": 60, "ataquesTurno": [1, 5], "costoEspecial": 60,
-        "habilidad": "maldicion_tiempo"
-    },
-    "hechicero": {
-        "vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 30,
-        "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 70,
-        "habilidad": "invocar_esqueleto"
-    },
-    "caballero": {
-        "vidaMax": 70, "danioBase": 50, "manaMax": 40, "manaTurno": 10,
-        "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 40,
-        "habilidad": "embestida"
-    },
-    "cazador": {
-        "vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 10,
-        "danioEspecial": 30, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "inmovilizar"
-    },
-    "asesino": {
-        "vidaMax": 50, "danioBase": 20, "manaMax": 20, "manaTurno": 10,
-        "danioEspecial": 60, "ataquesTurno": [1, 3], "costoEspecial": 20,
-        "habilidad": "muerte_garantizada"
-    },
-    "barbaro": {
-        "vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 5,
-        "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30,
-        "habilidad": "abocajarro"
-    },
-}
-
-# ============================================================
-# ENEMIGOS COMPLETOS
-# ============================================================
-ENEMIGOS = {
-    # ── Tier Base ──
-    "bandido":       {"vidaMax": 60,  "danioBase": 20, "ataquesTurno": 1,      "tier": "Base"},
-    "slime":         {"vidaMax": 90,  "danioBase": 5,  "ataquesTurno": 2,      "tier": "Base"},
-    "duende":        {"vidaMax": 50,  "danioBase": 15, "ataquesTurno": 2,      "tier": "Base"},
-    "esqueleto":     {"vidaMax": 70,  "danioBase": 25, "ataquesTurno": 1,      "tier": "Base"},
-    "zombie":        {"vidaMax": 80,  "danioBase": 10, "ataquesTurno": 1,      "tier": "Base"},
-    "lobo":          {"vidaMax": 60,  "danioBase": 15, "ataquesTurno": [1, 2], "tier": "Base"},
-    "oso":           {"vidaMax": 75,  "danioBase": 35, "ataquesTurno": 1,      "tier": "Base"},
-    # ── Tier Especial ──
-    "orco":          {"vidaMax": 70,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
-    "ogro":          {"vidaMax": 90,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
-    "troll":         {"vidaMax": 100, "danioBase": 35, "ataquesTurno": 1,      "tier": "Especial"},
-    "gigante":       {"vidaMax": 110, "danioBase": 45, "ataquesTurno": 1,      "tier": "Especial"},
-    "ciclope":       {"vidaMax": 80,  "danioBase": 40, "ataquesTurno": 1,      "tier": "Especial"},
-    "hombreLobo":    {"vidaMax": 90,  "danioBase": 30, "ataquesTurno": [1, 3], "tier": "Especial"},
-    "quimera":       {"vidaMax": 80,  "danioBase": 20, "ataquesTurno": 1,      "tier": "Especial"},
-    "demonioInferior":{"vidaMax": 90, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Especial"},
-    "tiburon":       {"vidaMax": 80,  "danioBase": 30, "ataquesTurno": 1,      "tier": "Especial"},
-    # ── Tier Superior ──
-    "vampiro":       {"vidaMax": 125, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Superior"},
-    "altoOrco":      {"vidaMax": 150, "danioBase": 50, "ataquesTurno": 1,      "tier": "Superior"},
-    "golem":         {"vidaMax": 180, "danioBase": 50, "ataquesTurno": 1,      "tier": "Superior"},
-    "elfoOscuro":    {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1,      "tier": "Superior"},
-    "demonioSuperior":{"vidaMax": 150,"danioBase": 60, "ataquesTurno": 1,      "tier": "Superior"},
-    # ── Tier Elite ──
-    "leviatan":      {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
-    "reyEsqueleto":  {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
-    "dragon":        {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1,      "tier": "Elite"},
-    # ── Tier Boss ──
-    "reyDemonio":    {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1,      "tier": "Boss"},
-    "kraken":        {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1,      "tier": "Boss"},
-    "alpha":         {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1,      "tier": "Boss"},
-}
-
-XP_POR_TIER = {
-    "Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250
-}
-XP_POR_NIVEL   = 150
+# ==================== GAME CONSTANTS ====================
+XP_POR_NIVEL = 150
 MONEDAS_SUBIDA = 20
-SALA_RESPAWN   = 6    # Oasis — sala segura, no hay enemigos
-
-# ── Lore popup — se muestra UNA sola vez al primer inicio ───────
-async def mostrar_lore_inicial(player):
-    """Envia el popup de lore al client com missatge de tipus lore."""
-    linies = [
-        "Hace ya 15 años de la gran tragedia. Ya habían pasado 15 años de la masacre del pueblo de Highdown.",
-        "",
-        "Highdown era un pueblo conocido por que todos los nacidos ahí poseían habilidades sobrehumanas.",
-        "Eso no contentaba a Alpha, el actual rey de la destrucción. Todo lo que encontraba a su paso,",
-        "ardía en un mar de llamas y sangre. Por miedo a que le destronaran de ser el rey de la destrucción,",
-        "decidió hacer una masacre.",
-        "",
-        "Alpha esperó a la noche, que todos estuvieran durmiendo, reunió a sus mejores hombres y aniquiló",
-        "a todos sus habitantes. O eso pensaba él, pues uno de los soldados del pueblo pudo salvar a algunos",
-        "de los niños con futuros más prometedores.",
-        "",
-        'El soldado les dijo: \"Huid lejos de aquí y vengad a vuestro pueblo.\"',
-        "",
-        "Tras decir eso, el soldado los escoltó a la salida y les indicó el camino al pueblo al que tenían",
-        "que ir, fuera del territorio de Alpha. Después, el soldado volvió a la ciudad para intentar aniquilar",
-        "a las tropas restantes junto a sus compañeros. Nunca se volvió a saber nada de él.",
-        "",
-        "─────────────────────────────────────",
-        "",
-        f"Uno de los chicos eres tú, {player.nombre}. Ahora empezarás a estudiar en la escuela más prestigiosa",
-        "de todo el país, si llegas con vida. Te tienes que dirigir al pueblo donde se encuentra la escuela",
-        "como ha dicho el soldado. Os ha dado una espada corta a cada uno.",
-        "",
-        "Comienza tu historia en el tutorial. Demuestra de qué estás hecho.",
-    ]
-    texto = "\n".join(linies)
-    try:
-        await player.ws.send_json({"type": "lore", "text": texto, "titulo": "EL RETORNO A HIGHDOWN"})
-    except Exception:
-        pass
-    player.lore_mostrado = True
-    await guardar_cuenta_async(player)  # Batch save OK
-
-
+SALA_RESPAWN = 6
 TIEMPO_RESPAWN = 5
-MAX_JUGADORES  = 5
+MAX_JUGADORES = 10
+COMBAT_TURN_TIME = 5
 
-# ============================================================
-# TIENDA
-# ============================================================
+# ==================== CLASES ====================
+CLASES = {
+    "guerrero": {"vidaMax": 90, "danioBase": 40, "manaMax": 30, "manaTurno": 10, "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30, "habilidad": "golpe_tanque"},
+    "mago": {"vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 20, "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 60, "habilidad": "magia_antigua"},
+    "arquero": {"vidaMax": 40, "danioBase": 10, "manaMax": 40, "manaTurno": 15, "danioEspecial": 10, "ataquesTurno": [1, 4], "costoEspecial": 40, "habilidad": "flecha_ignea", "danioEfecto": 10, "duracionEfecto": 2},
+    "curandero": {"vidaMax": 50, "danioBase": 20, "manaMax": 50, "manaTurno": 20, "danioEspecial": 20, "ataquesTurno": 1, "costoEspecial": 30, "habilidad": "absorcion", "curacionEspecial": 20},
+    "nigromante": {"vidaMax": 50, "danioBase": 10, "manaMax": 80, "manaTurno": 20, "danioEspecial": 60, "ataquesTurno": [1, 5], "costoEspecial": 60, "habilidad": "maldicion_tiempo"},
+    "hechicero": {"vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 30, "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 70, "habilidad": "invocar_esqueleto"},
+    "caballero": {"vidaMax": 70, "danioBase": 50, "manaMax": 40, "manaTurno": 10, "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 40, "habilidad": "embestida"},
+    "cazador": {"vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 10, "danioEspecial": 30, "ataquesTurno": 1, "costoEspecial": 30, "habilidad": "inmovilizar"},
+    "asesino": {"vidaMax": 50, "danioBase": 20, "manaMax": 20, "manaTurno": 10, "danioEspecial": 60, "ataquesTurno": [1, 3], "costoEspecial": 20, "habilidad": "muerte_garantizada"},
+    "barbaro": {"vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 5, "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30, "habilidad": "abocajarro"},
+}
+
+# ==================== ENEMIGOS ====================
+ENEMIGOS = {
+    "bandido": {"vidaMax": 60, "danioBase": 20, "ataquesTurno": 1, "tier": "Base"},
+    "slime": {"vidaMax": 90, "danioBase": 5, "ataquesTurno": 2, "tier": "Base"},
+    "duende": {"vidaMax": 50, "danioBase": 15, "ataquesTurno": 2, "tier": "Base"},
+    "esqueleto": {"vidaMax": 70, "danioBase": 25, "ataquesTurno": 1, "tier": "Base"},
+    "zombie": {"vidaMax": 80, "danioBase": 10, "ataquesTurno": 1, "tier": "Base"},
+    "lobo": {"vidaMax": 60, "danioBase": 15, "ataquesTurno": [1, 2], "tier": "Base"},
+    "oso": {"vidaMax": 75, "danioBase": 35, "ataquesTurno": 1, "tier": "Base"},
+    "orco": {"vidaMax": 70, "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
+    "ogro": {"vidaMax": 90, "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
+    "troll": {"vidaMax": 100, "danioBase": 35, "ataquesTurno": 1, "tier": "Especial"},
+    "gigante": {"vidaMax": 110, "danioBase": 45, "ataquesTurno": 1, "tier": "Especial"},
+    "ciclope": {"vidaMax": 80, "danioBase": 40, "ataquesTurno": 1, "tier": "Especial"},
+    "hombreLobo": {"vidaMax": 90, "danioBase": 30, "ataquesTurno": [1, 3], "tier": "Especial"},
+    "quimera": {"vidaMax": 80, "danioBase": 20, "ataquesTurno": 1, "tier": "Especial"},
+    "demonioInferior": {"vidaMax": 90, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Especial"},
+    "tiburon": {"vidaMax": 80, "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
+    "vampiro": {"vidaMax": 125, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Superior"},
+    "altoOrco": {"vidaMax": 150, "danioBase": 50, "ataquesTurno": 1, "tier": "Superior"},
+    "golem": {"vidaMax": 180, "danioBase": 50, "ataquesTurno": 1, "tier": "Superior"},
+    "elfoOscuro": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
+    "demonioSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
+    "leviatan": {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
+    "reyEsqueleto": {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
+    "dragon": {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
+    "reyDemonio": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
+    "kraken": {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
+    "alpha": {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1, "tier": "Boss"},
+}
+
+XP_POR_TIER = {"Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250}
+
+# ==================== TIENDA ====================
 CATALOGO = {
-    "pocion_vida":    {"nombre": "Pocion de Vida",         "emoji": "🧪",
-                       "descripcion": "Restaura toda tu vida.",
-                       "precio": 30, "usable_combate": True},
-    "pocion_danio":   {"nombre": "Pocion de Danio",        "emoji": "⚗️",
-                       "descripcion": "+30% dano durante 1 combate.",
-                       "precio": 40, "usable_combate": True},
-    "gema_teleporte": {"nombre": "Gema de Teletransporte", "emoji": "💎",
-                       "descripcion": "Teleporta a cualquier sala.",
-                       "precio": 50, "usable_combate": False},
-}
-ALIAS_ITEMS = {
-    "vida":     "pocion_vida",
-    "danio":    "pocion_danio",
-    "dano":     "pocion_danio",
-    "gema":     "gema_teleporte",
-    "teleport": "gema_teleporte",
+    "pocion_vida": {"nombre": "Pocion de Vida", "emoji": "🧪", "descripcion": "Restaura toda tu vida", "precio": 30, "usable_combate": True},
+    "pocion_danio": {"nombre": "Pocion de Danio", "emoji": "⚗️", "descripcion": "+30% dano durante 1 combate", "precio": 40, "usable_combate": True},
+    "gema_teleporte": {"nombre": "Gema de Teletransporte", "emoji": "💎", "descripcion": "Teleporta a cualquier sala", "precio": 50, "usable_combate": False},
 }
 
-# ============================================================
-# BIOMAS
-# ============================================================
+# ==================== BIOMAS ====================
 BIOMAS = {
-    "desierto": {
-        "emoji":       "🏜",
-        "descripcion": "Calor abrasador. Arena en todas partes.",
-        "enemigos":    ["bandido", "duende", "esqueleto", "zombie", "lobo", "demonioInferior", "quimera"],
-    },
-    "mar": {
-        "emoji":       "🌊",
-        "descripcion": "Humedad salada. Se escucha el oleaje.",
-        "enemigos":    ["tiburon", "slime", "hombreLobo", "orco", "ogro", "vampiro", "troll"],
-    },
-    "nieve": {
-        "emoji":       "❄️",
-        "descripcion": "Frio glacial. El viento corta como un cuchillo.",
-        "enemigos":    ["gigante", "ciclope", "golem", "elfoOscuro", "altoOrco", "demonioSuperior", "reyEsqueleto"],
-    },
+    "desierto": {"emoji": "🏜", "descripcion": "Calor abrasador. Arena en todas partes.", "enemigos": ["bandido", "duende", "esqueleto", "zombie", "lobo", "demonioInferior", "quimera"]},
+    "mar": {"emoji": "🌊", "descripcion": "Humedad salada. Se escucha el oleaje.", "enemigos": ["tiburon", "slime", "hombreLobo", "orco", "ogro", "vampiro", "troll"]},
+    "nieve": {"emoji": "❄️", "descripcion": "Frio glacial. El viento corta como un cuchillo.", "enemigos": ["gigante", "ciclope", "golem", "elfoOscuro", "altoOrco", "demonioSuperior", "reyEsqueleto"]},
 }
 
-# ============================================================
-# ACERTIJOS
-# ============================================================
+# ==================== ACERTIJOS ====================
 ACERTIJOS = [
-    {
-        "pregunta": "Si me nombras, desaparezco. ¿Qué soy?",
-        "opciones": ["A) El secreto", "B) El silencio", "C) La sombra", "D) El pensamiento"],
-        "respuesta": "b",
-        "letra_correcta": "B"
-    },
-    {
-        "pregunta": "¿Qué número falta en la serie? 2 – 6 – 7 – 21 – 22 – 66 – ?",
-        "opciones": ["A) 67", "B) 132", "C) 198", "D) 68"],
-        "respuesta": "a",
-        "letra_correcta": "A"
-    },
-    {
-        "pregunta": "Un monje copia manuscritos. Un día escribe: 11/11/1111. ¿Dice la verdad que es la primera vez con todos los números iguales?",
-        "opciones": ["A) Sí", "B) No", "C) Solo en calendario juliano", "D) Solo si cuenta los ceros"],
-        "respuesta": "b",
-        "letra_correcta": "B"
-    },
-    {
-        "pregunta": "3 interruptores, 3 bombillas, 1 solo intento. ¿Cómo saber cuál controla cada una?",
-        "opciones": [
-            "A) Enciende uno, espera, cambia al segundo y entra",
-            "B) Enciende dos, espera, apaga uno y entra",
-            "C) Enciende uno, espera, luego enciende el segundo y entra",
-            "D) No hay manera"
-        ],
-        "respuesta": "b",
-        "letra_correcta": "B"
-    }
+    {"pregunta": "Si me nombras, desaparezco. ¿Qué soy?", "opciones": ["A) El secreto", "B) El silencio", "C) La sombra", "D) El pensamiento"], "respuesta": "b", "letra_correcta": "B"},
+    {"pregunta": "¿Qué número falta? 2 – 6 – 7 – 21 – 22 – 66 – ?", "opciones": ["A) 67", "B) 132", "C) 198", "D) 68"], "respuesta": "a", "letra_correcta": "A"},
+    {"pregunta": "Un monje copia: 11/11/1111. ¿Es la primera vez con todos los números iguales?", "opciones": ["A) Sí", "B) No", "C) Solo en calendario juliano", "D) Solo si cuenta los ceros"], "respuesta": "b", "letra_correcta": "B"},
+    {"pregunta": "3 interruptores, 3 bombillas, 1 solo intento. ¿Cómo saber cuál controla cada una?", "opciones": ["A) Enciende uno, espera, cambia al segundo y entra", "B) Enciende dos, espera, apaga uno y entra", "C) Enciende uno, espera, luego enciende el segundo y entra", "D) No hay manera"], "respuesta": "b", "letra_correcta": "B"},
 ]
 
-# Salas con acertijos: 33 y 37 (3 acertijos cada una, diferentes)
-SALAS_ACERTIJOS = {
-    33: [0, 1, 2],  # Primeros 3 acertijos
-    37: [1, 2, 3]   # Últimos 3 acertijos (solapamiento para variación)
+SALAS_ACERTIJOS = {33: [0, 1, 2], 37: [1, 2, 3]}
+
+# ==================== LORE ====================
+LORE_INICIAL = """Hace ya 15 años de la gran tragedia. Highdown era un pueblo conocido por que todos los nacidos ahí poseían habilidades sobrehumanas. Eso no contentaba a Alpha, el actual rey de la destrucción. Todo lo que encontraba a su paso, ardía en un mar de llamas y sangre.
+
+Alpha esperó a la noche, que todos estuvieran durmiendo, reunió a sus mejores hombres y aniquiló a todos sus habitantes. O eso pensaba él, pues uno de los soldados del pueblo pudo salvar a algunos de los niños con futuros más prometedores.
+
+El soldado les dijo: "Huid lejos de aquí y vengad a vuestro pueblo."
+
+Uno de los chicos eres tú. Ahora empezarás a estudiar en la escuela más prestigiosa de todo el país, si llegas con vida."""
+
+LORE_SALAS = {
+    1: ("MISIÓN 1 — El Rey Demonio", "Tu misión comienza cuando descubres que la llave del Rey Demonio es necesaria para evitar que el mundo caiga en una era de oscuridad por culpa de Alpha. Necesitarás 2 llaves. Una la tiene el Rey Demonio, la otra... el Kraken."),
+    16: ("El Dominio Oscuro", "Para llegar al Rey Demonio, debes atravesar tres sellos antiguos, cada uno custodiado por entidades que representan el miedo, la desesperación y el odio."),
+    33: ("MISIÓN 2 — El Kraken", "Tras volver victorioso del Desierto, eres recompensado. Ahora debes hacerte con la segunda llave que guarda el Kraken."),
+    72: ("Las Bermudas — El Kraken Despierta", "Un tentáculo gigantesco emerge de las profundidades y rompe el mástil principal del barco."),
+    73: ("MISIÓN 3 — Alpha", "Ahora tienes las dos llaves. Tu misión: Highdown. Tu objetivo es asesinar a Alpha y recuperar el dominio de tu pueblo."),
+    148: ("La Caída de Alpha — FIN", "Tras la muerte de Alpha vuelves al pueblo victorioso. Mañana te coronarán como rey."),
 }
 
-# ============================================================
-
-
-# ── Lore de sala (es mostra quan entres per primera vegada) ──────
-LORE_SALAS: dict = {
-    1: (
-        "MISIÓN 1 — El Rey Demonio",
-        """Mucho antes de que los reinos humanos alzaran sus murallas actuales, existió un nombre que se susurraba con temor incluso entre los dioses: el Rey Demonio.
-
-Gobernaba desde una fortaleza oculta en un territorio marchito donde la luz apenas sobrevivía. Se dice que en su poder guardaba una llave antigua, forjada antes del tiempo conocido, capaz de abrir un camino hacia algo que ni siquiera los sabios se atreven a describir.
-
-Tu misión comienza cuando descubres que esa llave no es solo un objeto de poder, sino una pieza necesaria para evitar que el mundo vuelva a caer en una era de oscuridad por culpa de Alpha. La llave es la puerta a Alpha. Necesitarás 2 llaves. Una la tiene el Rey Demonio, la otra... el Kraken.
-
-Nadie ha logrado acercarse al trono del Rey Demonio y sobrevivir. Aun así, partes hacia su dominio con una única certeza: si no lo detienes, el mundo caerá en la desesperación."""
-    ),
-    16: (
-        "El Dominio Oscuro",
-        """El viaje te lleva a través de tierras olvidadas: bosques donde los árboles parecen susurrar, ruinas que reaccionan a tu presencia y criaturas que no pertenecen a este mundo.
-
-Poco a poco, descubres que el dominio del Rey Demonio no es un simple lugar, sino una prueba en sí misma. Para llegar a él, debes atravesar tres sellos antiguos, cada uno custodiado por entidades que representan el miedo, la desesperación y el odio.
-
-Sin embargo, cada victoria te acerca más al castillo oscuro que emerge entre tormentas perpetuas. Allí, en lo más alto, te espera el Rey Demonio… y la llave."""
-    ),
-    24: (
-        "La Verdad del Guardián",
-        """A medida que te aproximas, comienzan a surgir verdades inquietantes. El Rey Demonio no siempre fue lo que es ahora.
-
-Antiguos registros hablan de un guardián, alguien que protegía el equilibrio del mundo. Pero algo ocurrió: una traición, un sacrificio o quizá una decisión imposible.
-
-La llave que buscas no es solo un objeto de poder… es un sello. Y el Rey Demonio no la guarda por ambición, sino por necesidad. Si alguien la toma sin comprender su propósito, podría desatar algo peor que él mismo.
-
-Ahora tu misión ya no es tan simple. ¿Vienes a salvar el mundo… o a condenarlo?"""
-    ),
-    33: (
-        "MISIÓN 2 — El Kraken",
-        """Has obtenido la primera Llave.
-
-Tras volver victorioso de Death Valley, eres recompensado por haber acabado con el peligroso Rey Demonio. Ahora eres uno de los mejores guerreros de la faz de la Tierra.
-
-El Rey Demonio ha delatado a su compañero: el Kraken. Este custodia la segunda llave para abrir el portal hacia la fortaleza de Alpha. Decidís ir a por él. Pagáis a un capitán para que os lleve en su barco hacia la isla de Bermuda, rodeando el triángulo.
-
-Empieza la aventura."""
-    ),
-    47: (
-        "El Capitán y los Acertijos",
-        """El capitán os detiene en la entrada del triángulo.
-
-Capitán: "Sé que tienes muchas ganas de embarcar, camarada, pero no puedo adentrarme en este lugar sin saber que mi tripulación no es corta de mente. Resuelve estos acertijos y podrás pasar. Cada uno es más difícil que el anterior."
-
-Presta atención en los acertijos que encuentres en el camino. Solo los que demuestren inteligencia merecen enfrentarse al Kraken."""
-    ),
-    72: (
-        "Las Bermudas — El Kraken Despierta",
-        """Dos horas después os encontráis en medio de una tormenta gigantesca. Te asaltan recuerdos de tu niñez, cuando vivías en Highdown y las tormentas eran devastadoras.
-
-Los eruditos de tu pueblo creen que los poderes de los habitantes de Highdown vienen de la energía eléctrica de las altas tormentas. Es por eso que sospecháis que Alpha reside allí. Y es muy probable que el Kraken esté aquí.
-
-Un tentáculo gigantesco emerge de las profundidades y rompe el mástil principal del barco."""
-    ),
-    73: (
-        "MISIÓN 3 — Alpha",
-        """Habéis derrotado al Kraken. Habéis derrotado a la leyenda más temida de los 7 mares.
-
-Poco a poco te estás convirtiendo en un gran guerrero, pero aún te falta mejorar. Tienes mucho que descubrir. ¿Tienes lo que hace falta? Eso está por descubrirse.
-
-Ahora tienes las dos llaves. Tu misión pendiente desde hace tiempo: Highdown. Tu objetivo es asesinar a Alpha y recuperar el dominio de tu pueblo. Usando el portal de entrada a Highdown, que se encuentra en el distrito blanco, Alaska, os dirigiréis allí al alba.
-
-El que consiga derrotar a Alpha será parte de los caballeros reales de su alteza."""
-    ),
-    98: (
-        "Nuevas Noticias",
-        """Tras varios días de travesía, os ha llegado nueva información.
-
-El portal se encuentra a las afueras de la ciudad, cerca de la barrera que rodea la ciudad. El portal está dentro de una mazmorra al lado de la ciudad. La mazmorra está gobernada por un dragón y ahí dentro hay varios monstruos, tanto de bajo como de alto rango.
-
-Tendrás que abrirte paso a través de ellos."""
-    ),
-    146: (
-        "El Rey Ha Muerto",
-        """Han llegado nuevas noticias: el rey ha muerto a manos de Alpha y sus súbditos.
-
-El rey está muerto. Se os ha informado que hay un cambio de recompensa: el asesino de Alpha será el nuevo rey del reino, pues el rey aún no tenía descendencia. Esa ha sido la última voluntad de su majestad."""
-    ),
+LORE_POST_COMBATE = {
+    32: ("El Rey Demonio Cae", "Antes de desaparecer, deja la llave en tus manos. Comprendes entonces que no has derrotado a un tirano, sino a un guardián."),
+    72: ("Victoria sobre el Kraken", "Habéis derrotado a la leyenda más temida de los 7 mares. Poco a poco te estás convirtiendo en un gran guerrero."),
+    148: ("La Caída de Alpha — FIN", "Un verdadero enemigo no tiene enemigos. Si entiendes eso, serás capaz de reinar como un verdadero guerrero."),
 }
 
-# Salas donde el lore post-combate se muestra (al limpiar la sala)
-LORE_POST_COMBATE: dict = {
-    32: (
-        "El Rey Demonio Cae",
-        """Tras una batalla que sacude el mismo tejido del mundo, el Rey Demonio cae. En sus últimos momentos, no muestra odio… sino alivio.
+# ==================== BOSS ====================
+BOSS_SALAS = {15: ("El Gran Bandido", 300), 30: ("Señor de los Muertos", 420), 50: ("Leviatán del Mar", 600), 75: ("Rey del Hielo", 900), 100: ("El Demonio Supremo", 1200), 148: ("Alpha", 1800)}
 
-Antes de desaparecer, deja la llave en tus manos. Por un instante, sientes su peso… no físico, sino algo más profundo. Es la desesperación que el Rey Demonio ha estado soportando todo este tiempo.
-
-Comprendes entonces que no has derrotado a un tirano, sino que has aniquilado a un guardián al que, si no completas tu objetivo, condenas a una muerte innecesaria.
-
-El mundo no cambia de inmediato. No hay celebración, ni gloria. Solo una elección: usar la llave… o desecharla. No puedes desecharla. Tienes que matar a Alpha. Tienes que vengar a los tuyos."""
-    ),
-    72: (
-        "Victoria sobre el Kraken",
-        """Habéis derrotado al Kraken. Habéis derrotado a la leyenda más temida de los 7 mares.
-
-Poco a poco te estás convirtiendo en un gran guerrero pero aún te falta mejorar. ¿Qué es realmente un verdadero guerrero? Eso está por descubrirse. Tienes que descubrirlo por tu propia cuenta."""
-    ),
-    148: (
-        "La Caída de Alpha — FIN",
-        """Tras la muerte de Alpha vuelves al pueblo victorioso. Mañana te coronarán como rey.
-
-El consejero real del antiguo rey te corona como el nuevo rey, que traerá paz a este mundo de guerra y destrucción. Todo el mundo grita tu nombre, eres el que ha traído paz a este mundo y seguirá trayéndola una y otra vez como rey del imperio.
-
-En este viaje has descubierto algo esencial para conseguir la paz en el mundo. Has descubierto el enigma… Has descubierto el significado de ser un verdadero guerrero.
-
-Un verdadero enemigo no tiene enemigos. Si entiendes eso, serás capaz de reinar en el mundo como un verdadero guerrero.
-
-Si tienes un sueño lucha por él. Lucha por la paz. Porque el perdedor no es el que es derrotado, sino el que no se levanta una y otra vez. Si no luchas no puedes ganar — así que lucha, pierde, levántate, ríe, llora y, gana. Nunca te rindas. Para ganar… tienes que luchar."""
-    ),
-}
-
-async def mostrar_lore_sala(player, sala_id):
-    """Mostra lore d'entrada a la sala, una sola vegada per jugador."""
-    if not hasattr(player, 'salas_lore_vistes'):
-        player.salas_lore_vistes = set()
-    if sala_id in player.salas_lore_vistes:
-        return
-    lore = LORE_SALAS.get(sala_id)
-    if not lore:
-        return
-    player.salas_lore_vistes.add(sala_id)
-    titulo, texto = lore
-    try:
-        await player.ws.send_json({"type": "lore", "text": texto, "titulo": titulo})
-    except Exception:
-        pass
-
-async def mostrar_lore_post_combate(player, sala_id):
-    """Mostra lore de fi de combat, una sola vegada."""
-    if not hasattr(player, 'salas_lore_post_vistes'):
-        player.salas_lore_post_vistes = set()
-    if sala_id in player.salas_lore_post_vistes:
-        return
-    lore = LORE_POST_COMBATE.get(sala_id)
-    if not lore:
-        return
-    player.salas_lore_post_vistes.add(sala_id)
-    titulo, texto = lore
-    try:
-        await player.ws.send_json({"type": "lore", "text": texto, "titulo": titulo})
-    except Exception:
-        pass
-
-# ── Conversations de Boss ────────────────────────────────────────
-BOSS_CONVERSACIONES = {
-    # sala_id: (boss_name, [(opciones_jugador, respuesta_boss), ...])
-    32: {
-        "nombre": "Rey Demonio",
-        "intro": "Por fin has llegado… otro que busca lo que no comprende.",
-        "opciones": [
-            ("He venido por la llave",       "La llave… todos la desean, ninguno la entiende. Dime, ¿qué harás cuando la tengas?"),
-            ("Si eres un obstáculo, caerás", "Hablas con la arrogancia de quienes aún no han visto la verdad."),
-            ("Quiero respuestas",            "Respuestas… eso es más de lo que los demás pidieron. Quizá no seas como ellos."),
-        ],
-        "respuestas_2": {
-            0: [
-                ("No me importa tu historia",  "Entonces repetirás los errores de todos los que vinieron antes."),
-                ("Entonces explícate",         "La llave mantiene cerrada una puerta que nunca debió existir. Yo… soy su guardián."),
-                ("*Prepararte para luchar",    "Así termina siempre. Ven, demuestra si eres digno… o si solo eres otro recuerdo."),
-            ],
-            1: [
-                ("No me importa tu historia",  "Entonces repetirás los errores de todos los que vinieron antes."),
-                ("Entonces explícate",         "La llave mantiene cerrada una puerta que nunca debió existir. Yo… soy su guardián."),
-                ("*Prepararte para luchar",    "Así termina siempre. Ven, demuestra si eres digno… o si solo eres otro recuerdo."),
-            ],
-            2: [
-                ("No me importa tu historia",  "Entonces repetirás los errores de todos los que vinieron antes."),
-                ("Entonces explícate",         "La llave mantiene cerrada una puerta que nunca debió existir. Yo… soy su guardián."),
-                ("*Prepararte para luchar",    "Así termina siempre. Ven, demuestra si eres digno… o si solo eres otro recuerdo."),
-            ],
-        }
-    },
-    72: {
-        "nombre": "Kraken",
-        "intro": "¿Venís a por mí, verdad? ¡Intentadlo si queréis!",
-        "opciones": [
-            ("Sí, ya hemos acabado con el rey demonio. ¡Prepárate!", "¡Cómo os atrevéis! Si queréis la llave habréis de pasar por encima de mi cadáver."),
-            ("Sí… no te preocupes, no te haremos daño… ¿O sí?",     "Perro ladrador poco mordedor."),
-            ("Vale…",                                                  "Un mito como yo nunca será derrotado por un simple marinero de agua dulce."),
-        ],
-        "respuestas_2": {}
-    },
-    148: {
-        "nombre": "Alpha",
-        "intro": "Por fin has llegado, te estaba esperando.",
-        "opciones": [
-            ("¿A mí?",                                              "Eres el que tenía más poder en todo Highdown. Te esperaba. De no ser por ese soldado, te habría matado sin esfuerzo. Lo torturé hasta la muerte. Ahora morirás igual que él e igual que tus padres."),
-            ("¿Quién no me espera? Esa es la verdadera pregunta.", "Qué infantil. Se te habría cambiado la cara si hubieras visto morir a tus padres y al hombre que te salvó la vida."),
-            ("Me da igual, te mataré y vengaré al rey",            "Cómo quieras, él murió porque era un necio."),
-        ],
-        "respuestas_2": {
-            0: [
-                ("¡Cállate, te mataré!",        "Ya veremos quien muere."),
-                ("Me da igual, tu muerte es inevitable.", "Un simple mortal no puede derrotar a un dios."),
-                ("*Quedarse callado",            "¿Conque no quieres hablar? Muy bien, pues muere en silencio."),
-            ],
-            1: [
-                ("¡Cállate, te mataré!",        "Ya veremos quien muere."),
-                ("Me da igual, tu muerte es inevitable.", "Un simple mortal no puede derrotar a un dios."),
-                ("*Quedarse callado",            "¿Conque no quieres hablar? Muy bien, pues muere en silencio."),
-            ],
-            2: [
-                ("¡Cállate, te mataré!",        "Ya veremos quien muere."),
-                ("Me da igual, tu muerte es inevitable.", "Un simple mortal no puede derrotar a un dios."),
-                ("*Quedarse callado",            "¿Conque no quieres hablar? Muy bien, pues muere en silencio."),
-            ],
-        }
-    },
-}
-
-async def iniciar_conversacion_boss(player, sala_id: int) -> bool:
-    """
-    Mostra la conversa prèvia al combat del boss.
-    Retorna True si el combate ha de continuar, False si el jugador es desconnecta.
-    """
-    conv = BOSS_CONVERSACIONES.get(sala_id)
-    if not conv:
-        return True
-
-    nombre_boss = conv["nombre"]
-    try:
-        await player.ws.send_json({
-            "type": "boss_conv",
-            "boss": nombre_boss,
-            "text": conv["intro"]
-        })
-    except Exception:
-        pass
-    await player.send(f"\n  ══════════════════════════════════")
-    await player.send(f"  {nombre_boss.upper()}: {conv['intro']}")
-    await player.send(f"  ══════════════════════════════════")
-
-    # Round 1
-    opciones = conv["opciones"]
-    linies = ["\n  ¿Qué respondes?"]
-    for i, (opc, _) in enumerate(opciones, 1):
-        linies.append(f"  {i}. {opc}")
-    await player.send("\n".join(linies))
-
-    eleccio = None
-    while True:
-        r = await player.recv()
-        if r is None:
-            return False
-        r = r.strip()
-        if r in ("1","2","3") and int(r)-1 < len(opciones):
-            eleccio = int(r) - 1
-            break
-        await player.send("  Elige 1, 2 o 3.")
-
-    _, resposta = opciones[eleccio]
-    await player.send(f"\n  {nombre_boss.upper()}: {resposta}")
-
-    # Round 2 (si existeix)
-    respuestas_2 = conv.get("respuestas_2", {}).get(eleccio, [])
-    if respuestas_2:
-        linies2 = ["\n  ¿Y ahora?"]
-        for i, (opc, _) in enumerate(respuestas_2, 1):
-            linies2.append(f"  {i}. {opc}")
-        await player.send("\n".join(linies2))
-
-        while True:
-            r2 = await player.recv()
-            if r2 is None:
-                return False
-            r2 = r2.strip()
-            if r2 in ("1","2","3") and int(r2)-1 < len(respuestas_2):
-                eleccio2 = int(r2) - 1
-                break
-            await player.send("  Elige 1, 2 o 3.")
-
-        _, resposta2 = respuestas_2[eleccio2]
-        await player.send(f"\n  {nombre_boss.upper()}: {resposta2}")
-
-    await player.send(f"\n  ⚔️  ¡El combate contra {nombre_boss} comienza!")
-    await asyncio.sleep(1)
-    return True
-
-# BOSS RESPAWN TIMERS
-# ============================================================
-# sala_id → asyncio.Task de respawn (None si no hay timer activo)
-_boss_respawn_tasks: dict = {}
-_background_tasks: set = set()  # Keeps strong refs so GC can't collect running tasks
-_cleanup_tasks: set = set()     # Cleanup tasks separately to avoid accumulation
-# sala_id → True si el boss está vivo (para evitar doble spawn)
-_boss_vivo: dict = {}
-
-BOSS_SALAS = {
-    # sala_id: (nom_boss, respawn_segons)
-    15:  ("El Gran Bandido",    300),   # 5 min
-    30:  ("Señor de los Muertos", 420), # 7 min
-    50:  ("Leviatán del Mar",   600),   # 10 min
-    75:  ("Rey del Hielo",      900),   # 15 min
-    100: ("El Demonio Supremo", 1200),  # 20 min
-}
-
-async def _boss_respawn_task(sala_id: int, delay: int):
-    """Espera delay segons i fa respawn del boss a la sala."""
-    await asyncio.sleep(delay)
-    _boss_vivo[sala_id] = True
-    _boss_respawn_tasks.pop(sala_id, None)
-    boss_nom = BOSS_SALAS[sala_id][0]
-    # Avisar jugadors a la sala
-    await broadcast_sala(sala_id, f"\n  💀 {boss_nom} ha reaparegut! Prepareu-vos...\n")
-    await broadcast_todos(f"  ⚠️  Un boss ha reaparegut a la sala {sala_id}: {boss_nom}!")
-
-def boss_defeated(sala_id: int):
-    """Cridar quan un boss mor. Programa el respawn."""
-    if sala_id not in BOSS_SALAS:
-        return
-    _boss_vivo[sala_id] = False
-    if sala_id not in _boss_respawn_tasks or _boss_respawn_tasks[sala_id].done():
-        delay = BOSS_SALAS[sala_id][1]
-        task = asyncio.create_task(_boss_respawn_task(sala_id, delay))
-        _boss_respawn_tasks[sala_id] = task
-
-def boss_esta_viu(sala_id: int) -> bool:
-    """Retorna True si el boss d'una sala és viu (o mai ha mort)."""
-    if sala_id not in BOSS_SALAS:
-        return False
-    return _boss_vivo.get(sala_id, True)  # per defecte viu al inicio
-
-# ============================================================
-# LOOT / ITEMS DROP SYSTEM
-# ============================================================
-LOOT_TAULES = {
-    # tier → llista de (item_id, prob_0_a_1, monedes_min, monedes_max)
-    "Base":     [("pocion_vida", 0.25, 5, 15),   ("pocion_danio", 0.10, 0, 0)],
-    "Especial": [("pocion_vida", 0.40, 15, 35),  ("pocion_danio", 0.20, 0, 0), ("gema_teleporte", 0.05, 0, 0)],
-    "Superior": [("pocion_vida", 0.55, 30, 60),  ("pocion_danio", 0.30, 0, 0), ("gema_teleporte", 0.15, 0, 0)],
-    "Boss":     [("pocion_vida", 1.00, 80, 150), ("pocion_danio", 0.60, 0, 0), ("gema_teleporte", 0.40, 0, 0)],
-}
-
-def calcular_loot(tier: str) -> tuple[dict, int]:
-    """Retorna (items_dropats {item_id: quantitat}, monedes)."""
-    import random as _r
-    taula = LOOT_TAULES.get(tier, LOOT_TAULES["Base"])
-    items = {}
-    monedes = 0
-    for item_id, prob, mon_min, mon_max in taula:
-        if _r.random() < prob:
-            items[item_id] = items.get(item_id, 0) + 1
-        if mon_max > 0:
-            monedes += _r.randint(mon_min, mon_max)
-    return items, monedes
-
-async def donar_loot(player, tier: str):
-    """Dona loot a un jugador i li notifica."""
-    items, monedes = calcular_loot(tier)
-    if monedes > 0:
-        player.monedas += monedes
-        await player.send(f"  💰 +{monedes} monedes!")
-    for item_id, qty in items.items():
-        nom   = CATALOGO.get(item_id, {}).get("nom", item_id)
-        emoji = CATALOGO.get(item_id, {}).get("emoji", "📦")
-        ok = await _add_to_inventario(player, item_id, qty)
-        if ok:
-            await player.send(f"  {emoji} Has obtingut: {nom} x{qty}!")
-        else:
-            await player.send(f"  🎒 Inventari ple! No pots recollir {nom}.")
-
-# ============================================================
-# QUEST SYSTEM
-# ============================================================
-QUESTS = {
-    "q1": {
-        "id": "q1",
-        "nom": "Primera Sang",
-        "descripcio": "Derrota 3 enemics per demostrar la teva valentia.",
-        "tipus": "kills",       # kills | nivell | sala
-        "objectiu": 3,
-        "recompensa_xp": 50,
-        "recompensa_monedes": 30,
-        "recompensa_item": None,
-    },
-    "q2": {
-        "id": "q2",
-        "nom": "Explorador",
-        "descripcio": "Arriba al nivell 5.",
-        "tipus": "nivell",
-        "objectiu": 5,
-        "recompensa_xp": 100,
-        "recompensa_monedes": 50,
-        "recompensa_item": "pocion_danio",
-    },
-    "q3": {
-        "id": "q3",
-        "nom": "El Tresor Ocult",
-        "descripcio": "Arriba a la sala del tresor (sala 50).",
-        "tipus": "sala",
-        "objectiu": 50,
-        "recompensa_xp": 150,
-        "recompensa_monedes": 80,
-        "recompensa_item": "gema_teleporte",
-    },
-    "q4": {
-        "id": "q4",
-        "nom": "Caçador de Bèsties",
-        "descripcio": "Derrota 10 enemics.",
-        "tipus": "kills",
-        "objectiu": 10,
-        "recompensa_xp": 200,
-        "recompensa_monedes": 100,
-        "recompensa_item": "pocion_vida",
-    },
-    "q5": {
-        "id": "q5",
-        "nom": "Llegenda",
-        "descripcio": "Arriba al nivell 10.",
-        "tipus": "nivell",
-        "objectiu": 10,
-        "recompensa_xp": 500,
-        "recompensa_monedes": 200,
-        "recompensa_item": "gema_teleporte",
-    },
-}
-
-async def comprovar_quests(player, event: str, valor=None):
-    """
-    Comprova si el jugador ha completat alguna quest.
-    event: 'kill', 'nivell', 'sala'
-    valor: nombre de kills total, nivell actual, o sala_id
-    """
-    if not hasattr(player, 'quests_completades'):
-        player.quests_completades = set()
-    if not hasattr(player, 'kills_total'):
-        player.kills_total = 0
-
-    for qid, q in QUESTS.items():
-        if qid in player.quests_completades:
-            continue
-        completa = False
-        if q["tipus"] == "kills" and event == "kill":
-            completa = player.kills_total >= q["objectiu"]
-        elif q["tipus"] == "nivell" and event == "nivell":
-            completa = (valor or player.nivel) >= q["objectiu"]
-        elif q["tipus"] == "sala" and event == "sala":
-            completa = (valor or player.sala_id) >= q["objectiu"]
-
-        if completa:
-            player.quests_completades.add(qid)
-            await player.send(f"\n  🏆 QUEST COMPLETADA: {q['nom']}!")
-            await player.send(f"  📜 {q['descripcio']}")
-            await player.send(f"  🎁 Recompensa: +{q['recompensa_xp']} XP, +{q['recompensa_monedes']} monedes")
-            player.monedas += q["recompensa_monedes"]
-            if q.get("recompensa_item"):
-                iid = q["recompensa_item"]
-                ok = await _add_to_inventario(player, iid, 1)
-                nom = CATALOGO.get(iid, {}).get("nombre", iid)
-                if ok:
-                    await player.send(f"  + {nom}!")
-                else:
-                    await player.send(f"  🎒 Inventari ple! No s'ha pogut afegir {nom}.")
-            await dar_xp(player, q["recompensa_xp"])
-            await broadcast_todos(f"  🏆 {player.nombre} ha completat la quest: {q['nom']}!")
-
-async def cmd_quests(player):
-    """Mostra les quests del jugador."""
-    if not hasattr(player, 'quests_completades'):
-        player.quests_completades = set()
-    if not hasattr(player, 'kills_total'):
-        player.kills_total = 0
-    linies = ["\n  📜 LES TEVES QUESTS\n  " + "-"*32]
-    for qid, q in QUESTS.items():
-        if qid in player.quests_completades:
-            linies.append(f"  ✅ {q['nom']} — COMPLETADA")
-        else:
-            if q["tipus"] == "kills":
-                prog = f"{player.kills_total}/{q['objectiu']} kills"
-            elif q["tipus"] == "nivell":
-                prog = f"Nivell {player.nivel}/{q['objectiu']}"
-            elif q["tipus"] == "sala":
-                prog = f"Sala {player.sala_id}/{q['objectiu']}"
-            else:
-                prog = "?"
-            linies.append(f"  🔲 {q['nom']} ({prog})\n     {q['descripcio']}")
-    await player.send("\n".join(linies))
-
-
-# ============================================================
-# SALAS
-# ============================================================
+# ==================== SALAS ====================
 SALAS = {
-    # ── TUTORIAL (salas 0.1-0.4) ──────────────────────────────────
-    0.1: {"nombre": "Como combatir",
-          "descripcion": "Hace ya 15 años de la gran tragedia. Ya habían pasado 15 años de la masacre del pueblo de Highdown.",
-          "conexiones": {"norte": 0.2},
-          "encuentros": [("bandido", 1)]},
- 
-    0.2: {"nombre": "estructuras basicas",
-          "descripcion": "hospital y tienda",
-          "conexiones": {"sur": 0.1, "norte": 0.3},
-         "hospital": True, "tienda": True},
-
-    0.3: {"nombre": "Objetos",
-          "descripcion": "Como usar objetos",
-          "conexiones": {"sur": 0.2, "norte": 0.4},
-          "encuentros": [("duende", 1)]},
- 
-    0.4: {"nombre": "Como funciona UI",
-          "descripcion": "UI",
-          "conexiones": {"sur": 0.3, "norte": 1}},
-
-    # ── DESIERTO (salas 1-32) ──────────────────────────────────
-    1:  {"nombre": "North Mass",
-         "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
-         "conexiones": {"norte": 2, "este": 13, "sur": 6},
-         "bioma": "desierto", "cantidad": 1,
-         "hospital": True},
-
-    2:  {"nombre": "Dunas del Norte",
-         "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
-         "conexiones": {"sur": 1, "norte": 3},
-         "bioma": "desierto", "cantidad": 2},
-
-    3:  {"nombre": "Ruinas del Desierto",
-         "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
-         "conexiones": {"oeste": 4, "norte": 5, "este": 16},
-         "bioma": "desierto", "cantidad": 2},
-
-    4:  {"nombre": "Ciudad abrasada",
-         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas...",
-         "conexiones": {"este": 3},
-         "encuentros": [("demonioSuperior", 1)],
-         "hospital": True},
-
-    5:  {"nombre": "Valle muerto",
-         "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
-         "conexiones": {"sur": 3},
-         "bioma": "desierto", "cantidad": 2,
-         "hospital": True},
-
-    6:  {"nombre": "Oasis tranquilo",
-         "descripcion": "Un pequeño oasis en medio del desierto. Aquí puedes descansar.",
-         "conexiones": {"sur": 10, "oeste": 7, "norte": 1},
-         "hospital": True, "tienda": True},
-
-    7:  {"nombre": "Sala del Viento Susurrante",
-         "descripcion": "Columnas de arena giran lentamente y traen voces del pasado.",
-         "conexiones": {"oeste": 8, "este": 6, "sur": 9},
-         "encuentros": [("elfoOscuro", 1)]},
-
-    8:  {"nombre": "Cámara del Oasis Oculto",
-         "descripcion": "Un pequeño lago mágico que concede visiones o recuerdos.",
-         "conexiones": {"oeste": 9, "este": 7},
-         "bioma": "desierto", "cantidad": 1},
-
-    9:  {"nombre": "Salón del Sol Eterno",
-         "descripcion": "Un techo abierto donde un sol artificial quema sin piedad.",
-         "conexiones": {"sur": 8, "este": 7},
-         "bioma": "desierto", "cantidad": 2,
-         "hospital": True, "tienda": True},
-
-    10: {"nombre": "Cripta de las Dunas Vivas",
-         "descripcion": "Personas enterradas que se mueven bajo la arena.",
-         "conexiones": {"norte": 7},
-         "bioma": "desierto", "cantidad": 2},
-
-    11: {"nombre": "Caravana fantasma",
-         "descripcion": "Viajeros espectrales repiten eternamente su última travesía.",
-         "conexiones": {"este": 12, "norte": 6},
-         "encuentros": [("demonioInferior", 2)]},
-
-    12: {"nombre": "Fosa de Titanes",
-         "descripcion": "Restos colosales emergen de la arena, como si antiguos gigantes hubieran caído aquí.",
-         "conexiones": {"norte": 13, "oeste": 11, "este": 17},
-         "bioma": "desierto", "cantidad": 2},
-
-    13: {"nombre": "Altar del Soberano Abisal",
-         "descripcion": "Un trono oscuro tallado en huesos ennegrecidos irradia una presencia opresiva.",
-         "conexiones": {"sur": 12, "este": 18, "norte": 14},
-         "encuentros": [("reyEsqueleto", 1)],
-         "tienda": True},
-
-    14: {"nombre": "Extensión de Azhar",
-         "descripcion": "El suelo arde bajo tus pies mientras el horizonte tiembla por el calor.",
-         "conexiones": {"norte": 15, "este": 19, "oeste": 1},
-         "bioma": "desierto", "cantidad": 1},
-
-    15: {"nombre": "Mar de Dunas Susurrantes",
-         "descripcion": "Las dunas se extienden sin fin, emitiendo murmullos cuando el viento las roza.",
-         "conexiones": {"norte": 16, "sur": 14},
-         "bioma": "desierto", "cantidad": 2},
-
-    16: {"nombre": "Vestigios Enterrados",
-         "descripcion": "Ruinas antiguas asoman entre la arena, como recuerdos que se niegan a desaparecer.",
-         "conexiones": {"norte": 17, "sur": 15},
-         "bioma": "desierto", "cantidad": 1},
-
-    17: {"nombre": "Santuario Carmesí",
-         "descripcion": "Muros cubiertos de símbolos sangrientos laten con una energía inquietante.",
-         "conexiones": {"sur": 16, "este": 22, "oeste": 3},
-         "encuentros": [("demonioInferior", 2)],
-         "tienda": True},
-
-    18: {"nombre": "Sepulcro de Colosos",
-         "descripcion": "Huesos gigantescos yacen dispersos, devorados lentamente por el desierto.",
-         "conexiones": {"oeste": 11},
-         "bioma": "desierto", "cantidad": 2,
-         "tienda": True},
-
-    19: {"nombre": "Trono del Abismo",
-         "descripcion": "Una estructura de hueso y sombra domina el lugar, como si aún esperara a su dueño.",
-         "conexiones": {"oeste": 12, "este": 27},
-         "bioma": "desierto", "cantidad": 1},
-
-    20: {"nombre": "Llanura de Fuego Blanco",
-         "descripcion": "La luz del sol es tan intensa que todo parece arder en un resplandor pálido.",
-         "conexiones": {"norte": 21, "este": 26, "oeste": 13},
-         "bioma": "desierto", "cantidad": 1},
-
-    21: {"nombre": "Dunas del Murmullo Eterno",
-         "descripcion": "Algo invisible se desliza bajo la arena, siguiendo cada paso que das.",
-         "conexiones": {"sur": 20, "este": 25},
-         "bioma": "desierto", "cantidad": 2},
-
-    22: {"nombre": "Columnas del Olvido",
-         "descripcion": "Pilares erosionados se alzan torcidos, marcando un lugar que el tiempo quiso borrar.",
-         "conexiones": {"este": 15},
-         "bioma": "desierto", "cantidad": 2,
-         "hospital": True, "tienda": True},
-
-    23: {"nombre": "Templo de la Sangre Antigua",
-         "descripcion": "Inscripciones vivas recorren las paredes, como si observaran a los intrusos.",
-         "conexiones": {"este": 24, "oeste": 16},
-         "encuentros": [("demonioInferior", 2)]},
-
-    24: {"nombre": "Abismo de los Caídos",
-         "descripcion": "Un campo de restos antiguos donde incluso el viento parece evitar pasar.",
-         "conexiones": {"sur": 25, "norte": 23, "este": 32, "oeste": 149},
-         "bioma": "desierto", "cantidad": 2},
-
-    25: {"nombre": "Trono del Devastador",
-         "descripcion": "Un asiento de poder olvidado, rodeado de una oscuridad que respira.",
-         "conexiones": {"sur": 30, "norte": 23, "este": 32, "oeste": 149},
-         "bioma": "desierto", "cantidad": 4,
-         "tesoro": True},
-
-    26: {"nombre": "Horizonte Quebrado",
-         "descripcion": "El aire distorsiona la vista, haciendo que la distancia pierda todo sentido.",
-         "conexiones": {"oeste": 20, "sur": 27},
-         "bioma": "desierto", "cantidad": 1,
-         "tienda": True,
-         "hospital": True},
-
-    27: {"nombre": "Dunas del Hambre",
-         "descripcion": "La arena se mueve de forma antinatural, como si buscara devorar a los vivos.",
-         "conexiones": {"oeste": 19, "norte": 25},
-         "bioma": "desierto", "cantidad": 2},
-
-    28: {"nombre": "Ruinas del Eco Silente",
-         "descripcion": "Cada paso resuena demasiado fuerte, como si algo escuchara desde abajo.",
-         "conexiones": {"oeste": 18, "este": 29},
-         "bioma": "desierto", "cantidad": 2},
-
-    29: {"nombre": "Santuario de la Marca Roja",
-         "descripcion": "Antiguos rituales dejaron su huella, aún palpable en el aire seco.",
-         "conexiones": {"oeste": 28, "norte": 30},
-         "encuentros": [("demonioInferior", 2)],
-         "tesoro": True},
-
-    30: {"nombre": "Campos de Huesos Errantes",
-         "descripcion": "Restos que cambian de lugar con el tiempo, formando patrones desconocidos.",
-         "conexiones": {"sur": 29, "norte": 31},
-         "bioma": "desierto", "cantidad": 2},
-
-    31: {"nombre": "Trono del Último Señor",
-         "descripcion": "Un lugar de dominio absoluto, ahora envuelto en un silencio antinatural.",
-         "conexiones": {"oeste": 25, "norte": 32},
-         "encuentros": [("reyEsqueleto", 1)]},
-
-    32: {"nombre": "Falla de los Antiguos",
-         "descripcion": "Una grieta llena de restos y reliquias de una civilización olvidada.",
-         "conexiones": {"sur": 31},
-         "bioma": "desierto", "cantidad": 2,
-         "hospital": True},
-
-    33: {"nombre": "Trono de Ceniza Viva",
-         "descripcion": "El asiento aún desprende calor, como si su antiguo rey no se hubiera ido del todo.",
-         "conexiones": {"oeste": 24, "este": 34, "norte": 37},
-         "encuentros": [("reyDemonio", 1)],
-         "acertijos": True},  # ← NUEVO: Sala de acertijos
-
-    # ── Mar (salas 33-72) ──────────────────────────────────
-    34: {"nombre": "Embarcadero 1",
-         "descripcion": "La marea está calmada y la gente emocionada.",
-         "conexiones": {"oeste": 32, "norte": 38, "este": 39, "sur": 35},
-         "bioma": "mar"},
-
-    35: {"nombre": "Abismo Coralino",
-         "descripcion": "Corales brillantes cubren una grieta que parece no tener fin.",
-         "conexiones": {"oeste": 33, "este": 36},
-         "bioma": "mar", "cantidad": 1,
-         "hospital": True},
-
-    36: {"nombre": "Trono del Oceano",
-         "descripcion": "Un trono erosionado por el tiempo, rodeado de corrientes poderosas.",
-         "conexiones": {"oeste": 34, "este": 37},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
-
-    37: {"nombre": "Embarcadero 2",
-         "descripcion": "El puerto de embarcación esta rebosante de gente.",
-         "conexiones": {"sur": 32, "este": 38, "norte": 42},
-         "bioma": "mar",
-         "acertijos": True},  # ← NUEVO: Sala de acertijos
-
-    38: {"nombre": "Fosa de las Sombras Marinas",
-         "descripcion": "Una profundidad oscura donde nada debería sobrevivir.",
-         "conexiones": {"oeste": 37, "norte": 43, "este": 39, "sur": 33},
-         "bioma": "mar", "cantidad": 2,
-         "hospital": True},
-
-    39: {"nombre": "Arrecife Susurrante",
-         "descripcion": "El coral emite sonidos extraños al moverse con la corriente.",
-         "conexiones": {"norte": 44, "sur": 33, "oeste": 38, "este": 40},
-         "bioma": "mar", "cantidad": 1,
-         "tesoro": True},
-
-    40: {"nombre": "Caverna de la Bruma Salina",
-         "descripcion": "Una cueva húmeda llena de niebla con olor a sal.",
-         "conexiones": {"oeste": 39, "este": 41, "sur": 36},
-         "bioma": "mar", "cantidad": 2},
-
-    41: {"nombre": "Templo de las Olas Eternas",
-         "descripcion": "Estructuras antiguas golpeadas sin cesar por el mar.",
-         "conexiones": {"sur": 36, "norte": 46, "oeste": 40},
-         "bioma": "mar", "cantidad": 3},
-
-    42: {"nombre": "Laguna de los Naufragos",
-         "descripcion": "Restos de barcos descansan bajo aguas quietas.",
-         "conexiones": {"sur": 37, "norte": 52, "este": 43},
-         "bioma": "mar", "cantidad": 1},
-
-    43: {"nombre": "Pantano del Silencio",
-         "descripcion": "Un pantano inmóvil donde ni los insectos se atreven a sonar.",
-         "conexiones": {"oeste": 42, "norte": 51, "este": 44, "sur": 39},
-         "bioma": "mar", "cantidad": 2},
-
-    44: {"nombre": "Refugio de las Medusas",
-         "descripcion": "Criaturas translúcidas iluminan la oscuridad acuática.",
-         "conexiones": {"norte": 50, "sur": 39, "oeste": 43, "este": 45},
-         "bioma": "mar", "cantidad": 3,
-         "hospital": True, "tienda": True},
-
-    45: {"nombre": "Camara del Pulpo Antiguo",
-         "descripcion": "Tentáculos gigantes dejaron marcas en las paredes.",
-         "conexiones": {"oeste": 44},
-         "bioma": "mar", "cantidad": 1},
-
-    46: {"nombre": "Bosque de Manglares Oscuros",
-         "descripcion": "Raíces retorcidas emergen del agua turbia.",
-         "conexiones": {"sur": 41, "este": 47, "norte": 48},
-         "bioma": "mar", "cantidad": 2},
-
-    47: {"nombre": "Isla de la Lluvia Perpetua",
-         "descripcion": "Nunca deja de llover en esta isla perdida.",
-         "conexiones": {"oeste": 46, "norte": 48},
-         "bioma": "mar", "cantidad": 3},
-
-    48: {"nombre": "Grieta Abisal",
-         "descripcion": "Una fisura profunda que emite un frío inquietante.",
-         "conexiones": {"oeste": 46, "sur": 47, "norte": 59},
-         "bioma": "mar", "cantidad": 1},
-
-    49: {"nombre": "Playa de los Ecos Hundidos",
-         "descripcion": "Las olas traen voces del pasado.",
-         "conexiones": {"norte": 56, "oeste": 50},
-         "bioma": "mar", "cantidad": 2},
-
-    50: {"nombre": "Torre del Vigia Marino",
-         "descripcion": "Una torre solitaria que vigila el horizonte infinito.",
-         "conexiones": {"sur": 44, "oeste": 51, "este": 49, "norte": 55},
-         "bioma": "mar", "cantidad": 1},
-
-    51: {"nombre": "Gruta de las Mareas Silentes",
-         "descripcion": "El agua entra y sale sin hacer ruido, como si el sonido estuviera prohibido.",
-         "conexiones": {"norte": 54, "sur": 43, "oeste": 52, "este": 50},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
-
-    52: {"nombre": "Pantano de las Raices Hundidas",
-         "descripcion": "Raices gigantes se entrelazan bajo aguas oscuras.",
-         "conexiones": {"sur": 42, "norte": 53, "este": 51},
-         "bioma": "mar", "cantidad": 3},
-
-    53: {"nombre": "Caverna del Coral Luminoso",
-         "descripcion": "El coral emite una tenue luz azul en la oscuridad.",
-         "conexiones": {"sur": 52, "este": 54},
-         "bioma": "mar", "cantidad": 1,
-         "hospital": True},
-
-    54: {"nombre": "Estuario del Viento Humedo",
-         "descripcion": "El aire cargado de humedad sopla con fuerza constante.",
-         "conexiones": {"oeste": 53, "este": 55, "sur": 50},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
-
-    55: {"nombre": "Pozo de Agua Estancada",
-         "descripcion": "Un pozo profundo donde el agua no se mueve desde hace siglos.",
-         "conexiones": {"oeste": 54, "sur": 50},
-         "bioma": "mar", "cantidad": 1},
-
-    56: {"nombre": "Acantilado de la Lluvia Fina",
-         "descripcion": "Una llovizna constante cubre la roca resbaladiza.",
-         "conexiones": {"sur": 49},
-         "bioma": "mar", "cantidad": 3},
-
-    57: {"nombre": "Laguna de las Sombras Flotantes",
-         "descripcion": "Figuras oscuras parecen moverse bajo la superficie.",
-         "conexiones": {"norte": 58, "este": 59},
-         "bioma": "mar", "cantidad": 2},
-
-    58: {"nombre": "Bosque Inundado Antiguo",
-         "descripcion": "Arboles muertos sobresalen de aguas tranquilas.",
-         "conexiones": {"sur": 57, "este": 60},
-         "bioma": "mar", "cantidad": 1,
-         "tienda": True, "tesoro": True},
-
-    59: {"nombre": "Camara de las Corrientes Ocultas",
-         "descripcion": "El agua fluye por caminos invisibles bajo tus pies.",
-         "conexiones": {"norte": 60, "sur": 48, "oeste": 57, "este": 62},
-         "bioma": "mar", "cantidad": 3},
-
-    60: {"nombre": "Isla del Horizonte Gris",
-         "descripcion": "El cielo y el mar se funden en un tono apagado.",
-         "conexiones": {"oeste": 58, "sur": 59, "este": 61},
-         "bioma": "mar", "cantidad": 2},
-
-    61: {"nombre": "Fosa de la Marea Negra",
-         "descripcion": "El agua adquiere un tono oscuro y denso.",
-         "conexiones": {"oeste": 60, "sur": 62, "este": 64},
-         "bioma": "mar", "cantidad": 1},
-
-    62: {"nombre": "Playa de la Arena Humeda",
-         "descripcion": "La arena nunca llega a secarse, incluso bajo el sol.",
-         "conexiones": {"oeste": 59, "norte": 61, "este": 63},
-         "bioma": "mar", "cantidad": 2,
-         "tesoro": True},
-
-    63: {"nombre": "Gruta del Agua Resonante",
-         "descripcion": "Cada gota crea ecos prolongados en la cueva.",
-         "conexiones": {"oeste": 62, "este": 66},
-         "bioma": "mar", "cantidad": 3},
-
-    64: {"nombre": "Delta de los Canales Perdidos",
-         "descripcion": "Un laberinto de agua donde es facil desorientarse.",
-         "conexiones": {"oeste": 61, "este": 65},
-         "bioma": "mar", "cantidad": 1,
-         "tesoro": True},
-
-    65: {"nombre": "Arrecife de las Espinas Blancas",
-         "descripcion": "Formaciones afiladas sobresalen entre las olas.",
-         "conexiones": {"oeste": 64, "este": 67, "sur": 66},
-         "bioma": "mar", "cantidad": 2},
-
-    66: {"nombre": "Pantano de la Lluvia Eterna",
-         "descripcion": "La lluvia cae sin descanso sobre aguas fangosas.",
-         "conexiones": {"oeste": 63, "norte": 65, "este": 68},
-         "bioma": "mar", "cantidad": 3},
-
-    67: {"nombre": "Caverna del Vapor Salino",
-         "descripcion": "El aire caliente y salado dificulta la respiracion.",
-         "conexiones": {"oeste": 65},
-         "bioma": "mar", "cantidad": 1},
-
-    68: {"nombre": "Laguna de los Reflejos Rotos",
-         "descripcion": "La superficie muestra imagenes distorsionadas.",
-         "conexiones": {"oeste": 66, "este": 69},
-         "bioma": "mar", "cantidad": 2},
-
-    69: {"nombre": "Sendero del Lodo Profundo",
-         "descripcion": "Cada paso se hunde lentamente en el terreno blando.",
-         "conexiones": {"oeste": 68, "este": 70},
-         "bioma": "mar", "cantidad": 1},
-
-    70: {"nombre": "Bahia de la Niebla Densa",
-         "descripcion": "Una niebla espesa cubre completamente la vision.",
-         "conexiones": {"oeste": 69, "este": 71},
-         "bioma": "mar", "cantidad": 3,
-         "hospital": True},
-
-    71: {"nombre": "Cumbre del Leviatan",
-         "descripcion": "Un acantilado imposible desde donde emerge el eco de una bestia ancestral.",
-         "conexiones": {"oeste": 70, "este": 72, "norte": 150},
-         "bioma": "mar", "cantidad": 1},
-
-    72: {"nombre": "Cumbre del Kraken",
-         "descripcion": "Un pico rocoso azotado por tormentas donde una sombra colosal se agita bajo las olas.",
-         "conexiones": {"oeste": 71, "este": 73, "sur": 150},
-         "bioma": "mar", "cantidad": 1,
-         "encuentros": [("kraken", 1)]},
-
-    # ── NIEVE (salas 73-149) ──────────────────────────────────
-    73:  {"nombre": "Ventisca Eterna",
-          "descripcion": "El viento ruge sin descanso, levantando cuchillas de nieve que desgarran la piel.",
-          "conexiones": {"este": 74, "oeste": 72},
-          "bioma": "nieve", "cantidad": 1},
-
-    74:  {"nombre": "Bosque de Hielo Negro",
-          "descripcion": "Árboles oscuros cubiertos de escarcha absorben la luz y el calor.",
-          "conexiones": {"oeste": 76, "sur": 75, "este": 76},
-          "bioma": "nieve", "cantidad": 2},
-
-    75:  {"nombre": "Grieta del Frío Abisal",
-          "descripcion": "Una fisura profunda exhala un aire tan frío que quema.",
-          "conexiones": {"norte": 74},
-          "bioma": "nieve", "cantidad": 2},
-
-    76:  {"nombre": "Llanura del Silencio Blanco",
-          "descripcion": "Una extensión infinita donde ningún sonido logra sobrevivir.",
-          "conexiones": {"sur": 77, "oeste": 74},
-          "bioma": "nieve", "cantidad": 1},
-
-    77:  {"nombre": "Cementerio Congelado",
-          "descripcion": "Cuerpos atrapados en hielo parecen observar a los vivos.",
-          "conexiones": {"NORTE": 76, "este": 78},
-          "bioma": "nieve", "cantidad": 2},
-
-    78:  {"nombre": "Tormenta Errante",
-          "descripcion": "Una ventisca viva se desplaza sin rumbo, devorando todo a su paso.",
-          "conexiones": {"sur": 77, "norte": 79},
-          "bioma": "nieve", "cantidad": 2},
-
-    79:  {"nombre": "Picos del Desgarro",
-          "descripcion": "Montañas afiladas como cuchillas sobresalen entre la nieve.",
-          "conexiones": {"sur": 78, "norte": 98, "este": 80},
-          "bioma": "nieve", "cantidad": 2},
-
-    80:  {"nombre": "Hondonada del Eco Helado",
-          "descripcion": "Cada sonido regresa distorsionado, como si algo respondiera.",
-          "conexiones": {"oeste": 79, "norte": 97},
-          "bioma": "nieve", "cantidad": 1},
-
-    81:  {"nombre": "Río de Hielo Muerto",
-          "descripcion": "Un río congelado bajo el cual algo se mueve lentamente.",
-          "conexiones": {"este": 82},
-          "bioma": "nieve", "cantidad": 2},
-
-    82:  {"nombre": "Fauces de la Tormenta",
-          "descripcion": "Un paso estrecho donde el viento ruge como una bestia.",
-          "conexiones": {"oeste": 81, "norte": 83},
-          "bioma": "nieve", "cantidad": 2},
-
-    83:  {"nombre": "Campo de Estatuas Heladas",
-          "descripcion": "Figuras humanas congeladas en gestos de terror.",
-          "conexiones": {"sur": 82, "norte": 96, "este": 84, "oeste": 80},
-          "bioma": "nieve", "cantidad": 2},
-
-    84:  {"nombre": "Abismo Nevado",
-          "descripcion": "Un vacío oculto bajo la nieve, listo para tragar incautos.",
-          "conexiones": {"sur": 85, "norte": 95, "oeste": 83},
-          "bioma": "nieve", "cantidad": 1},
-
-    85:  {"nombre": "Cumbre del Viento Cortante",
-          "descripcion": "El aire corta como cuchillas invisibles.",
-          "conexiones": {"este": 86, "norte": 84},
-          "bioma": "nieve", "cantidad": 2},
-
-    86:  {"nombre": "Valle de las Sombras Blancas",
-          "descripcion": "Siluetas se mueven bajo la tormenta, pero nunca se acercan.",
-          "conexiones": {"oeste": 85, "norte": 87, "este": 89},
-          "bioma": "nieve", "cantidad": 2},
-
-    87:  {"nombre": "Ruinas Congeladas",
-          "descripcion": "Estructuras antiguas atrapadas en hielo eterno.",
-          "conexiones": {"sur": 86},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
-
-    88:  {"nombre": "Paso del Susurro Gélido",
-          "descripcion": "Voces heladas parecen guiarte… o perderte.",
-          "conexiones": {"sur": 89},
-          "bioma": "nieve", "cantidad": 1},
-
-    89:  {"nombre": "Glaciar Viviente",
-          "descripcion": "El hielo cruje y se desplaza como si respirara.",
-          "conexiones": {"oeste": 86, "norte": 88},
-          "bioma": "nieve", "cantidad": 2},
-
-    90:  {"nombre": "Fosa del Olvido Blanco",
-          "descripcion": "Quienes caen aquí desaparecen sin dejar rastro.",
-          "conexiones": {"norte": 91},
-          "bioma": "nieve", "cantidad": 2},
-
-    91:  {"nombre": "Torres de Escarcha",
-          "descripcion": "Columnas de hielo crecen hacia el cielo gris.",
-          "conexiones": {"sur": 90, "norte": 92},
-          "bioma": "nieve", "cantidad": 2},
-
-    92:  {"nombre": "Velo de Nieve Infinita",
-          "descripcion": "La visibilidad desaparece por completo.",
-          "conexiones": {"sur": 91, "norte": 101, "oeste": 93},
-          "bioma": "nieve", "cantidad": 1},
-
-    93:  {"nombre": "Lago de Cristal Helado",
-          "descripcion": "Superficie transparente que oculta profundidades oscuras.",
-          "conexiones": {"este": 92, "norte": 102},
-          "bioma": "nieve", "cantidad": 2},
-
-    94:  {"nombre": "Bosque de Agujas Gélidas",
-          "descripcion": "Espinas de hielo sobresalen del suelo como trampas.",
-          "conexiones": {"oeste": 95, "norte": 103},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
-
-    95:  {"nombre": "Furia Blanca",
-          "descripcion": "Una tormenta que parece tener voluntad propia.",
-          "conexiones": {"sur": 84, "norte": 104, "este": 94},
-          "bioma": "nieve", "cantidad": 2},
-
-    96:  {"nombre": "Caverna de Escarcha Viva",
-          "descripcion": "El hielo late con una energía inquietante.",
-          "conexiones": {"sur": 83, "norte": 105, "oeste": 97},
-          "bioma": "nieve", "cantidad": 2},
-
-    97:  {"nombre": "Paso del Último Aliento",
-          "descripcion": "El aire es tan frío que respirar duele.",
-          "conexiones": {"sur": 80, "este": 96},
-          "bioma": "nieve", "cantidad": 1},
-
-    98:  {"nombre": "Colmillos del Invierno",
-          "descripcion": "Formaciones de hielo puntiagudas rodean el camino.",
-          "conexiones": {"sur": 79, "norte": 107, "oeste": 99},
-          "bioma": "nieve", "cantidad": 2},
-
-    99:  {"nombre": "Valle del Sueño Helado",
-          "descripcion": "Un frío que induce un sueño mortal.",
-          "conexiones": {"este": 98, "norte": 108},
-          "bioma": "nieve", "cantidad": 2},
-
-    100: {"nombre": "Niebla Blanca",
-          "descripcion": "Una bruma espesa oculta todo peligro.",
-          "conexiones": {"norte": 109},
-          "bioma": "nieve", "cantidad": 1},
-
-    101: {"nombre": "Cumbre Quebrada",
-          "descripcion": "Fragmentos de hielo caen constantemente desde arriba.",
-          "conexiones": {"sur": 92, "norte": 118},
-          "bioma": "nieve", "cantidad": 2},
-
-    102: {"nombre": "Territorio del Frío Antiguo",
-          "descripcion": "Una energía ancestral congela todo lo que toca.",
-          "conexiones": {"sur": 93, "norte": 117},
-          "bioma": "nieve", "cantidad": 2},
-
-    103: {"nombre": "Sendero del Hielo Negro",
-          "descripcion": "Un camino oscuro que no refleja la luz.",
-          "conexiones": {"sur": 94, "oeste": 104},
-          "bioma": "nieve", "cantidad": 2},
-
-    104: {"nombre": "Vigilantes de Escarcha",
-          "descripcion": "Figuras inmóviles parecen seguir cada movimiento.",
-          "conexiones": {"sur": 95, "norte": 115, "este": 103, "oeste": 105},
-          "bioma": "nieve", "cantidad": 2},
-
-    105: {"nombre": "Desierto Blanco",
-          "descripcion": "Dunas de nieve reemplazan a la arena.",
-          "conexiones": {"sur": 96, "este": 104, "oeste": 106},
-          "bioma": "nieve", "cantidad": 1,
-          "hospital": True},
-
-    106: {"nombre": "Garganta del Viento Helado",
-          "descripcion": "Corrientes de aire atraviesan como cuchillas.",
-          "conexiones": {"este": 105, "oeste": 107},
-          "bioma": "nieve", "cantidad": 2},
-
-    107: {"nombre": "Ruinas del Invierno Eterno",
-          "descripcion": "Restos de una civilización atrapada en hielo.",
-          "conexiones": {"sur": 98, "norte": 112, "este": 106, "oeste": 108},
-          "bioma": "nieve", "cantidad": 2},
-
-    108: {"nombre": "Campo de Fragmentos Gélidos",
-          "descripcion": "El suelo está cubierto de cristales afilados.",
-          "conexiones": {"sur": 99, "norte": 111, "este": 107, "oeste": 109},
-          "bioma": "nieve", "cantidad": 2},
-
-    109: {"nombre": "Pozo de Escarcha",
-          "descripcion": "Un agujero profundo que emana frío absoluto.",
-          "conexiones": {"sur": 100, "norte": 110, "este": 108},
-          "bioma": "nieve", "cantidad": 1},
-
-    110: {"nombre": "Travesía del Frío Mortal",
-          "descripcion": "Cada paso drena lentamente la vida.",
-          "conexiones": {"sur": 109, "norte": 111},
-          "bioma": "nieve", "cantidad": 2},
-
-    111: {"nombre": "Tormenta Estática",
-          "descripcion": "El aire está cargado de energía helada.",
-          "conexiones": {"sur": 108, "este": 112},
-          "bioma": "nieve", "cantidad": 2},
-
-    112: {"nombre": "Cascada Congelada",
-          "descripcion": "El agua quedó atrapada en pleno descenso.",
-          "conexiones": {"sur": 107, "norte": 125, "oeste": 111},
-          "bioma": "nieve", "cantidad": 1},
-
-    113: {"nombre": "Círculo de Hielo Antiguo",
-          "descripcion": "Formaciones perfectas rodean un centro vacío.",
-          "conexiones": {"sur": 124, "este": 114},
-          "bioma": "nieve", "cantidad": 2},
-
-    114: {"nombre": "Bosque de Sombras Heladas",
-          "descripcion": "Sombras que no pertenecen a nada visible.",
-          "conexiones": {"oeste": 113, "norte": 123},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
-
-    115: {"nombre": "Frontera del Frío Absoluto",
-          "descripcion": "Más allá de este punto, nada sobrevive.",
-          "conexiones": {"sur": 104, "norte": 122, "este": 116},
-          "bioma": "nieve", "cantidad": 2},
-
-    116: {"nombre": "Vértice Nevado",
-          "descripcion": "Un punto donde el viento converge violentamente.",
-          "conexiones": {"oeste": 115, "norte": 121},
-          "bioma": "nieve", "cantidad": 2},
-
-    117: {"nombre": "Hogar de la Escarcha",
-          "descripcion": "El frío parece originarse aquí.",
-          "conexiones": {"sur": 102, "norte": 120},
-          "bioma": "nieve", "cantidad": 1},
-
-    118: {"nombre": "Sendero de los Perdidos",
-          "descripcion": "Huellas que aparecen y desaparecen.",
-          "conexiones": {"sur": 101, "norte": 119},
-          "bioma": "nieve", "cantidad": 2},
-
-    119: {"nombre": "Falla Glacial",
-          "descripcion": "El suelo se abre en grietas heladas.",
-          "conexiones": {"sur": 118, "norte": 128},
-          "bioma": "nieve", "cantidad": 2},
-
-    120: {"nombre": "Campo de Huesos Congelados",
-          "descripcion": "Restos atrapados en hielo eterno.",
-          "conexiones": {"sur": 117, "norte": 129, "oeste": 121},
-          "bioma": "nieve", "cantidad": 2},
-
-    121: {"nombre": "Tormenta Silenciosa",
-          "descripcion": "La nieve cae sin hacer ningún sonido.",
-          "conexiones": {"sur": 116, "norte": 130, "oeste": 122, "este": 120},
-          "bioma": "nieve", "cantidad": 1},
-
-    122: {"nombre": "Núcleo de Hielo Vivo",
-          "descripcion": "Una fuente de energía helada palpita.",
-          "conexiones": {"sur": 115, "norte": 131, "oeste": 123, "este": 121},
-          "bioma": "nieve", "cantidad": 2},
-
-    123: {"nombre": "Paso de los Colosos Helados",
-          "descripcion": "Sombras gigantes se mueven entre la nieve.",
-          "conexiones": {"sur": 114, "norte": 132, "oeste": 124, "este": 122},
-          "bioma": "nieve", "cantidad": 2},
-
-    124: {"nombre": "Mar de Escarcha",
-          "descripcion": "Una extensión ondulante de hielo sólido.",
-          "conexiones": {"sur": 113, "norte": 133, "oeste": 125, "este": 123},
-          "bioma": "nieve", "cantidad": 2},
-
-    125: {"nombre": "Colina del Último Suspiro",
-          "descripcion": "El frío roba el aliento lentamente.",
-          "conexiones": {"este": 124, "norte": 134},
-          "bioma": "nieve", "cantidad": 1},
-
-    126: {"nombre": "Catedral de Hielo Roto",
-          "descripcion": "Estructuras que recuerdan a un templo destruido.",
-          "conexiones": {"oeste": 127, "norte": 135},
-          "bioma": "nieve", "cantidad": 2},
-
-    127: {"nombre": "Velo del Olvido",
-          "descripcion": "La memoria se desvanece entre la nieve.",
-          "conexiones": {"este": 126, "norte": 136},
-          "bioma": "nieve", "cantidad": 2},
-
-    128: {"nombre": "Fauces Heladas",
-          "descripcion": "Una grieta parece querer devorar el mundo.",
-          "conexiones": {"sur": 119, "norte": 145},
-          "bioma": "nieve", "cantidad": 2},
-
-    129: {"nombre": "Bosque del Frío Susurrante",
-          "descripcion": "El viento parece hablar entre las ramas congeladas.",
-          "conexiones": {"sur": 120, "norte": 144},
-          "bioma": "nieve", "cantidad": 2},
-
-    130: {"nombre": "Campo de Escarcha Oscura",
-          "descripcion": "El hielo refleja una luz enfermiza.",
-          "conexiones": {"sur": 121, "norte": 143},
-          "bioma": "nieve", "cantidad": 2},
-
-    131: {"nombre": "Trampa de Nieve Profunda",
-          "descripcion": "El suelo cede bajo el peso sin aviso.",
-          "conexiones": {"sur": 122, "norte": 142},
-          "bioma": "nieve", "cantidad": 1,
-          "hospital": True},
-
-    132: {"nombre": "Cumbre del Olvido",
-          "descripcion": "Quienes llegan aquí olvidan por qué vinieron.",
-          "conexiones": {"sur": 122, "norte": 142, "oeste": 133},
-          "bioma": "nieve", "cantidad": 2},
-
-    133: {"nombre": "Rugido Blanco",
-          "descripcion": "El viento ensordece cualquier otro sonido.",
-          "conexiones": {"sur": 124, "norte": 140, "este": 132},
-          "bioma": "nieve", "cantidad": 2},
-
-    134: {"nombre": "Valle del Frío Eterno",
-          "descripcion": "Nunca deja de nevar en este lugar.",
-          "conexiones": {"sur": 125, "norte": 139, "oeste": 135},
-          "bioma": "nieve", "cantidad": 2},
-
-    135: {"nombre": "Sombras Bajo el Hielo",
-          "descripcion": "Figuras oscuras se mueven bajo la superficie.",
-          "conexiones": {"sur": 126, "este": 134},
-          "bioma": "nieve", "cantidad": 2},
-
-    136: {"nombre": "Paso de la Escarcha Mortal",
-          "descripcion": "Cada segundo expuesto es un riesgo.",
-          "conexiones": {"sur": 127},
-          "bioma": "nieve", "cantidad": 2},
-
-    137: {"nombre": "Caverna del Viento Helado",
-          "descripcion": "Corrientes internas recorren el interior sin cesar.",
-          "conexiones": {"este": 138},
-          "bioma": "nieve", "cantidad": 2},
-
-    138: {"nombre": "Campos del Silencio",
-          "descripcion": "El mundo parece detenido aquí.",
-          "conexiones": {"oeste": 137, "este": 139},
-          "bioma": "nieve", "cantidad": 1},
-
-    139: {"nombre": "Colapso Glacial",
-          "descripcion": "El terreno cruje y se derrumba constantemente.",
-          "conexiones": {"oeste": 138, "este": 140, "sur": 134},
-          "bioma": "nieve", "cantidad": 2},
-
-    140: {"nombre": "Tormenta del Norte",
-          "descripcion": "Una ventisca que nunca abandona esta zona.",
-          "conexiones": {"sur": 133, "oeste": 139, "este": 141},
-          "bioma": "nieve", "cantidad": 2},
-
-    141: {"nombre": "Grieta del Último Invierno",
-          "descripcion": "Un frío ancestral emana desde lo profundo.",
-          "conexiones": {"sur": 132, "norte": 146, "este": 142, "oeste": 140},
-          "bioma": "nieve", "cantidad": 2},
-
-    142: {"nombre": "Altar de Hielo Antiguo",
-          "descripcion": "Un lugar olvidado donde el frío es venerado.",
-          "conexiones": {"sur": 131, "oeste": 141, "este": 143},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True},
-
-    143: {"nombre": "Sendero del Frío Infinito",
-          "descripcion": "Un camino que parece no tener final.",
-          "conexiones": {"sur":    130, "oeste": 142},
-          "bioma": "nieve", "cantidad": 2},
-
-    144: {"nombre": "Cúpula de Escarcha",
-          "descripcion": "Una formación cerrada de hielo perfecto.",
-          "conexiones": {"sur": 129, "este": 145},
-          "bioma": "nieve", "cantidad": 1},
-
-    145: {"nombre": "Ruinas del Viento Blanco",
-          "descripcion": "Restos arrasados por tormentas eternas.",
-          "conexiones": {"sur": 128, "norte": 146, "oeste": 144},
-          "bioma": "nieve", "cantidad": 2},
-
-    146: {"nombre": "Frontera del Vacío Helado",
-          "descripcion": "Más allá solo hay frío y nada más.",
-          "conexiones": {"sur": 141, "norte": 148, "este": 145, "oeste": 147},
-          "bioma": "nieve", "cantidad": 2},
-
-    147: {"nombre": "Cráter de Hielo Vivo",
-          "descripcion": "Un impacto antiguo que aún emana energía.",
-          "conexiones": {"este": 146, "norte": 148},
-          "bioma": "nieve", "cantidad": 2,
-          "hospital": True,
-          "tienda": True},
-
-    148: {"nombre": "Trono del Invierno",
-          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
-          "conexiones": {"sur": 146, "oeste": 147},
-          "encuentros": [("alpha", 1)]},
-
-    149: {"nombre": "Oasis tranquilo",
-          "descripcion": "Un sitio en el que descansar, prepàrate para la batalla final.",
-         "conexiones": {"sur": 24, "oeste": 32},
-         "hospital": True,
-         "tienda": True},
-
-    150: {"nombre": "Trono del Invierno",
-          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
-          "conexiones": {"sur": 71, "norte": 72},
-          "hospital": True,
-          "tienda": True},
+    0.1: {"nombre": "Como combatir", "descripcion": "El soldado te da una espada corta.", "conexiones": {"norte": 0.2}, "encuentros": [("bandido", 1)]},
+    0.2: {"nombre": "Hospital y Tienda", "descripcion": "Aqui puedes curarte y comprar objetos.", "conexiones": {"sur": 0.1, "norte": 0.3}, "hospital": True, "tienda": True},
+    0.3: {"nombre": "Objetos", "descripcion": "Usa pocion_vida, pocion_danio, gema_teleporte", "conexiones": {"sur": 0.2, "norte": 0.4}, "encuentros": [("duende", 1)]},
+    0.4: {"nombre": " UI", "descripcion": "Usa los botones o escribe comandos.", "conexiones": {"sur": 0.3, "norte": 1}},
+    1: {"nombre": "North Mass", "descripcion": "Arena caliente bajo tus pies.", "conexiones": {"norte": 2, "este": 13, "sur": 6}, "bioma": "desierto", "cantidad": 1, "hospital": True},
+    2: {"nombre": "Dunas del Norte", "descripcion": "Dunas interminables.", "conexiones": {"sur": 1, "norte": 3}, "bioma": "desierto", "cantidad": 2},
+    3: {"nombre": "Ruinas del Desierto", "descripcion": "Columnas rotas.", "conexiones": {"oeste": 4, "norte": 5, "este": 16}, "bioma": "desierto", "cantidad": 2},
+    4: {"nombre": "Ciudad abrasada", "descripcion": "Una ciudad quemada.", "conexiones": {"este": 3}, "encuentros": [("demonioSuperior", 1)], "hospital": True},
+    5: {"nombre": "Valle muerto", "descripcion": "Cuerpos muertos por doquier.", "conexiones": {"sur": 3}, "bioma": "desierto", "cantidad": 2, "hospital": True},
+    6: {"nombre": "Oasis tranquilo", "descripcion": "Un pequeno oasis.", "conexiones": {"sur": 10, "oeste": 7, "norte": 1}, "hospital": True, "tienda": True},
+    7: {"nombre": "Sala del Viento Susurrante", "descripcion": "Voces del pasado.", "conexiones": {"oeste": 8, "este": 6, "sur": 9}, "encuentros": [("elfoOscuro", 1)]},
+    8: {"nombre": "Cámara del Oasis Oculto", "descripcion": "Un lago magico.", "conexiones": {"oeste": 9, "este": 7}, "bioma": "desierto", "cantidad": 1},
+    9: {"nombre": "Salón del Sol Eterno", "descripcion": "Un sol artificial.", "conexiones": {"sur": 8, "este": 7}, "bioma": "desierto", "cantidad": 2, "hospital": True, "tienda": True},
+    10: {"nombre": "Cripta de las Dunas Vivas", "descripcion": "Cuerpos que se mueven.", "conexiones": {"norte": 7}, "bioma": "desierto", "cantidad": 2},
+    11: {"nombre": "Caravana fantasma", "descripcion": "Viajeros espectrales.", "conexiones": {"este": 12, "norte": 6}, "encuentros": [("demonioInferior", 2)]},
+    12: {"nombre": "Fosa de Titanes", "descripcion": "Restos colosales.", "conexiones": {"norte": 13, "este": 17}, "bioma": "desierto", "cantidad": 2},
+    13: {"nombre": "Templo Olvidado", "descripcion": "Un templo en el desierto.", "conexiones": {"sur": 12, "este": 18, "norte": 14}, "encuentros": [("reyEsqueleto", 1)], "tienda": True},
+    14: {"nombre": "Extensión de Azhar", "descripcion": "El suelo arde.", "conexiones": {"norte": 15, "este": 19, "oeste": 1}, "bioma": "desierto", "cantidad": 1},
+    15: {"nombre": "Mar de Dunas Susurrantes", "descripcion": "Las dunas susurran.", "conexiones": {"norte": 16, "sur": 14}, "bioma": "desierto", "cantidad": 2},
+    16: {"nombre": "Vestigios Enterrados", "descripcion": "Ruinas antiguas.", "conexiones": {"norte": 17, "sur": 15}, "bioma": "desierto", "cantidad": 1},
+    17: {"nombre": "Santuario Carmesí", "descripcion": "Simbolos sangrientos.", "conexiones": {"sur": 16, "este": 22, "oeste": 3}, "encuentros": [("demonioInferior", 2)], "tienda": True},
+    18: {"nombre": "Sepulcro de Colosos", "descripcion": "Huesos gigantescos.", "conexiones": {"oeste": 11}, "bioma": "desierto", "cantidad": 2, "tienda": True},
+    19: {"nombre": "Trono del Abismo", "descripcion": "Estructura de hueso y sombra.", "conexiones": {"oeste": 12, "este": 27}, "bioma": "desierto", "cantidad": 1},
+    20: {"nombre": "Llanura de Fuego Blanco", "descripcion": "Luz intensa.", "conexiones": {"norte": 21, "este": 26, "este": 13}, "bioma": "desierto", "cantidad": 1},
+    21: {"nombre": "Dunas del Murmullo Eterno", "descripcion": "Algo se mueve bajo la arena.", "conexiones": {"sur": 20, "este": 25}, "bioma": "desierto", "cantidad": 2},
+    22: {"nombre": "Columnas del Olvido", "descripcion": "Pilares erosionados.", "conexiones": {"este": 15}, "bioma": "desierto", "cantidad": 2, "hospital": True, "tienda": True},
+    23: {"nombre": "Templo de la Sangre Antigua", "descripcion": "Inscripciones vivas.", "conexiones": {"este": 24, "oeste": 16}, "encuentros": [("demonioInferior", 2)]},
+    24: {"nombre": "Abismo de los Caídos", "descripcion": "Restos antiguos.", "conexiones": {"sur": 25, "norte": 23, "este": 32}, "bioma": "desierto", "cantidad": 2},
+    25: {"nombre": "Trono del Devastador", "descripcion": "Asiento de poder olvidado.", "conexiones": {"sur": 30, "norte": 23, "este": 32}, "bioma": "desierto", "cantidad": 4, "tesoro": True},
+    26: {"nombre": "Horizonte Quebrado", "descripcion": "El aire distorsiona.", "conexiones": {"oeste": 20, "sur": 27}, "bioma": "desierto", "cantidad": 1, "tienda": True, "hospital": True},
+    27: {"nombre": "Dunas del Hambre", "descripcion": "La arena se mueve.", "conexiones": {"oeste": 19, "norte": 25}, "bioma": "desierto", "cantidad": 2},
+    28: {"nombre": "Ruinas del Eco Silente", "descripcion": "Cada paso resuena.", "conexiones": {"oeste": 18, "este": 29}, "bioma": "desierto", "cantidad": 2},
+    29: {"nombre": "Santuario de la Marca Roja", "descripcion": "Antiguos rituales.", "conexiones": {"oeste": 28, "norte": 30}, "encuentros": [("demonioInferior", 2)], "tesoro": True},
+    30: {"nombre": "Campos de Huesos Errantes", "descripcion": "Restos que cambian.", "conexiones": {"sur": 29, "norte": 31}, "bioma": "desierto", "cantidad": 2},
+    31: {"nombre": "Trono del Último Señor", "descripcion": "Dominio absoluto.", "conexiones": {"oeste": 25, "norte": 32}, "encuentros": [("reyEsqueleto", 1)]},
+    32: {"nombre": "Falla de los Antiguos", "descripcion": "Grieta con reliquias.", "conexiones": {"sur": 31}, "bioma": "desierto", "cantidad": 2, "hospital": True},
+    33: {"nombre": "Trono de Ceniza Viva", "descripcion": "El asiento aun deshuele.", "conexiones": {"este": 34, "norte": 37}, "encuentros": [("reyDemonio", 1)], "acertijos": True},
+    34: {"nombre": "Embarcadero 1", "descripcion": "La marea calmada.", "conexiones": {"norte": 38, "este": 39, "sur": 35}, "bioma": "mar"},
+    35: {"nombre": "Abismo Coralino", "descripcion": "Corales brillantes.", "conexiones": {"este": 36}, "bioma": "mar", "cantidad": 1, "hospital": True},
+    36: {"nombre": "Trono del Oceano", "descripcion": "Un trono erodedo.", "conexiones": {"este": 37}, "bioma": "mar", "cantidad": 2, "tesoro": True},
+    37: {"nombre": "Embarcadero 2", "descripcion": "El puerto rebosante.", "conexiones": {"norte": 42}, "bioma": "mar", "acertijos": True},
+    38: {"nombre": "Fosa de las Sombras Marinas", "descripcion": "Profundidad oscura.", "conexiones": {"norte": 43, "este": 39}, "bioma": "mar", "cantidad": 2, "hospital": True},
+    39: {"nombre": "Arrecife Susurrante", "descripcion": "Coral con sonidos.", "conexiones": {"norte": 44, "este": 40}, "bioma": "mar", "cantidad": 1, "tesoro": True},
+    40: {"nombre": "Caverna de la Bruma Salina", "descripcion": "Niebla con olor a sal.", "conexiones": {"este": 41, "sur": 36}, "bioma": "mar", "cantidad": 2},
+    41: {"nombre": "Templo de las Olas Eternas", "descripcion": "Estructuras antiguas.", "conexiones": {"norte": 46, "este": 40}, "bioma": "mar", "cantidad": 3},
+    42: {"nombre": "Laguna de los Naufragos", "descripcion": "Restos de barcos.", "conexiones": {"norte": 52, "este": 43}, "bioma": "mar", "cantidad": 1},
+    43: {"nombre": "Pantano del Silencio", "descripcion": "Un pantano inmóvil.", "conexiones": {"norte": 51, "este": 44}, "bioma": "mar", "cantidad": 2},
+    44: {"nombre": "Refugio de las Medusas", "descripcion": "Crias translucidas.", "conexiones": {"norte": 50, "este": 45}, "bioma": "mar", "cantidad": 3, "hospital": True, "tienda": True},
+    45: {"nombre": "Camara del Pulpo Antiguo", "descripcion": "Tentaculos gigantes.", "conexiones": {"oeste": 44}, "bioma": "mar", "cantidad": 1},
+    46: {"nombre": "Bosque de Manglares Oscuros", "descripcion": "Raices retorcidas.", "conexiones": {"este": 47, "norte": 48}, "bioma": "mar", "cantidad": 2},
+    47: {"nombre": "Isla de la Lluvia Perpetua", "descripcion": "Nunca deja de llover.", "conexiones": {"norte": 48}, "bioma": "mar", "cantidad": 3},
+    48: {"nombre": "Grieta Abisal", "descripcion": "Fisura profunda.", "conexiones": {"norte": 59}, "bioma": "mar", "cantidad": 1},
+    49: {"nombre": "Playa de los Ecos Hundidos", "descripcion": "Las olas traen voces.", "conexiones": {"norte": 56, "este": 50}, "bioma": "mar", "cantidad": 2},
+    50: {"nombre": "Torre del Vigia Marino", "descripcion": "Una torre solitaria.", "conexiones": {"sur": 44, "este": 49, "norte": 55}, "bioma": "mar", "cantidad": 1},
+    51: {"nombre": "Gruta de las Mareas Silentes", "descripcion": "El agua sin ruido.", "conexiones": {"norte": 54, "este": 50}, "bioma": "mar", "cantidad": 2, "tesoro": True},
+    52: {"nombre": "Pantano de las Raices Hundidas", "descripcion": "Raices gigantes.", "conexiones": {"norte": 53, "este": 51}, "bioma": "mar", "cantidad": 3},
+    53: {"nombre": "Caverna del Coral Luminoso", "descripcion": "Coral con luz.", "conexiones": {"este": 54}, "bioma": "mar", "cantidad": 1, "hospital": True},
+    54: {"nombre": "Estuario del Viento Humedo", "descripcion": "Aire humedo.", "conexiones": {"este": 55, "sur": 50}, "bioma": "mar", "cantidad": 2, "tesoro": True},
+    55: {"nombre": "Pozo de Agua Estancada", "descripcion": "Agua quieta.", "conexiones": {"sur": 50}, "bioma": "mar", "cantidad": 1},
+    56: {"nombre": "Acantilado de la Lluvia Fina", "descripcion": "Llovizna constante.", "conexiones": {"sur": 49}, "bioma": "mar", "cantidad": 3},
+    57: {"nombre": "Laguna de las Sombras Flotantes", "descripcion": "Figuras oscuras.", "conexiones": {"norte": 58, "este": 59}, "bioma": "mar", "cantidad": 2},
+    58: {"nombre": "Bosque Inundado Antiguo", "descripcion": "Arboles muertos.", "conexiones": {"este": 60}, "bioma": "mar", "cantidad": 1, "tienda": True, "tesoro": True},
+    59: {"nombre": "Camara de las Corrientes Ocultas", "descripcion": "Agua invisible.", "conexiones": {"norte": 60, "este": 62}, "bioma": "mar", "cantidad": 3},
+    60: {"nombre": "Isla del Horizonte Gris", "descripcion": "Cielo y mar fusionados.", "conexiones": {"este": 61}, "bioma": "mar", "cantidad": 2},
+    61: {"nombre": "Fosa de la Marea Negra", "descripcion": "Agua oscura.", "conexiones": {"este": 64}, "bioma": "mar", "cantidad": 1},
+    62: {"nombre": "Playa de la Arena Humeda", "descripcion": "Arena siempre humeda.", "conexiones": {"este": 63}, "bioma": "mar", "cantidad": 2, "tesoro": True},
+    63: {"nombre": "Gruta del Agua Resonante", "descripcion": "Gotas con ecos.", "conexiones": {"este": 66}, "bioma": "mar", "cantidad": 3},
+    64: {"nombre": "Delta de los Canales Perdidos", "descripcion": "Laberinto de agua.", "conexiones": {"este": 65}, "bioma": "mar", "cantidad": 1, "tesoro": True},
+    65: {"nombre": "Arrecife de las Espinas Blancas", "descripcion": "Formaciones afiladas.", "conexiones": {"este": 67, "sur": 66}, "bioma": "mar", "cantidad": 2},
+    66: {"nombre": "Pantano de la Lluvia Eterna", "descripcion": "Lluvia sin descanso.", "conexiones": {"este": 68, "sur": 63}, "bioma": "mar", "cantidad": 3},
+    67: {"nombre": "Caverna del Vapor Salino", "descripcion": "Aire caliente.", "conexiones": {"este": 65}, "bioma": "mar", "cantidad": 1},
+    68: {"nombre": "Laguna de los Reflejos Rotos", "descripcion": "Superficie distorsionada.", "conexiones": {"este": 69}, "bioma": "mar", "cantidad": 2},
+    69: {"nombre": "Sendero del Lodo Profundo", "descripcion": "Terreno blando.", "conexiones": {"este": 70}, "bioma": "mar", "cantidad": 1},
+    70: {"nombre": "Bahia de la Niebla Densa", "descripcion": "Niebla espesa.", "conexiones": {"este": 71}, "bioma": "mar", "cantidad": 3, "hospital": True},
+    71: {"nombre": "Cumbre del Leviatan", "descripcion": "Acantilado imposible.", "conexiones": {"este": 72}, "bioma": "mar", "cantidad": 1},
+    72: {"nombre": "Cumbre del Kraken", "descripcion": "Una sombra colosal.", "conexiones": {"este": 73}, "bioma": "mar", "cantidad": 1, "encuentros": [("kraken", 1)]},
+    73: {"nombre": "Ventisca Eterna", "descripcion": "El viento ruge.", "conexiones": {"este": 74, "oeste": 72}, "bioma": "nieve", "cantidad": 1},
+    74: {"nombre": "Bosque de Hielo Negro", "descripcion": "Arboles oscuros.", "conexiones": {"este": 76}, "bioma": "nieve", "cantidad": 2},
+    75: {"nombre": "Grieta del Frio Abisal", "descripcion": "Aire que quema.", "conexiones": {"este": 76}, "bioma": "nieve", "cantidad": 2},
+    76: {"nombre": "Llanura del Silencio Blanco", "descripcion": "Extension infinita.", "conexiones": {"sur": 77}, "bioma": "nieve", "cantidad": 1},
+    77: {"nombre": "Cementerio Congelado", "descripcion": "Cuerpos en hielo.", "conexiones": {"norte": 78, "este": 78}, "bioma": "nieve", "cantidad": 2},
+    78: {"nombre": "Tormenta Errante", "descripcion": "Ventisca viva.", "conexiones": {"norte": 79}, "bioma": "nieve", "cantidad": 2},
+    79: {"nombre": "Picos del Desgarro", "descripcion": "Montanas afiladas.", "conexiones": {"norte": 98, "este": 80}, "bioma": "nieve", "cantidad": 2},
+    80: {"nombre": "Hondonada del Eco Helado", "descripcion": "Sonido distort.", "conexiones": {"norte": 97}, "bioma": "nieve", "cantidad": 1},
+    81: {"nombre": "Rio de Hielo Muerto", "descripcion": "Rio congelado.", "conexiones": {"este": 82}, "bioma": "nieve", "cantidad": 2},
+    82: {"nombre": "Fauces de la Tormenta", "descripcion": "Paso estrecho.", "conexiones": {"norte": 83}, "bioma": "nieve", "cantidad": 2},
+    83: {"nombre": "Campo de Estatuas Heladas", "descripcion": "Figuras congeladas.", "conexiones": {"norte": 96, "este": 84}, "bioma": "nieve", "cantidad": 2},
+    84: {"nombre": "Abismo Nevado", "descripcion": "Vacio oculto.", "conexiones": {"norte": 95, "sur": 85}, "bioma": "nieve", "cantidad": 1},
+    85: {"nombre": "Cumbre del Viento Cortante", "descripcion": "Aire cortante.", "conexiones": {"norte": 84}, "bioma": "nieve", "cantidad": 2},
+    86: {"nombre": "Valle de las Sombras Blancas", "descripcion": "Siluetas.", "conexiones": {"norte": 87, "este": 89}, "bioma": "nieve", "cantidad": 2},
+    87: {"nombre": "Ruinas Congeladas", "descripcion": "Estructuras en hielo.", "conexiones": {"sur": 86}, "bioma": "nieve", "cantidad": 2, "hospital": True},
+    88: {"nombre": "Paso del Susurro Gelido", "descripcion": "Voces heladas.", "conexiones": {"sur": 89}, "bioma": "nieve", "cantidad": 1},
+    89: {"nombre": "Glaciar Viviente", "descripcion": "Hielo que respira.", "conexiones": {"norte": 88}, "bioma": "nieve", "cantidad": 2},
+    90: {"nombre": "Fosa del Olvido Blanco", "descripcion": "Sin rastro.", "conexiones": {"norte": 91}, "bioma": "nieve", "cantidad": 2},
+    91: {"nombre": "Torres de Escarcha", "descripcion": "Columnas de hielo.", "conexiones": {"norte": 92}, "bioma": "nieve", "cantidad": 2},
+    92: {"nombre": "Velo de Nieve Infinita", "descripcion": "Visibilidad cero.", "conexiones": {"norte": 101, "este": 93}, "bioma": "nieve", "cantidad": 1},
+    93: {"nombre": "Lago de Cristal Helado", "descripcion": "Superficie transparente.", "conexiones": {"norte": 102}, "bioma": "nieve", "cantidad": 2},
+    94: {"nombre": "Bosque de Agujas Gelidas", "descripcion": "Espinas de hielo.", "conexiones": {"norte": 103}, "bioma": "nieve", "cantidad": 2, "hospital": True},
+    95: {"nombre": "Furia Blanca", "descripcion": "Tormenta con voluntad.", "conexiones": {"norte": 104, "este": 94}, "bioma": "nieve", "cantidad": 2},
+    96: {"nombre": "Caverna de Escarcha Viva", "descripcion": "Hielo con energia.", "conexiones": {"norte": 105}, "bioma": "nieve", "cantidad": 2},
+    97: {"nombre": "Paso del Ultimo Aliento", "descripcion": "Aire que duele.", "conexiones": {"norte": 80}, "bioma": "nieve", "cantidad": 1},
+    98: {"nombre": "Colmillos del Invierno", "descripcion": "Formaciones puntiagudas.", "conexiones": {"norte": 107, "este": 99}, "bioma": "nieve", "cantidad": 2},
+    99: {"nombre": "Valle del Sueno Helado", "descripcion": "Frio mortal.", "conexiones": {"norte": 108}, "bioma": "nieve", "cantidad": 2},
+    100: {"nombre": "Niebla Blanca", "descripcion": "Bruma espesa.", "conexiones": {"norte": 109}, "bioma": "nieve", "cantidad": 1},
+    101: {"nombre": "Cumbre Quebrada", "descripcion": "Hielo cae constantemente.", "conexiones": {"norte": 118}, "bioma": "nieve", "cantidad": 2},
+    102: {"nombre": "Territorio del Frio Antiguo", "descripcion": "Energia ancestral.", "conexiones": {"norte": 117}, "bioma": "nieve", "cantidad": 2},
+    103: {"nombre": "Sendero del Hielo Negro", "descripcion": "Camino oscuro.", "conexiones": {"norte": 104}, "bioma": "nieve", "cantidad": 2},
+    104: {"nombre": "Vigilantes de Escarcha", "descripcion": "Figuras inmoviles.", "conexiones": {"norte": 115, "este": 103}, "bioma": "nieve", "cantidad": 2},
+    105: {"nombre": "Desierto Blanco", "descripcion": "Dunas de nieve.", "conexiones": {"norte": 106}, "bioma": "nieve", "cantidad": 1, "hospital": True},
+    106: {"nombre": "Garganta del Viento Helado", "descripcion": "Corientes cortantes.", "conexiones": {"este": 107}, "bioma": "nieve", "cantidad": 2},
+    107: {"nombre": "Ruinas del Invierno Eterno", "descripcion": "Civilizacion congelada.", "conexiones": {"norte": 112, "este": 108}, "bioma": "nieve", "cantidad": 2},
+    108: {"nombre": "Campo de Fragmentos Gelidos", "descripcion": "Cristales afilados.", "conexiones": {"norte": 111, "este": 109}, "bioma": "nieve", "cantidad": 2},
+    109: {"nombre": "Pozo de Escarcha", "descripcion": "Agujero profundo.", "conexiones": {"norte": 110}, "bioma": "nieve", "cantidad": 1},
+    110: {"nombre": "Travesia del Frio Mortal", "descripcion": "Drena vida.", "conexiones": {"norte": 111}, "bioma": "nieve", "cantidad": 2},
+    111: {"nombre": "Tormenta Estatica", "descripcion": "Aire cargado.", "conexiones": {"este": 112}, "bioma": "nieve", "cantidad": 2},
+    112: {"nombre": "Cascada Congelada", "descripcion": "Agua atrapada.", "conexiones": {"norte": 125}, "bioma": "nieve", "cantidad": 1},
+    113: {"nombre": "Circulo de Hielo Antiguo", "descripcion": "Formaciones perfectas.", "conexiones": {"este": 114}, "bioma": "nieve", "cantidad": 2},
+    114: {"nombre": "Bosque de Sombras Heladas", "descripcion": "Sombras sin origen.", "conexiones": {"norte": 123}, "bioma": "nieve", "cantidad": 2, "hospital": True},
+    115: {"nombre": "Frontera del Frio Absoluto", "descripcion": "Nada sobrevive.", "conexiones": {"norte": 122, "este": 116}, "bioma": "nieve", "cantidad": 2},
+    116: {"nombre": "Vertice Nevado", "descripcion": "Viento converge.", "conexiones": {"norte": 121}, "bioma": "nieve", "cantidad": 2},
+    117: {"nombre": "Hogar de la Escarcha", "descripcion": "El frio se origina aqui.", "conexiones": {"norte": 120}, "bioma": "nieve", "cantidad": 1},
+    118: {"nombre": "Sendero de los Perdidos", "descripcion": "Huellas que aparecen.", "conexiones": {"norte": 119}, "bioma": "nieve", "cantidad": 2},
+    119: {"nombre": "Falla Glacial", "descripcion": "Grietas heladas.", "conexiones": {"norte": 128}, "bioma": "nieve", "cantidad": 2},
+    120: {"nombre": "Campo de Huesos Congelados", "descripcion": "Restos en hielo.", "conexiones": {"norte": 129, "este": 121}, "bioma": "nieve", "cantidad": 2},
+    121: {"nombre": "Tormenta Silenciosa", "descripcion": "Nieve sin sonido.", "conexiones": {"norte": 130, "este": 120}, "bioma": "nieve", "cantidad": 1},
+    122: {"nombre": "Nucleo de Hielo Vivo", "descripcion": "Energia helada.", "conexiones": {"norte": 131, "este": 121}, "bioma": "nieve", "cantidad": 2},
+    123: {"nombre": "Paso de los Colosos Helados", "descripcion": "Sombras gigantes.", "conexiones": {"norte": 132}, "bioma": "nieve", "cantidad": 2},
+    124: {"nombre": "Mar de Escarcha", "descripcion": "Hielo solido.", "conexiones": {"norte": 133}, "bioma": "nieve", "cantidad": 2},
+    125: {"nombre": "Colina del Ultimo Suspiro", "descripcion": "El frio roba aliento.", "conexiones": {"norte": 134}, "bioma": "nieve", "cantidad": 1},
+    126: {"nombre": "Catedral de Hielo Roto", "descripcion": "Templo destruido.", "conexiones": {"norte": 135}, "bioma": "nieve", "cantidad": 2},
+    127: {"nombre": "Velo del Olvido", "descripcion": "La memoria se desvanece.", "conexiones": {"norte": 136}, "bioma": "nieve", "cantidad": 2},
+    128: {"nombre": "Fauces Heladas", "descripcion": "Grieta devoradora.", "conexiones": {"norte": 145}, "bioma": "nieve", "cantidad": 2},
+    129: {"nombre": "Bosque del Frio Susurrante", "descripcion": "Viento que habla.", "conexiones": {"norte": 144}, "bioma": "nieve", "cantidad": 2},
+    130: {"nombre": "Campo de Escarcha Oscura", "descripcion": "Luz enfermiza.", "conexiones": {"norte": 143}, "bioma": "nieve", "cantidad": 2},
+    131: {"nombre": "Trampa de Nieve Profunda", "descripcion": "El suelo cede.", "conexiones": {"norte": 142}, "bioma": "nieve", "cantidad": 1, "hospital": True},
+    132: {"nombre": "Cumbre del Olvido", "descripcion": "Olvidas por que viniste.", "conexiones": {"norte": 142}, "bioma": "nieve", "cantidad": 2},
+    133: {"nombre": "Rugido Blanco", "descripcion": "Viento ensordecedor.", "conexiones": {"norte": 140}, "bioma": "nieve", "cantidad": 2},
+    134: {"nombre": "Valle del Frio Eterno", "descripcion": "Nunca deja de nevar.", "conexiones": {"norte": 139}, "bioma": "nieve", "cantidad": 2},
+    135: {"nombre": "Sombras Bajo el Hielo", "descripcion": "Figuras oscuras.", "conexiones": {"norte": 134}, "bioma": "nieve", "cantidad": 2},
+    136: {"nombre": "Paso de la Escarcha Mortal", "descripcion": "Cada segundo es riesgo.", "conexiones": {"sur": 127}, "bioma": "nieve", "cantidad": 2},
+    137: {"nombre": "Caverna del Viento Helado", "descripcion": "Corrientes internas.", "conexiones": {"este": 138}, "bioma": "nieve", "cantidad": 2},
+    138: {"nombre": "Campos del Silencio", "descripcion": "El mundo detenido.", "conexiones": {"este": 139}, "bioma": "nieve", "cantidad": 1},
+    139: {"nombre": "Colapso Glacial", "descripcion": "Terreno inestable.", "conexiones": {"este": 140, "sur": 134}, "bioma": "nieve", "cantidad": 2},
+    140: {"nombre": "Tormenta del Norte", "descripcion": "Ventisca eternal.", "conexiones": {"este": 141}, "bioma": "nieve", "cantidad": 2},
+    141: {"nombre": "Grieta del Ultimo Invierno", "descripcion": "Frio ancestral.", "conexiones": {"norte": 146, "este": 142}, "bioma": "nieve", "cantidad": 2},
+    142: {"nombre": "Altar de Hielo Antiguo", "descripcion": "Lugar olvidado.", "conexiones": {"este": 143}, "bioma": "nieve", "cantidad": 2, "hospital": True},
+    143: {"nombre": "Sendero del Frio Infinito", "descripcion": "Camino sin final.", "conexiones": {"sur": 130}, "bioma": "nieve", "cantidad": 2},
+    144: {"nombre": "Cupula de Escarcha", "descripcion": "Formacion cerrada.", "conexiones": {"norte": 145}, "bioma": "nieve", "cantidad": 1},
+    145: {"nombre": "Ruinas del Viento Blanco", "descripcion": "Restos arrasados.", "conexiones": {"norte": 146}, "bioma": "nieve", "cantidad": 2},
+    146: {"nombre": "Frontera del Vacio Helado", "descripcion": "Solo frio y nada.", "conexiones": {"norte": 148, "este": 145}, "bioma": "nieve", "cantidad": 2},
+    147: {"nombre": "Crater de Hielo Vivo", "descripcion": "Impacto antiguo.", "conexiones": {"norte": 148}, "bioma": "nieve", "cantidad": 2, "hospital": True, "tienda": True},
+    148: {"nombre": "Trono del Invierno", "descripcion": "Alpha te espera.", "conexiones": {"sur": 146, "este": 147}, "encuentros": [("alpha", 1)]},
+    149: {"nombre": "Oasis del Desierto", "descripcion": "Prepara para la batalla final.", "conexiones": {"sur": 24}, "hospital": True, "tienda": True},
+    150: {"nombre": "Trono del Invierno", "descripcion": "Asiento de poder.", "conexiones": {"sur": 71}, "hospital": True, "tienda": True},
 }
 
-
-# ============================================================
-# ESTADO GLOBAL
-# ============================================================
+# ==================== GLOBALS ====================
 jugadores_conectados = []
-combates_activos     = {}
-BANNED_USERS: set    = set()   # usuarios baneados (persiste en memoria mientras corra el server)
-chat_ws_clients      = set()
-web_sessions         = {}   # usuario → websocket (navegadores autenticados)
-grupos               = {}   # grupo_id → Grupo
+combates_activos = {}
+grupos = {}
+boss_vivo = {s: True for s in BOSS_SALAS}
 
-# Batch database update queue
-_save_queue: dict = {}     # usuario → datos a guardar
-_save_timer: asyncio.Task = None
-_SAVE_BATCH_DELAY = 5.0    # segundos entre guardados en batch
+# Leaderboard cache
+_lb_cache = []
+_lb_cache_time = 0
 
-# Cleanup task for periodic maintenance
-_cleanup_task: asyncio.Task = None
+# ==================== HELPERS ====================
+def xp_para_subir(nivel):
+    return XP_POR_NIVEL * nivel
 
+def ataques_por_turno(val):
+    if isinstance(val, list):
+        return random.randint(val[0], val[1])
+    return val
 
-class Grupo:
-    """Grupo de jugadores. El líder es quien lo creó."""
+def calcular_danio(base):
+    var = random.randint(-3, 3)
+    return max(1, base + var)
+
+# ==================== PLAYER CLASS ====================
+class Player:
     _id_counter = 0
+    
+    def __init__(self, ws):
+        Player._id_counter += 1
+        self.id = self._id_counter
+        self.ws = ws
+        self.nombre = None
+        self.personaje = None
+        self.sala_id = 1
+        self.combate = None
+        self.nivel = 1
+        self.xp = 0
+        self.monedas = 0
+        self.muerto = False
+        self.buff_danio = False
+        self.inventario = {}
+        self.usuario = None
+        self.grupo = None
+        self.salas_limpias = set()
+        self.acertijos_completados = set()
+        self.lore_mostrado = False
+        self.salas_lore = set()
+        self.lore_post = set()
+        self.kills = 0
+        
+    async def send(self, data):
+        try:
+            await self.ws.send_json(data)
+        except:
+            pass
 
-    def __init__(self, lider: "Player"):
-        Grupo._id_counter += 1
-        self.id      = Grupo._id_counter
-        self.lider   = lider
-        self.miembros: list["Player"] = [lider]
+# ==================== CHAT SYSTEM ====================
+async def broadcast_global(msg, exclude=None):
+    for p in jugadores_conectados:
+        if p != exclude and p.nombre:
+            await p.send({"type": "chat", "scope": "global", "text": msg, "from": exclude.nombre if exclude else "Sistema"})
 
-    def nombre_lider(self):
-        return self.lider.nombre
+async def broadcast_sala(sala_id, msg, exclude=None):
+    for p in jugadores_conectados:
+        if p.sala_id == sala_id and p != exclude and p.nombre:
+            await p.send({"type": "chat", "scope": "sala", "text": msg, "from": exclude.nombre if exclude else "Sistema"})
 
-    def lista_nombres(self):
-        return [p.nombre for p in self.miembros]
+async def broadcast_grupo(grupo, msg, exclude=None):
+    for p in grupo["miembros"]:
+        if p != exclude and p.nombre:
+            await p.send({"type": "chat", "scope": "grupo", "text": msg, "from": exclude.nombre if exclude else "Sistema"})
 
-    def tiene(self, player: "Player"):
-        return player in self.miembros
-
-    def quitar(self, player: "Player"):
-        if player in self.miembros:
-            self.miembros.remove(player)
-        # Si se va el líder, el siguiente pasa a ser líder
-        if player == self.lider and self.miembros:
-            self.lider = self.miembros[0]
-
-
-class EstadoCombate(Enum):
-    ESPERANDO_ACCIONES = "esperando_acciones"
-    RESOLVIENDO        = "resolviendo"
-    TURNO_ENEMIGO      = "turno_enemigo"
-    FINALIZADO         = "finalizado"
-
-
+# ==================== COMBAT SYSTEM ====================
 class Combate:
     def __init__(self, sala_id, jugadores):
-        self.sala_id   = sala_id
+        self.sala_id = sala_id
         self.jugadores = list(jugadores)
-        self.enemigos  = []
-        self.estado    = EstadoCombate.ESPERANDO_ACCIONES
-        self.acciones  = {}
-        self.turno     = 1
-
-    def cargar_enemigos(self, sala_id):
-        sala = SALAS.get(sala_id, {})
         self.enemigos = []
-
-        # ── Opción A: bioma aleatorio ──
+        self.acciones = {}
+        self.turno = 0
+        
+    def cargar_enemigos(self):
+        sala = SALAS.get(self.sala_id, {})
+        self.enemigos = []
+        
         if "bioma" in sala:
-            bioma_nombre = sala["bioma"]
-            cantidad     = sala.get("cantidad", 1)
-            pool = BIOMAS.get(bioma_nombre, {}).get("enemigos", [])
-            if pool:
-                seleccionados = random.choices(pool, k=cantidad)
-                for i, tipo in enumerate(seleccionados):
-                    base = deepcopy(ENEMIGOS[tipo])
-                    self.enemigos.append({
-                        "nombre":      f"{tipo.capitalize()} {i+1}",
-                        "tipo":        tipo,
-                        "vida_actual": base["vidaMax"],
-                        **base,
-                    })
-            return
-
-        # ── Opción B: encuentros fijos ──
+            pool = BIOMAS.get(sala["bioma"], {}).get("enemigos", [])
+            cantidad = sala.get("cantidad", 1)
+            seleccionados = random.choices(pool, k=cantidad)
+            for i, tipo in enumerate(seleccionados):
+                base = deepcopy(ENEMIGOS[tipo])
+                self.enemigos.append({"nombre": f"{tipo.capitalize()}", "tipo": tipo, "vida_actual": base["vidaMax"], **base})
+        
         for tipo, cantidad in sala.get("encuentros", []):
             for i in range(cantidad):
                 base = deepcopy(ENEMIGOS[tipo])
-                self.enemigos.append({
-                    "nombre":      f"{tipo.capitalize()} {i+1}",
-                    "tipo":        tipo,
-                    "vida_actual": base["vidaMax"],
-                    **base,
-                })
-
+                self.enemigos.append({"nombre": f"{tipo.capitalize()}", "tipo": tipo, "vida_actual": base["vidaMax"], **base})
+    
     def enemigos_vivos(self):
         return [e for e in self.enemigos if e["vida_actual"] > 0]
-
+    
     def jugadores_vivos(self):
-        return [p for p in self.jugadores if p.personaje["vidaActual"] > 0]
+        return [p for p in self.jugadores if p.personaje and p.personaje.get("vidaActual", 0) > 0]
 
-
-class Player:
-    _id_counter = 0
-
-    def __init__(self, ws):
-        Player._id_counter += 1
-        self.id          = Player._id_counter
-        self.ws          = ws   # aiohttp WebSocketResponse
-        self.nombre      = None
-        self.personaje   = None
-        self.sala_id     = 1
-        self.combate     = None
-        self.nivel       = 1
-        self.xp          = 0
-        self.monedas     = 0
-        self.muerto      = False
-        self.buff_danio  = False
-        self.inventario  = {}
-        self.usuario     = None
-        self.input_queue = asyncio.Queue()
-        self.addr        = None
-        self.grupo            = None
-        self.invitacion_de    = None
-        self.salas_limpias    = set()   # salas donde el jugador ya derrotó a los enemigos
-        self.duelo_pendiente  = None    # {"retador": Player, "monedas": int} — duelo recibido pendiente
-        self.acertijos_completados = set()  # salas con acertijos completados
-        self.acertijo_actual = 0  # índice del acertijo actual en la sala
-        
-        self.lore_mostrado        = False  # True tras mostrar el lore inicial una vez
-        self.salas_lore_vistes     = set()  # salas donde ya se mostró lore de entrada
-        self.salas_lore_post_vistes = set() # salas donde ya se mostró lore post-combate
-
-    async def send(self, texto: str, tipo: str = "game"):
-        try:
-            await self.ws.send_json({"type": tipo, "text": texto})
-        except Exception:
-            pass
-
-    async def send_chat(self, texto: str, scope: str):
-        try:
-            await self.ws.send_json({"type": "chat", "scope": scope, "text": texto})
-        except Exception:
-            pass
-
-    async def send_status(self):
-        """Envía stats completas al cliente WebSocket del jugador."""
-        if not self.personaje:
-            return
-        p = self.personaje
-        payload = {
-            "type":          "status",
-            "hp":            p["vidaActual"],  "hpMax":   p["vidaMax"],
-            "mana":          p["manaActual"],  "manaMax": p["manaMax"],
-            "nivel":         self.nivel,       "xp":      self.xp,
-            "xpMax":         xp_para_subir(self.nivel), "monedas": self.monedas,
-            "clase":         p["nombreClase"], "nombre":  self.nombre,
-            "sala_id":       self.sala_id,
-            "danioBase":     p["danioBase"],
-            "ataquesTurno":  p.get("ataquesTurno", 1),
-            "costoEspecial": p.get("costoEspecial", 0),
-            "inventario":    self.inventario,
-        }
-        try:
-            await self.ws.send_json(payload)
-        except Exception:
-            pass
-
-    async def recv(self):
-        try:
-            msg = await asyncio.wait_for(self.input_queue.get(), timeout=60)
-            return msg
-        except asyncio.TimeoutError:
-            return None
-
-    async def send_prompt(self, prompt: str) -> str:
-        await self.send(prompt, tipo="prompt")
-        while True:
-            r = await self.recv()
-            if r is None:
-                return ""
-            if r.strip():
-                return r.strip()
-
-
-# ============================================================
-# BROADCAST
-# ============================================================
-
-def jugadores_en_sala(sala_id):
-    return [p for p in jugadores_conectados if p.sala_id == sala_id]
-
-async def broadcast_sala(sala_id, texto, excluir=None):
-    for p in list(jugadores_conectados):
-        if p.sala_id == sala_id and p != excluir:
-            try:
-                await p.send(texto)
-            except Exception:
-                pass
-
-async def broadcast_todos(texto):
-    for p in list(jugadores_conectados):
-        try:
-            await p.send(texto)
-        except Exception:
-            pass
-
-async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
-    payload = {"type": "chat", "scope": scope, "nombre": nombre, "text": mensaje}
-    # Enviar a jugadores del juego
-    for p in list(jugadores_conectados):
-        try:
-            await p.ws.send_json(payload)
-        except Exception:
-            pass
-    # Enviar a clientes del dashboard
-    muertos = set()
-    for ws in chat_ws_clients:
-        try:
-            await ws.send_json(payload)
-        except Exception:
-            muertos.add(ws)
-    chat_ws_clients.difference_update(muertos)
-
-
-async def notify_web_session(player: "Player"):
-    """Empuja stats actualizadas al jugador (mismo WebSocket que usa para jugar)."""
-    if not player.personaje:
-        return
-    await player.send_status()  # reutiliza send_status que ya tiene todo
-
-
-# ── Delta broadcast state ──
-_players_snapshot: dict = {}  # player_id → last sent data dict
-
-
-def _player_to_dict(p) -> dict:
-    """Serialitza un jugador a dict comparable."""
-    if not p.nombre or not p.personaje:
-        return {}
-    return {
-        "nombre":      p.nombre,
-        "clase":       p.personaje["nombreClase"],
-        "nivel":       p.nivel,
-        "sala_id":     p.sala_id,
-        "sala_nombre": SALAS.get(p.sala_id, {}).get("nombre", "?"),
-        "muerto":      p.muerto,
-        "grupo_id":    p.grupo.id         if p.grupo else None,
-        "grupo_lider": p.grupo.lider.nombre if p.grupo else None,
-    }
-
-
-async def broadcast_players_to_web():
-    """
-    Envia la llista de jugadors als dashboards.
-    Optimitzat amb delta: només envia si hi ha canvis reals.
-    """
-    if not web_sessions:
-        return
-
-    # Construir snapshot actual
-    current: dict = {}
-    for p in jugadores_conectados:
-        if p.nombre and p.personaje:
-            current[p.id] = _player_to_dict(p)
-
-    # Detectar canvis respecte l'últim snapshot
-    global _players_snapshot
-    added   = [d for pid, d in current.items() if pid not in _players_snapshot]
-    removed = [d for pid, d in _players_snapshot.items() if pid not in current]
-    changed = [
-        current[pid] for pid in current
-        if pid in _players_snapshot and current[pid] != _players_snapshot[pid]
-    ]
-
-    # Si no hi ha canvis significatius, no enviem res
-    # Only send updates if there are significant changes or if 30 seconds have passed
-    import time
-    should_send = added or removed or changed or getattr(broadcast_players_to_web, '_last_send', 0) < time.time() - 30
-    
-    if not should_send:
-        return
-
-    # Update last send time
-    broadcast_players_to_web._last_send = time.time()
-
-    # Actualitzar snapshot
-    _players_snapshot = current
-
-    # Enviar la llista completa (els clients la reemplacen sencera)
-    players_data = list(current.values())
-    payload = {"type": "players", "list": players_data}
-    dead = []
-    for usuario, ws in list(web_sessions.items()):
-        try:
-            await ws.send_json(payload)
-        except Exception:
-            dead.append(usuario)
-    for u in dead:
-        web_sessions.pop(u, None)
-
-
-# ============================================================
-# CHAT
-# ============================================================
-
-async def cmd_chat(player: Player, mensaje: str, sala_solo: bool):
-    if not mensaje.strip():
-        await player.send("  Que quieres decir?")
-        return
-    # Límite de seguridad
-    mensaje = mensaje[:300]
-    if sala_solo:
-        await broadcast_chat_ws("sala", player.nombre, mensaje)
-    else:
-        await broadcast_chat_ws("global", player.nombre, mensaje)
-
-
-# ============================================================
-# XP Y NIVELES
-# ============================================================
-
-def xp_de_tier(tier: str) -> int:
-    t = tier.upper()
-    if "BOSS" in t:
-        return XP_POR_TIER["Boss"]
-    for k in XP_POR_TIER:
-        if k.upper() in t:
-            return XP_POR_TIER[k]
-    return XP_POR_TIER["Base"]
-
-def ataques_por_turno(v):
-    return random.randint(v[0], v[1]) if isinstance(v, list) else v
-
-def calcular_danio(base):
-    return max(1, int(base * random.uniform(0.85, 1.15)))
-
-def xp_para_subir(nivel: int) -> int:
-    """XP necesaria para pasar del nivel dado al siguiente. +20 por nivel."""
-    return 150 + (nivel - 1) * 20
-
-
-async def dar_xp(player: Player, cantidad: int):
-    player.xp += cantidad
-    umbral = xp_para_subir(player.nivel)
-    await player.send(f"  +{cantidad} XP  ({player.xp}/{umbral})")
-    while player.xp >= xp_para_subir(player.nivel):
-        umbral = xp_para_subir(player.nivel)
-        player.xp      -= umbral
-        player.nivel   += 1
-        player.monedas += MONEDAS_SUBIDA
-        p = player.personaje
-        p["vidaMax"]   += 10
-        p["danioBase"] += 5
-        p["manaMax"]   += 5
-        p["vidaActual"] = p["vidaMax"]
-        proximo = xp_para_subir(player.nivel)
-        await player.send(
-            f"\n  ╔══════════════════════════════╗\n"
-            f"  ║  SUBISTE AL NIVEL {player.nivel:>2}!        ║\n"
-            f"  ║  +{MONEDAS_SUBIDA} monedas  Total:{player.monedas:<5}      ║\n"
-            f"  ║  HP:{p['vidaMax']}  Dano:{p['danioBase']}  Mana:{p['manaMax']}   ║\n"
-            f"  ║  Siguiente nivel: {proximo} XP          ║\n"
-            f"  ╚══════════════════════════════╝"
-        )
-        await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
-        await comprovar_quests(player, "nivell", player.nivel)
-    await notify_web_session(player)
-    
-    # Only update leaderboard occasionally to reduce load
-    import random
-    if random.random() < 0.1:  # 10% chance to update leaderboard
-        _t = asyncio.create_task(broadcast_leaderboard())
-        _background_tasks.add(_t)
-        _t.add_done_callback(_background_tasks.discard)
-
-
-# ============================================================
-# RESPAWN  — FIX: restaura 50% de vida, no 100%
-# ============================================================
-
-async def respawn(player: Player):
-    player.muerto = True
-    await player.send(f"  Has muerto. Reapareces en {TIEMPO_RESPAWN}s...")
-    await asyncio.sleep(TIEMPO_RESPAWN)
-    p = player.personaje
-    p["vidaActual"] = max(1, p["vidaMax"] // 2)   # ← FIX: era p["vidaMax"]
-    p["manaActual"] = p["manaMax"]
-    player.sala_id  = SALA_RESPAWN
-    player.muerto   = False
-    await player.send(f"  Reapareces en sala de entrada. HP:{p['vidaActual']}/{p['vidaMax']}")
-    await broadcast_sala(SALA_RESPAWN, f"  {player.nombre} reaparece.", excluir=player)
-    await notify_web_session(player)
-    await describir_sala(player)
-
-
-# ============================================================
-# TIENDA
-# ============================================================
-
-async def cmd_tienda(player: Player):
-    items = list(CATALOGO.items())
-    lineas = [f"\n  TIENDA  ({player.monedas} monedas)\n  " + "-"*30]
-    for i, (iid, item) in enumerate(items, 1):
-        n = player.inventario.get(iid, 0)
-        lineas.append(f"  {i}. {item['emoji']} {item['nombre']} - {item['precio']}  (tienes:{n})")
-        lineas.append(f"     {item['descripcion']}")
-    lineas.append("\n  Numero para comprar, 0 para salir.")
-    await player.send("\n".join(lineas))
-    while True:
-        r = (await player.send_prompt("  Comprar: ")).strip()
-        if r == "0" or r.lower() == "salir":
-            await player.send("  Tienda cerrada.")
-            return
-        if not r.isdigit() or not (1 <= int(r) <= len(items)):
-            await player.send(f"  Elige 1-{len(items)} o 0.")
-            continue
-        iid, item = items[int(r) - 1]
-        if player.monedas < item["precio"]:
-            await player.send(f"  Sin monedas ({item['precio']} necesarias).")
-            continue
-        ok = await _add_to_inventario(player, iid, 1)
-        if not ok:
-            player.monedas += item["precio"]  # refund
-            await player.send(f"  🎒 Inventari ple! No pots comprar més items.")
-            continue
-        await player.send(f"  Compraste {item['emoji']} {item['nombre']}. Quedan {player.monedas}.")
-        await player.send_status()  # actualizar mochila y monedas en tiempo real
-
-
-async def cmd_mochila(player: Player):
-    items_str = [
-        f"  {CATALOGO[k]['emoji']} {CATALOGO[k]['nombre']} x{v}"
-        for k, v in player.inventario.items() if v > 0 and k in CATALOGO
-    ]
-    await player.send("  Mochila vacia." if not items_str else "  MOCHILA:\n" + "\n".join(items_str))
-
-
-async def usar_item(player: Player, nombre: str, combate=None) -> bool:
-    iid = ALIAS_ITEMS.get(nombre.lower(), nombre.lower())
-    if iid not in CATALOGO:
-        await player.send(f"  Objeto '{nombre}' no existe. (vida / dano / gema)")
-        return False
-    if player.inventario.get(iid, 0) <= 0:
-        await player.send(f"  No tienes {CATALOGO[iid]['nombre']}.")
-        return False
-    item = CATALOGO[iid]
-    if combate and not item["usable_combate"]:
-        await player.send("  No usable en combate.")
-        return False
-    p = player.personaje
-
-    if iid == "pocion_vida":
-        curado = p["vidaMax"] - p["vidaActual"]
-        p["vidaActual"] = p["vidaMax"]
-        player.inventario[iid] -= 1
-        msg = f"  {player.nombre} usa Pocion de Vida +{curado} HP! ({p['vidaActual']}/{p['vidaMax']})"
-        await broadcast_sala(combate.sala_id if combate else player.sala_id, msg)
-        await player.send_status()
-        return True
-
-    elif iid == "pocion_danio":
-        if player.buff_danio:
-            await player.send("  Buff ya activo.")
-            return False
-        player.buff_danio = True
-        player.inventario[iid] -= 1
-        msg = f"  {player.nombre} usa Pocion de Danio +30% este combate!"
-        await broadcast_sala(combate.sala_id if combate else player.sala_id, msg)
-        await player.send_status()
-        return True
-
-    elif iid == "gema_teleporte":
-        if combate and combate.estado != EstadoCombate.FINALIZADO:
-            await player.send("  No usable en combate.")
-            return False
-        lineas = ["  GEMA - Salas disponibles:"]
-        for sid, sala in SALAS.items():
-            lineas.append(f"  {sid}. {sala['nombre']}")
-        await player.send("\n".join(lineas))
-        destino_id = None
-        while True:
-            d = await player.send_prompt("  Numero de sala: ")
-            if d.isdigit() and int(d) in SALAS:
-                destino_id = int(d)
-                break
-            await player.send("  Sala invalida.")
-        player.inventario[iid] -= 1
-        await broadcast_sala(player.sala_id, f"  {player.nombre} desaparece en un destello azul.")
-        player.sala_id = destino_id
-        await player.send(f"  Llegas a: {SALAS[destino_id]['nombre']}")
-        await broadcast_sala(destino_id, f"  {player.nombre} aparece en un destello azul.", excluir=player)
-        await player.send_status()
-        await describir_sala(player)
-        return True
-
-    return False
-
-
-# ============================================================
-# SISTEMA DE CUENTAS — guardar / cargar / autenticar
-# ============================================================
-
-def _ruta_cuenta(usuario: str) -> str:
-    seguro = "".join(c for c in usuario.lower() if c.isalnum() or c == "_")
-    return os.path.join(SAVES_DIR, f"{seguro}.json")
-
-def _hash_password(password: str, salt: str) -> str:
-    """scrypt: memory-hard, brute-force resistant (replaces SHA-256)."""
-    dk = hashlib.scrypt(
-        password.encode(),
-        salt=salt.encode(),
-        n=16384, r=8, p=1,
-        dklen=32
-    )
-    return dk.hex()
-
-# ── Inventory helper ─────────────────────────────────────────
-MAX_INV_SLOTS = 20   # max unique item types
-MAX_INV_STACK = 99   # max per stack
-
-async def _add_to_inventario(player, iid: str, qty: int = 1) -> bool:
-    """
-    Afegeix qty unitats d'un item a l'inventari.
-    Retorna True si s'ha pogut afegir, False si l'inventari és ple.
-    """
-    current = player.inventario.get(iid, 0)
-    # Stack limit
-    new_qty = min(current + qty, MAX_INV_STACK)
-    actual_added = new_qty - current
-    if actual_added <= 0:
-        return False
-    # Slot limit (only check if new item)
-    if current == 0 and len([k for k, v in player.inventario.items() if v > 0]) >= MAX_INV_SLOTS:
-        return False
-    player.inventario[iid] = new_qty
-    return True
-
-# ── Versiones síncronas (ficheros locales, fallback) ──────────
-
-def _leer_fichero(usuario: str) -> dict | None:
-    ruta = _ruta_cuenta(usuario)
-    if not os.path.isfile(ruta):
-        return None
-    with open(ruta, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def _escribir_fichero(datos: dict):
-    seguro = "".join(c for c in datos["usuario"].lower() if c.isalnum() or c == "_")
-    ruta = os.path.join(SAVES_DIR, f"{seguro}.json")
-    with open(ruta, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
-
-# ── API unificada (async, Supabase si disponible) ─────────────
-
-async def cuenta_existe_async(usuario: str) -> bool:
-    if USAR_SUPABASE:
-        row = await _sb_get(usuario)
-        return row is not None
-    return _leer_fichero(usuario) is not None
-
-async def verificar_password_async(usuario: str, password: str) -> bool:
-    if USAR_SUPABASE:
-        row = await _sb_get(usuario)
-    else:
-        row = _leer_fichero(usuario)
-    if not row:
-        return False
-    return _hash_password(password, row.get("salt", "")) == row.get("password_hash", "")
-
-async def _flush_save_queue():
-    """Flush all pending saves to database."""
-    global _save_queue
-    if not _save_queue:
+async def iniciar_combate(sala_id, jugadores):
+    if not jugadores:
         return
     
-    # Process all queued saves
-    for usuario, datos in _save_queue.items():
-        try:
-            if USAR_SUPABASE:
-                await _sb_upsert(datos)
-            else:
-                merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
-                merged["nombre"] = datos["data"]["nombre"]
-                _escribir_fichero(merged)
-        except Exception as e:
-            print(f"[SAVE] Error guardando {usuario}: {e}")
+    combate = Combate(sala_id, jugadores)
+    combate.cargar_enemigos()
     
-    # Clear queue
-    _save_queue.clear()
-
-async def guardar_cuenta_async(player: "Player", immediate=False):
-    if not player.usuario or not player.personaje:
-        return
-    
-    # Leer salt/hash previos
-    if USAR_SUPABASE:
-        prev = await _sb_get(player.usuario)
-    else:
-        prev = _leer_fichero(player.usuario)
-    prev = prev or {}
-
-    datos = {
-        "usuario":       player.usuario,
-        "password_hash": prev.get("password_hash", ""),
-        "salt":          prev.get("salt", ""),
-        "data": {
-            "nombre":     player.nombre,
-            "nivel":      player.nivel,
-            "xp":         player.xp,
-            "monedas":    player.monedas,
-            "inventario": player.inventario,
-            "sala_id":      player.sala_id,
-            "lore_mostrado": player.lore_mostrado,
-            "personaje": {
-                "nombreClase": player.personaje["nombreClase"],
-                "vidaMax":     player.personaje["vidaMax"],
-                "vidaActual":  player.personaje["vidaActual"],
-                "manaMax":     player.personaje["manaMax"],
-                "manaActual":  player.personaje["manaActual"],
-                "danioBase":   player.personaje["danioBase"],
-            },
-        }
-    }
-    
-    if immediate:
-        # Save immediately (for critical operations)
-        if USAR_SUPABASE:
-            await _sb_upsert(datos)
-        else:
-            merged = {**datos, **datos["data"]}  # fichero plano para compatibilidad
-            merged["nombre"] = datos["data"]["nombre"]
-            _escribir_fichero(merged)
-    else:
-        # Queue for batch save
-        _save_queue[player.usuario] = datos
-        
-        # Start timer if not already running
-        global _save_timer
-        if _save_timer is None or _save_timer.done():
-            async def _batch_save_delayed():
-                await asyncio.sleep(_SAVE_BATCH_DELAY)
-                await _flush_save_queue()
-            
-            _save_timer = asyncio.create_task(_batch_save_delayed())
-
-async def cargar_cuenta_async(player: "Player", usuario: str):
-    if USAR_SUPABASE:
-        row = await _sb_get(usuario)
-    else:
-        row = _leer_fichero(usuario)
-    if not row:
-        raise ValueError(f"Cuenta no encontrada: {usuario}")
-
-    # Supabase guarda en columna "data", fichero local puede ser plano
-    datos = row.get("data") or {}
-    if not datos:
-        datos = row  # fallback: fichero plano
-
-    # Si data está vacío (cuenta recién creada sin personaje), usar defaults
-    if not datos.get("personaje"):
-        raise ValueError(f"Cuenta sin personaje inicializado: {usuario}")
-
-    player.usuario    = usuario
-    player.nombre     = datos.get("nombre", usuario)
-    player.nivel      = datos.get("nivel", 1)
-    player.xp         = datos.get("xp", 0)
-    player.monedas    = datos.get("monedas", 0)
-    player.inventario    = datos.get("inventario", {})
-    player.sala_id       = datos.get("sala_id", 1)
-    player.lore_mostrado = datos.get("lore_mostrado", False)
-
-    clase = datos.get("personaje", {}).get("nombreClase", "guerrero")
-    base  = deepcopy(CLASES[clase])
-    pg    = datos.get("personaje", {})
-    player.personaje = {
-        "nombre":      player.nombre,
-        "nombreClase": clase,
-        "vidaMax":     pg.get("vidaMax",    base["vidaMax"]),
-        "vidaActual":  pg.get("vidaActual", base["vidaMax"]),
-        "manaMax":     pg.get("manaMax",    base["manaMax"]),
-        "manaActual":  pg.get("manaActual", base["manaMax"]),
-        "danioBase":   pg.get("danioBase",  base["danioBase"]),
-        **base,
-    }
-
-async def crear_cuenta_async(usuario: str, password: str):
-    salt   = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
-    hashed = _hash_password(password, salt)
-    row    = {"usuario": usuario, "password_hash": hashed, "salt": salt, "data": {}}
-    if USAR_SUPABASE:
-        await _sb_upsert(row)
-    else:
-        _escribir_fichero({**row, "nombre": usuario})
-
-# ── Alias síncronos para compatibilidad con código existente ──
-# (los llamamos con await en los handlers ya async)
-cuenta_existe      = lambda u: None   # no usar directamente
-verificar_password = lambda u, p: None
-guardar_cuenta     = lambda player: None
-cargar_cuenta      = lambda player, u: None
-crear_cuenta_en_disco = lambda u, p: None
-
-
-# ============================================================
-# FLUJO DE AUTENTICACIÓN
-# ============================================================
-
-async def flujo_auth(player: "Player") -> bool:
-    """
-    Muestra el menú de login/registro.
-    Devuelve True si el jugador quedó autenticado, False si se desconectó.
-    """
-    await player.send("=" * 52)
-    await player.send("       BIENVENIDO AL MUD MULTIPLAYER")
-    await player.send("=" * 52)
-
-    while True:
-        opcion = await player.send_prompt(
-            "\n  1. Crear cuenta nueva\n"
-            "  2. Iniciar sesion\n"
-            "  Elige (1/2): "
-        )
-        if opcion == "":       # desconexión durante auth
-            return False
-        if opcion in ("1", "2"):
-            break
-        await player.send("  Escribe 1 o 2.")
-
-    if opcion == "1":
-        return await flujo_registro(player)
-    else:
-        return await flujo_login(player)
-
-
-async def flujo_registro(player: "Player") -> bool:
-    """Crea una cuenta nueva y construye el personaje."""
-    await player.send("\n  --- CREAR CUENTA ---")
-
-    # Usuario
-    while True:
-        usuario = (await player.send_prompt("  Nombre de usuario: ")).strip()
-        if not usuario:
-            return False
-        if len(usuario) < 3:
-            await player.send("  Minimo 3 caracteres.")
-            continue
-        if await cuenta_existe_async(usuario):
-            await player.send("  Ese usuario ya existe. Elige otro.")
-            continue
-        break
-
-    # Contraseña
-    while True:
-        pw1 = (await player.send_prompt("  Contrasena: ")).strip()
-        if not pw1:
-            return False
-        if len(pw1) < 4:
-            await player.send("  Minimo 4 caracteres.")
-            continue
-        pw2 = (await player.send_prompt("  Repite contrasena: ")).strip()
-        if pw1 != pw2:
-            await player.send("  Las contrasenas no coinciden.")
-            continue
-        break
-
-    # Nombre visible en el juego
-    nombre = (await player.send_prompt("  Como te llamaras en el juego? ")).strip()
-    if not nombre:
-        nombre = usuario
-
-    # Elegir clase
-    lineas = ["\n  CLASES DISPONIBLES:"]
-    for i, (clase, s) in enumerate(CLASES.items(), 1):
-        atqs = s["ataquesTurno"]
-        atq_str = f"{atqs[0]}-{atqs[1]}" if isinstance(atqs, list) else str(atqs)
-        lineas.append(
-            f"  {i:2}. {clase:<12}  HP:{s['vidaMax']:>3}  "
-            f"Dano:{s['danioBase']:>3}  Mana:{s['manaMax']:>3}  Atqs:{atq_str}"
-        )
-    await player.send("\n".join(lineas))
-
-    while True:
-        el = (await player.send_prompt("\n  Elige clase (nombre o numero): ")).strip().lower()
-        if el.isdigit() and 0 <= int(el) - 1 < len(CLASES):
-            clase_elegida = list(CLASES.keys())[int(el) - 1]
-            break
-        elif el in CLASES:
-            clase_elegida = el
-            break
-        await player.send("  Clase no encontrada.")
-
-    # Crear cuenta en disco
-    await crear_cuenta_async(usuario, pw1)
-
-    # Inicializar player
-    player.usuario = usuario
-    player.nombre  = nombre
-    base = deepcopy(CLASES[clase_elegida])
-    player.personaje = {
-        "nombre":      nombre,
-        "nombreClase": clase_elegida,
-        "vidaActual":  base["vidaMax"],
-        "manaActual":  base["manaMax"],
-        **base,
-    }
-
-    # Nuevo jugador comienza en sala tutorial 0.1
-    player.sala_id = 0.1
-    player.lore_mostrado = False
-
-    # Guardar inmediatamente con los datos del personaje
-    await guardar_cuenta_async(player, immediate=True)
-
-    await player.send(
-        f"\n  Cuenta creada! Bienvenido, {nombre} el {clase_elegida.capitalize()}.\n"
-        f"  HP:{player.personaje['vidaActual']}  "
-        f"Mana:{player.personaje['manaActual']}  "
-        f"Dano:{player.personaje['danioBase']}"
-    )
-    return True
-
-
-async def flujo_login(player: "Player") -> bool:
-    """Autentica una cuenta existente y carga sus datos."""
-    await player.send("\n  --- INICIAR SESION ---")
-
-    intentos = 0
-    while intentos < 3:
-        usuario = (await player.send_prompt("  Usuario: ")).strip()
-        if not usuario:
-            return False
-
-        if not await cuenta_existe_async(usuario):
-            await player.send("  Usuario no encontrado.")
-            intentos += 1
-            continue
-
-        # Comprobar si ya está conectado
-        ya_conectado = any(
-            p.usuario == usuario for p in jugadores_conectados if hasattr(p, "usuario")
-        )
-        if ya_conectado:
-            await player.send("  Ese jugador ya esta conectado.")
-            return False
-
-        pw = (await player.send_prompt("  Contrasena: ")).strip()
-        if not pw:
-            return False
-
-        if not await verificar_password_async(usuario, pw):
-            await player.send("  Contrasena incorrecta.")
-            intentos += 1
-            continue
-
-        # Autenticado — cargar datos
-        await cargar_cuenta_async(player, usuario)
-        await player.send(
-            f"\n  Bienvenido de vuelta, {player.nombre}!\n"
-            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}\n"
-            f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
-            f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
-        )
-        return True
-
-    await player.send("  Demasiados intentos fallidos. Desconectando.")
-    return False
-
-
-# ============================================================
-# SETUP PERSONAJE (ahora solo delega a flujo_auth)
-# ============================================================
-
-async def setup_personaje(player: "Player") -> bool:
-    """Punto de entrada de autenticación. Devuelve True si el jugador está listo."""
-    return await flujo_auth(player)
-
-
-# ============================================================
-# SISTEMA DE ACERTIJOS
-# ============================================================
-
-async def iniciar_acertijos(player: Player):
-    """Inicia la secuencia de acertijos para el jugador en su sala actual."""
-    sala_id = player.sala_id
-    
-    if sala_id not in SALAS_ACERTIJOS:
-        return False
-    
-    # Verificar si ya completó esta sala de acertijos
-    if sala_id in player.acertijos_completados:
-        return False
-    
-    indices_acertijos = SALAS_ACERTIJOS[sala_id]
-    player.acertijo_actual = 0
-    
-    await player.send("\n  🧩 Has entrado en una sala de acertijos!")
-    await player.send("  Debes responder correctamente 3 acertijos para avanzar.")
-    await player.send("  Si fallas, deberás volver a empezar desde el primero.\n")
-    
-    # Iniciar primer acertijo
-    await mostrar_acertijo(player, indices_acertijos[0])
-    return True
-
-
-async def mostrar_acertijo(player: Player, indice_acertijo: int):
-    """Muestra un acertijo específico al jugador vía popup."""
-    acertijo = ACERTIJOS[indice_acertijo]
-    
-    # Enviar popup de acertijo al cliente
-    try:
-        await player.ws.send_json({
-            "type": "acertijo",
-            "pregunta": acertijo["pregunta"],
-            "opciones": acertijo["opciones"],
-            "indice": player.acertijo_actual,
-            "total": 3
-        })
-    except Exception as e:
-        print(f"[ACERTIJO] Error enviando popup: {e}")
-        # Fallback: mostrar en texto plano
-        await player.send(f"\n  🧩 ACERTIJO {player.acertijo_actual + 1}/3:")
-        await player.send(f"  {acertijo['pregunta']}")
-        for opt in acertijo["opciones"]:
-            await player.send(f"    {opt}")
-        await player.send("  Escribe la letra de tu respuesta (A, B, C o D):")
-
-
-async def verificar_respuesta_acertijo(player: Player, respuesta: str) -> bool:
-    """Verifica la respuesta del jugador al acertijo actual."""
-    sala_id = player.sala_id
-    
-    if sala_id not in SALAS_ACERTIJOS:
-        return False
-    
-    indices_acertijos = SALAS_ACERTIJOS[sala_id]
-    indice_actual = indices_acertijos[player.acertijo_actual]
-    acertijo = ACERTIJOS[indice_actual]
-    
-    respuesta_limpia = respuesta.strip().lower()
-    
-    # Verificar si la respuesta es válida (a, b, c, d)
-    if respuesta_limpia not in ["a", "b", "c", "d"]:
-        await player.send("  Responde con A, B, C o D.")
-        return False
-    
-    if respuesta_limpia == acertijo["respuesta"]:
-        # Respuesta correcta
-        await player.send(f"  ✅ ¡Correcto! La respuesta era {acertijo['letra_correcta']}.")
-        
-        player.acertijo_actual += 1
-        
-        # ¿Completó todos los acertijos?
-        if player.acertijo_actual >= 3:
-            await player.send("\n  🎉 ¡Has completado todos los acertijos! El camino está despejado.")
-            player.acertijos_completados.add(sala_id)
-            player.salas_limpias.add(sala_id)  # Marcar sala como limpia para poder avanzar
-            
-            # Notificar a otros jugadores en la sala
-            await broadcast_sala(sala_id, f"  {player.nombre} ha resuelto los acertijos y despejado el camino.")
-            
-            # Enviar señal de cierre de popup
-            try:
-                await player.ws.send_json({"type": "acertijo_end", "exito": True})
-            except Exception:
-                pass
-            return True
-        else:
-            # Siguiente acertijo
-            await player.send(f"\n  Siguiente acertijo...")
-            await mostrar_acertijo(player, indices_acertijos[player.acertijo_actual])
-            return False
-    else:
-        # Respuesta incorrecta - reiniciar
-        await player.send(f"  ❌ ¡Incorrecto! La respuesta correcta era {acertijo['letra_correcta']}.")
-        await player.send("  Debes volver a empezar desde el primer acertijo...\n")
-        
-        # Reiniciar progreso de acertijos en esta sala
-        player.acertijo_actual = 0
-        await mostrar_acertijo(player, indices_acertijos[0])
-        return False
-
-
-# ============================================================
-# SALAS
-# ============================================================
-
-async def describir_sala(player: Player):
-    sala = SALAS.get(player.sala_id)
-    if not sala:
-        return
-    otros   = [p.nombre for p in jugadores_en_sala(player.sala_id) if p != player]
-    salidas = ", ".join(sala["conexiones"].keys())
-
-    lineas = [
-        f"\n{'=' * 52}",
-        f"  [{player.sala_id}] {sala['nombre']}",
-        f"{'=' * 52}",
-        f"  {sala['descripcion']}",
-    ]
-
-    # Mostrar bioma si la sala lo tiene
-    if "bioma" in sala:
-        bioma = BIOMAS.get(sala["bioma"], {})
-        lineas.append(f"  {bioma.get('emoji','🌍')} Bioma: {sala['bioma'].capitalize()}  —  {bioma.get('descripcion','')}")
-
-    if otros:
-        lineas.append(f"  Aqui tambien: {', '.join(otros)}")
-    lineas.append(f"  Salidas: {salidas}")
-
-    # Servicios disponibles en la sala
-    servicios = []
-    if sala.get("tienda"):
-        servicios.append("🏪 Tienda (escribe 'tienda')")
-    if sala.get("hospital"):
-        servicios.append("🏥 Hospital (escribe 'hospital')")
-    if servicios:
-        lineas.append(f"  Servicios: {' | '.join(servicios)}")
-
-    # Indicar si hay peligro o acertijos
-    if sala.get("acertijos"):
-        lineas.append("  🧩 Esta sala tiene acertijos. Debes resolverlos para avanzar.")
-        # Iniciar acertijos automáticamente al entrar
-        _t = asyncio.create_task(iniciar_acertijos(player))
-        _background_tasks.add(_t)
-        _t.add_done_callback(_background_tasks.discard)
-    elif "bioma" in sala or sala.get("encuentros"):
-        lineas.append("  Hay enemigos aqui. Escribe 'atacar' para combatir.")
-
-    await player.send("\n".join(lineas))
-
-
-async def mover_jugador(player: Player, direccion: str):
-    if player.muerto:
-        await player.send("  Estas muerto. Espera el respawn.")
-        return
-    if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
-        await player.send("  No puedes huir del combate!")
-        return
-    sala_actual = SALAS.get(player.sala_id)
-    if not sala_actual:
-        await player.send("  Error: sala no trovada.")
-        return
-
-    # ── Bloqueo por acertijos ────────────────────────────────
-    if sala_actual.get("acertijos") and player.sala_id not in player.acertijos_completados:
-        await player.send(
-            "  🧩 ¡Debes resolver los acertijos de esta sala para poder avanzar!\n"
-            "  Responde correctamente los 3 acertijos para despejar el camino."
-        )
-        # Reiniciar acertijos si no los ha completado
-        if player.sala_id not in SALAS_ACERTIJOS or player.acertijo_actual >= 3:
-            player.acertijo_actual = 0
-        _t = asyncio.create_task(iniciar_acertijos(player))
-        _background_tasks.add(_t)
-        _t.add_done_callback(_background_tasks.discard)
-        return
-
-    # ── Bloqueo por monstruos (solo si hay enemigos reales) ────────────────────────────────
-    tiene_enemigos_reales = "bioma" in sala_actual or bool(sala_actual.get("encuentros"))
-    if tiene_enemigos_reales and player.sala_id not in player.salas_limpias:
-        await player.send(
-            "  ¡Hay enemigos bloqueando el paso!\n"
-            "  Derrota a todos los monstruos de esta sala para poder avanzar.\n"
-            "  Escribe 'atacar' para iniciar el combate."
-        )
-        return
-
-    nueva = sala_actual["conexiones"].get(direccion)
-    if nueva is None:
-        await player.send(f"  No puedes ir al {direccion}.")
-        return
-    await broadcast_sala(player.sala_id, f"  {player.nombre} se va hacia el {direccion}.", excluir=player)
-    player.sala_id = nueva
-    await broadcast_sala(player.sala_id, f"  {player.nombre} ha llegado.", excluir=player)
-    await notify_web_session(player)
-    await broadcast_players_to_web()
-
-    # Lore de sala — primera vegada
-    await mostrar_lore_sala(player, player.sala_id)
-
-    # Unirse al combate en curso si existe en la nueva sala
-    if player.sala_id in combates_activos and not player.muerto:
-        combate_en_curso = combates_activos[player.sala_id]
-        if player not in combate_en_curso.jugadores and combate_en_curso.estado != EstadoCombate.FINALIZADO:
-            # Verificar que el combate aún tiene enemigos vivos
-            if combate_en_curso.enemigos_vivos():
-                combate_en_curso.jugadores.append(player)
-                player.combate = combate_en_curso
-                await player.send("  ⚔️  Te has unido al combate en curso en esta sala!")
-                await broadcast_sala(player.sala_id, f"  {player.nombre} se ha unido al combate!", excluir=player)
-                enemigos_info = [
-                    {"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")}
-                    for e in combate_en_curso.enemigos_vivos()
-                ]
-                try:
-                    await player.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
-                except Exception:
-                    pass
-            else:
-                # Si no hay enemigos vivos, limpiar el combate
-                del combates_activos[player.sala_id]
-                for p in combate_en_curso.jugadores:
-                    p.combate = None
-
-    await describir_sala(player)
-    # Quest check: nova sala
-    await comprovar_quests(player, "sala", nueva)
-
-
-# ============================================================
-# COMBATE
-# ============================================================
-
-async def iniciar_combate(sala_id: int):
-    # Si ya hay un combate activo, no iniciar uno nuevo
-    if sala_id in combats_activos:
-        # Pero verificar si el combate tiene enemigos - si no, limpiar y crear nuevo
-        combate_existente = combats_activos[sala_id]
-        if not combate_existente.enemigos_vivos():
-            # Limpiar combate finalizado
-            del combats_activos[sala_id]
-            for p in list(combate_existente.jugadores):
-                p.combate = None
-        else:
-            return  # Hay combate activo, otros pueden unirse desde mover_jugador
-    sala = SALAS.get(sala_id)
-    if not sala:
-        return
-
-    # La sala tiene combate si tiene bioma O encuentros no vacíos
-    tiene_combate = "bioma" in sala or bool(sala.get("encuentros"))
-    if not tiene_combate:
-        return
-
-    jug = [p for p in jugadores_en_sala(sala_id) if not p.muerto]
-    if not jug:
-        return
-
-    combate = Combate(sala_id, jug)
-    combate.cargar_enemigos(sala_id)
-
-    if not combate.enemigos:   # pool vacío (no debería pasar, pero por si acaso)
-        return
-
-    combates_activos[sala_id] = combate
-    for p in jug:
+    for p in jugadores:
         p.combate = combate
+    
+    combates_activos[sala_id] = combate
+    
+    await broadcast_sala(sala_id, f"⚔️ COMBATE! {len(combate.enemigos)} enemigos aparecen!")
+    
+    for p in jugadores:
+        await p.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"]} for e in combate.enemigos]})
+    
+    asyncio.create_task(loop_combate(combate))
 
-    # Boss conversation — only for boss rooms with a single player (story moment)
-    if sala_id in BOSS_CONVERSACIONES and len(jug) == 1:
-        continuar = await iniciar_conversacion_boss(jug[0], sala_id)
-        if not continuar:
-            del combates_activos[sala_id]
-            for p in jug:
-                p.combate = None
-            return
-
-    await broadcast_sala(sala_id, "\n" + "=" * 52)
-    await broadcast_sala(sala_id, "  COMBATE!")
-    await broadcast_sala(sala_id, "=" * 52)
-    enemigos_info = []
-    for e in combate.enemigos:
-        await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}  [{e.get('tier','?')}]")
-        enemigos_info.append({"nombre": e["nombre"], "hp": e["vida_actual"], "hpMax": e["vidaMax"], "tier": e.get("tier","?")})
-
-    # Enviar popup de combate a todos los jugadores de la sala
-    for p in jug:
-        try:
-            await p.ws.send_json({"type": "combat_start", "enemigos": enemigos_info})
-        except Exception:
-            pass
-
-    _t = asyncio.create_task(loop_combate(combate))
-    _background_tasks.add(_t)
-    _t.add_done_callback(_background_tasks.discard)
-
-
-async def loop_combate(combate: Combate):
-    """Combat auto - 5 segons/turn, auto-atac, botons per triar accions"""
+async def loop_combate(combate):
     sala_id = combate.sala_id
-    torn = 0
-
+    
     while combate.enemigos_vivos() and combate.jugadores_vivos():
-        torn += 1
-        await broadcast_sala(sala_id, f"\n{'='*45}\n  COMBAT! Torn {torn}\n{'='*45}")
-
-        # Regenerar mana
+        combate.turno += 1
+        await broadcast_sala(sala_id, f"\n=== TURNO {combate.turno} ===")
+        
+        # Mana regen
         for p in combate.jugadores_vivos():
-            p.personaje["manaActual"] = min(p.personaje["manaActual"] + p.personaje.get("manaTurno", 0), p.personaje["manaMax"])
-
-        # Resoldre - auto-atac (1) per defecte, o l'accio triada
+            if p.personaje:
+                p.personaje["manaActual"] = min(p.personaje["manaActual"] + p.personaje.get("manaTurno", 0), p.personaje["manaMax"])
+        
+        # Player actions
         for p in combate.jugadores_vivos():
-            if p.personaje["vidaActual"] > 0:
-                ac = combate.acciones.get(p.id, "1")
-                await resolver_accion(p, ac, combate)
+            if not p.personaje or p.personaje["vidaActual"] <= 0:
+                continue
+            
+            accion = combate.acciones.get(p.id, "1")
+            await resolver_accion(p, accion, combate)
+            
             if not combate.enemigos_vivos():
                 break
-
+        
         if not combate.enemigos_vivos():
             break
-
-        # Enemics atacan
+        
+        # Enemy attacks
         for e in combate.enemigos_vivos():
-            jugs = combate.jugadores_vivos()
-            if not jugs:
+            objetivos = combate.jugadores_vivos()
+            if not objetivos:
                 break
-            obj = random.choice(jugs)
-            d = calcular_danio(e["danioBase"])
-            obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
-            await broadcast_sala(sala_id, f"  {e['nombre']} → {obj.nombre} -{d}")
-
-        # Enviar stats
+            obj = random.choice(objetivos)
+            if obj.personaje:
+                dmg = calcular_danio(e["danioBase"])
+                obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - dmg)
+                await broadcast_sala(sala_id, f"  {e['nombre']} ataca a {obj.nombre} por {dmg} dmg")
+        
+        # Send stats
         for p in combate.jugadores:
             if p.ws:
-                await p.send_status()
-
-        # Respawn
+                await p.send({"type": "status", "hp": p.personaje.get("vidaActual", 0) if p.personaje else 0, "hpMax": p.personaje.get("vidaMax", 1) if p.personaje else 1, "mana": p.personaje.get("manaActual", 0) if p.personaje else 0, "manaMax": p.personaje.get("manaMax", 1) if p.personaje else 1})
+        
+        # Check deaths
         for p in combate.jugadores:
-            if p.personaje["vidaActual"] <= 0 and not p.muerto:
+            if p.personaje and p.personaje["vidaActual"] <= 0 and not p.muerto:
                 p.muerto = True
-                await broadcast_sala(sala_id, f"  💀 {p.nombre} caigut!")
-                if p.ws:
-                    try:
-                        await p.ws.send_json({"type": "combat_end"})
-                    except:
-                        pass
+                await broadcast_sala(sala_id, f"💀 {p.nombre} ha caido!")
+                await p.send({"type": "combat_end", "victory": False})
                 asyncio.create_task(respawn(p))
-
-        # Esperar 5 segons
-        await asyncio.sleep(5)
+        
+        await asyncio.sleep(COMBAT_TURN_TIME)
         combate.acciones = {}
-
-    # FI COMBAT
-    if combate.enemigos_vivos():
-        await broadcast_sala(sala_id, "\n  DERROTA. Torna a intentar!")
-    else:
-        xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f"\n  VICTORIA! +{xp} XP")
+    
+    # Victory
+    if not combate.enemigos_vivos():
+        xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
+        await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP")
+        
         for p in combate.jugadores_vivos():
-            if p.personaje["vidaActual"] > 0:
-                await dar_xp(p, xp)
+            if p.personaje and p.personaje["vidaActual"] > 0:
+                p.xp += xp
                 p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
                 p.salas_limpias.add(sala_id)
-                await p.send_status()
-
-        for p in combate.jugadores_vivos():
-            for e in combate.enemigos:
-                tier = e.get("tier", "Base")
-                await donar_loot(p, tier)
-            if not hasattr(p, 'kills_total'):
-                p.kills_total = 0
-            p.kills_total += len(combate.enemigos)
-            await comprovar_quests(p, "kill")
-
-        boss_defeated(sala_id)
-
-    # Limpiar combats_activos i buffs
-    if sala_id in combats_activos:
-        del combats_activos[sala_id]
-
-    # Limpiar buffs
+                p.kills += len(combate.enemigos)
+                
+                while p.xp >= xp_para_subir(p.nivel):
+                    p.xp -= xp_para_subir(p.nivel)
+                    p.nivel += 1
+                    await p.send({"type": "level_up", "nivel": p.nivel})
+                
+                await p.send({"type": "combat_end", "victory": True, "xp": xp})
+                
+                if sala_id in BOSS_SALAS:
+                    boss_vivo[sala_id] = False
+                    delay = BOSS_SALAS[sala_id][1]
+                    asyncio.create_task(boss_respawn(sala_id, delay))
+    else:
+        await broadcast_sala(sala_id, "\n💀 DERROTA. Intentalo de nuevo.")
+        for p in combate.jugadores:
+            await p.send({"type": "combat_end", "victory": False})
+    
+    # Cleanup
     for p in combate.jugadores:
-        if p.buff_danio:
-            p.buff_danio = False
-            asyncio.create_task(p.send("  Pocion de Danio terminada."))
+        p.combate = None
+    
+    combates_activos.pop(sala_id, None)
 
-
-async def resolver_accion(player: Player, accion: str, combate: Combate):
+async def resolver_accion(player, accion, combate):
     sala_id = combate.sala_id
-    vivos   = combate.enemigos_vivos()
-    if not vivos:
+    enemigos = combate.enemigos_vivos()
+    if not enemigos:
         return
-    obj = vivos[0]
-    p   = player.personaje
-
-    if accion == "1":
+    
+    obj = enemigos[0]
+    p = player.personaje
+    if not p:
+        return
+    
+    if accion == "1":  # Attack
         num = ataques_por_turno(p.get("ataquesTurno", 1))
         for _ in range(num):
             if obj["vida_actual"] <= 0:
                 break
-            base = calcular_danio(p["danioBase"])
-            d    = int(base * 1.3) if player.buff_danio else base
-            sfx  = " (+30%)" if player.buff_danio else ""
-            obj["vida_actual"] = max(0, obj["vida_actual"] - d)
-            await broadcast_sala(sala_id,
-                f"  {player.nombre} ataca {obj['nombre']} -{d}{sfx}  "
-                f"({obj['vida_actual']}/{obj['vidaMax']})")
-
-    elif accion == "2":
+            dmg = calcular_danio(p["danioBase"])
+            if player.buff_danio:
+                dmg = int(dmg * 1.3)
+                player.buff_danio = False
+            obj["vida_actual"] = max(0, obj["vida_actual"] - dmg)
+            await broadcast_sala(sala_id, f"⚔️ {player.nombre} ataca a {obj['nombre']} por {dmg} dmg")
+    
+    elif accion == "2":  # Special
         costo = p.get("costoEspecial", 0)
         if p["manaActual"] < costo:
-            await player.send(f"  Sin mana (necesitas {costo}, tienes {p['manaActual']}).")
+            await player.send({"type": "message", "text": f"No tienes mana (necesitas {costo})"})
             return
+        
         p["manaActual"] -= costo
         clase = p["nombreClase"]
-
+        
         if clase == "curandero":
             cur = p.get("curacionEspecial", 20)
             p["vidaActual"] = min(p["vidaActual"] + cur, p["vidaMax"])
-            await broadcast_sala(sala_id,
-                f"  {player.nombre} se cura +{cur} HP ({p['vidaActual']}/{p['vidaMax']})")
+            await broadcast_sala(sala_id, f"💚 {player.nombre} se cura {cur} HP")
         else:
-            base = calcular_danio(p.get("danioEspecial", p["danioBase"]))
-            d    = int(base * 1.3) if player.buff_danio else base
-            sfx  = " (+30%)" if player.buff_danio else ""
-            obj["vida_actual"] = max(0, obj["vida_actual"] - d)
-            nombre_hab = {
-                "guerrero":   "Golpe de Tanque",
-                "mago":       "Magia Antigua",
-                "arquero":    "Flecha Ignea",
-                "nigromante": "Maldicion del Tiempo",
-                "hechicero":  "Invocar Esqueleto",
-                "caballero":  "Embestida",
-                "cazador":    "Inmovilizar",
-                "asesino":    "Muerte Garantizada",
-                "barbaro":    "A Bocajarro",
-            }.get(clase, "Habilidad Especial")
-            await broadcast_sala(sala_id,
-                f"  {player.nombre} usa {nombre_hab} en {obj['nombre']} -{d}{sfx}  "
-                f"({obj['vida_actual']}/{obj['vidaMax']})")
-
-    elif accion == "3":
-        await broadcast_sala(sala_id, f"  {player.nombre} pasa el turno.")
-
-
-# ============================================================
-# COMANDOS
-# ============================================================
-
-async def cmd_hospital(player: Player):
-    """Cura toda la vida y el mana. Solo disponible en salas con hospital."""
-    p = player.personaje
-    hp_faltaba   = p["vidaMax"]   - p["vidaActual"]
-    mana_faltaba = p["manaMax"]   - p["manaActual"]
-
-    if hp_faltaba == 0 and mana_faltaba == 0:
-        await player.send("  Ya tienes la vida y el mana al maximo. No necesitas curacion.")
-        return
-
-    p["vidaActual"] = p["vidaMax"]
-    p["manaActual"] = p["manaMax"]
-
-    await player.send(
-        f"\n  🏥 El medico te atiende.\n"
-        f"  HP restaurado:   +{hp_faltaba}  ({p['vidaActual']}/{p['vidaMax']})\n"
-        f"  Mana restaurado: +{mana_faltaba}  ({p['manaActual']}/{p['manaMax']})\n"
-        f"  Estas listo para continuar."
-    )
-    await broadcast_sala(player.sala_id, f"  {player.nombre} sale del hospital completamente curado.", excluir=player)
-    await notify_web_session(player)
-
-
-# ============================================================
-# SISTEMA DE GRUPOS
-# ============================================================
-
-async def broadcast_grupo(grupo: Grupo, texto: str, excluir: Player = None):
-    """Envía un mensaje a todos los miembros del grupo."""
-    for p in grupo.miembros:
-        if p != excluir:
-            await p.send(texto)
-
-
-async def cmd_invitar(player: Player, nombre_objetivo: str):
-    """Invita a otro jugador al grupo."""
-    if not nombre_objetivo:
-        await player.send("  Uso: invitar <nombre>")
-        return
-
-    # Buscar jugador por nombre (case-insensitive)
-    objetivo = next(
-        (p for p in jugadores_conectados
-         if p.nombre and p.nombre.lower() == nombre_objetivo.lower()),
-        None
-    )
-
-    if objetivo is None:
-        await player.send(f"  Jugador '{nombre_objetivo}' no encontrado. Escribe 'jugadores' para ver quién está conectado.")
-        return
-
-    if objetivo == player:
-        await player.send("  No puedes invitarte a ti mismo.")
-        return
-
-    if objetivo.grupo and objetivo.grupo == player.grupo:
-        await player.send(f"  {objetivo.nombre} ya está en tu grupo.")
-        return
-
-    if objetivo.invitacion_de is not None:
-        await player.send(f"  {objetivo.nombre} ya tiene una invitación pendiente.")
-        return
-
-    if objetivo.grupo is not None:
-        await player.send(f"  {objetivo.nombre} ya pertenece a otro grupo.")
-        return
-
-    # Si el que invita no tiene grupo, crea uno
-    if player.grupo is None:
-        nuevo_grupo = Grupo(player)
-        grupos[nuevo_grupo.id] = nuevo_grupo
-        player.grupo = nuevo_grupo
-
-    # Guardar invitación pendiente en el objetivo
-    objetivo.invitacion_de = player
-
-    await player.send(f"  Invitación enviada a {objetivo.nombre}.")
-    await objetivo.send(
-        f"\n  ✉ {player.nombre} te ha invitado a su grupo.\n"
-        f"  Escribe 'aceptar' o 'rechazar'."
-    )
-
-
-async def cmd_aceptar(player: Player):
-    """Acepta la invitación de grupo pendiente."""
-    if player.invitacion_de is None:
-        await player.send("  No tienes ninguna invitación pendiente.")
-        return
-
-    invitador = player.invitacion_de
-    player.invitacion_de = None
-
-    # Comprobar que el invitador sigue conectado y tiene grupo
-    if invitador not in jugadores_conectados:
-        await player.send("  El jugador que te invitó ya no está conectado.")
-        return
-
-    if invitador.grupo is None:
-        await player.send("  El grupo ya no existe.")
-        return
-
-    grupo = invitador.grupo
-    grupo.miembros.append(player)
-    player.grupo = grupo
-
-    await player.send(
-        f"  Te has unido al grupo de {invitador.nombre}.\n"
-        f"  Miembros: {', '.join(grupo.lista_nombres())}"
-    )
-    await broadcast_grupo(grupo, f"  👥 {player.nombre} se ha unido al grupo.", excluir=player)
-    await broadcast_players_to_web()
-
-
-async def cmd_rechazar(player: Player):
-    """Rechaza la invitación de grupo pendiente."""
-    if player.invitacion_de is None:
-        await player.send("  No tienes ninguna invitación pendiente.")
-        return
-
-    invitador = player.invitacion_de
-    player.invitacion_de = None
-
-    await player.send(f"  Has rechazado la invitación de {invitador.nombre}.")
-    await invitador.send(f"  {player.nombre} ha rechazado tu invitación.")
-
-    # Si el grupo del invitador quedó solo, disolverlo
-    if invitador.grupo and len(invitador.grupo.miembros) <= 1:
-        await _disolver_grupo(invitador.grupo)
-
-
-async def cmd_grupo(player: Player):
-    """Muestra la información del grupo actual."""
-    if player.grupo is None:
-        await player.send("  No perteneces a ningún grupo. Usa 'invitar <nombre>' para crear uno.")
-        return
-
-    grupo = player.grupo
-    lineas = [
-        f"\n  👥 GRUPO (id:{grupo.id})",
-        f"  Lider: {grupo.lider.nombre}",
-        f"  Miembros ({len(grupo.miembros)}):",
-    ]
-    for m in grupo.miembros:
-        sala_nombre = SALAS.get(m.sala_id, {}).get("nombre", "?")
-        es_lider    = " 👑" if m == grupo.lider else ""
-        lineas.append(f"    - {m.nombre} [Nv.{m.nivel} {m.personaje['nombreClase']}] en {sala_nombre}{es_lider}")
-    await player.send("\n".join(lineas))
-
-
-async def cmd_salirgrupo(player: Player):
-    """El jugador abandona su grupo."""
-    if player.grupo is None:
-        await player.send("  No perteneces a ningún grupo.")
-        return
-
-    grupo = player.grupo
-    await broadcast_grupo(grupo, f"  👥 {player.nombre} ha abandonado el grupo.", excluir=player)
-
-    grupo.quitar(player)
-    player.grupo = None
-
-    await player.send("  Has abandonado el grupo.")
-
-    # Si queda un solo miembro, disolver
-    if len(grupo.miembros) <= 1:
-        await _disolver_grupo(grupo)
-    else:
-        await broadcast_grupo(grupo,
-            f"  El nuevo líder es {grupo.lider.nombre}."
-            if grupo.lider != grupo.miembros[0] else ""
-        )
-
-    await broadcast_players_to_web()
-
-
-async def cmd_gchat(player: Player, mensaje: str):
-    """Chat de grupo."""
-    if player.grupo is None:
-        await player.send("  No perteneces a ningún grupo. Usa 'invitar' para crear uno.")
-        return
-    if not mensaje.strip():
-        await player.send("  Que quieres decir al grupo?")
-        return
-    mensaje = mensaje[:300]  # limit chat length
-    for p_m in list(player.grupo.miembros):
-        try:
-            await p_m.ws.send_json({"type":"chat","scope":"grupo","nombre":player.nombre,"text":mensaje})
-        except Exception:
-            pass
-
-
-async def _disolver_grupo(grupo: Grupo):
-    """Disuelve un grupo vacío o de un solo miembro."""
-    for m in grupo.miembros:
-        m.grupo = None
-        await m.send("  El grupo se ha disuelto.")
-    grupos.pop(grupo.id, None)
-
-# ============================================================
-# SISTEMA DE DUELOS (PvP)
-# ============================================================
-
-async def cmd_duelo(player: Player, args: str):
-    """duelo <nombre> [monedas] — Reta a otro jugador."""
-    partes = args.split()
-    if not partes:
-        await player.send("  Uso: duelo <nombre> [monedas a apostar]")
-        return
-
-    nombre_obj = partes[0]
-    monedas_apuesta = 0
-    if len(partes) >= 2:
-        if not partes[1].isdigit():
-            await player.send("  Las monedas deben ser un número.")
-            return
-        monedas_apuesta = int(partes[1])
-
-    objetivo = next(
-        (p for p in jugadores_conectados if p.nombre and p.nombre.lower() == nombre_obj.lower()),
-        None
-    )
-    if not objetivo:
-        await player.send(f"  Jugador '{nombre_obj}' no encontrado.")
-        return
-    if objetivo == player:
-        await player.send("  No puedes retarte a ti mismo.")
-        return
-    if objetivo.duelo_pendiente:
-        await player.send(f"  {objetivo.nombre} ya tiene un duelo pendiente.")
-        return
-    if player.combate:
-        await player.send("  No puedes retar a duelo durante un combate.")
-        return
-    if monedas_apuesta > player.monedas:
-        await player.send(f"  No tienes suficientes monedas (tienes {player.monedas}).")
-        return
-
-    objetivo.duelo_pendiente = {"retador": player, "monedas": monedas_apuesta}
-    # Auto-cancelar el duelo si no es respon en 60s
-    async def _timeout_duelo():
-        await asyncio.sleep(60)
-        if objetivo.duelo_pendiente and objetivo.duelo_pendiente.get("retador") is player:
-            objetivo.duelo_pendiente = None
-            asyncio.create_task(player.send(f"  El duelo con {objetivo.nombre} expiró (sin respuesta)."))
-            asyncio.create_task(objetivo.send(f"  La invitación de duelo de {player.nombre} expiró."))
-    asyncio.create_task(_timeout_duelo())
-
-    apuesta_txt = f" — Apuesta: {monedas_apuesta} 💰" if monedas_apuesta else ""
-    await player.send(f"  Reto enviado a {objetivo.nombre}{apuesta_txt}. Esperando respuesta...")
-    await objetivo.send(
-        f"\n  ⚔ {player.nombre} te reta a duelo{apuesta_txt}.\n"
-        f"  Escribe 'aceptar_duelo' o 'rechazar_duelo'."
-    )
-    # Popup visual para el retado
-    try:
-        await objetivo.ws.send_json({
-            "type":    "pvp_challenge",
-            "retador": player.nombre,
-            "monedas": monedas_apuesta,
-        })
-    except Exception:
-        pass
-
-
-async def cmd_aceptar_duelo(player: Player):
-    if not player.duelo_pendiente:
-        await player.send("  No tienes ningún duelo pendiente.")
-        return
-
-    retador   = player.duelo_pendiente["retador"]
-    monedas   = player.duelo_pendiente["monedas"]
-    player.duelo_pendiente = None
-
-    if retador not in jugadores_conectados:
-        await player.send("  El retador ya no está conectado.")
-        return
-    if player.combate or retador.combate:
-        await player.send("  Uno de los jugadores está en combate.")
-        return
-    if monedas > player.monedas:
-        await player.send(f"  No tienes suficientes monedas para la apuesta ({monedas} necesarias).")
-        await retador.send(f"  {player.nombre} no tiene monedas suficientes. Duelo cancelado.")
-        return
-    if monedas > retador.monedas:
-        await player.send(f"  {retador.nombre} ya no tiene monedas suficientes. Duelo cancelado.")
-        return
-
-    await player.send(f"  ¡Duelo aceptado!")
-    await retador.send(f"  {player.nombre} aceptó el duelo. ¡Prepárate!")
-    asyncio.create_task(loop_duelo(retador, player, monedas))
-
-
-async def cmd_rechazar_duelo(player: Player):
-    if not player.duelo_pendiente:
-        await player.send("  No tienes ningún duelo pendiente.")
-        return
-    retador = player.duelo_pendiente["retador"]
-    player.duelo_pendiente = None
-    await player.send(f"  Rechazaste el duelo de {retador.nombre}.")
-    await retador.send(f"  {player.nombre} rechazó tu duelo.")
-
-
-async def loop_duelo(p1: Player, p2: Player, monedas_apuesta: int):
-    """Combate PvP 1v1 entre dos jugadores."""
-    p1.combate = True   # marcador temporal para bloquear otros combates
-    p2.combate = True
-
-    await p1.send(f"\n{'='*52}\n  ⚔ DUELO: {p1.nombre} vs {p2.nombre}\n{'='*52}")
-    await p2.send(f"\n{'='*52}\n  ⚔ DUELO: {p1.nombre} vs {p2.nombre}\n{'='*52}")
-    if monedas_apuesta:
-        await p1.send(f"  Apuesta: {monedas_apuesta} 💰 por jugador")
-        await p2.send(f"  Apuesta: {monedas_apuesta} 💰 por jugador")
-
-    # Copias de stats para el duelo (no modificamos el personaje original durante el combate)
-    hp1 = p1.personaje["vidaActual"]
-    hp2 = p2.personaje["vidaActual"]
-    turno = 0
-    ganador = None
-    perdedor = None
-
-    while hp1 > 0 and hp2 > 0:
-        turno += 1
-        await p1.send(f"\n  --- TURNO {turno} ---  TÚ: {hp1} HP  |  {p2.nombre}: {hp2} HP")
-        await p2.send(f"\n  --- TURNO {turno} ---  TÚ: {hp2} HP  |  {p1.nombre}: {hp1} HP")
-
-        # Regen mana
-        p1.personaje["manaActual"] = min(p1.personaje["manaActual"] + p1.personaje.get("manaTurno", 0), p1.personaje["manaMax"])
-        p2.personaje["manaActual"] = min(p2.personaje["manaActual"] + p2.personaje.get("manaTurno", 0), p2.personaje["manaMax"])
-
-        await p1.send("  1-Atacar  2-Especial  3-Pasar")
-        await p2.send("  1-Atacar  2-Especial  3-Pasar")
-
-        # Ambos eligen en paralelo
-        acc1, acc2 = "3", "3"
-        async def elegir(p):
-            while True:
-                r = await p.recv()
-                if r is None:
-                    return "3"
-                r = r.strip()
-                if r in ("1", "2", "3"):
-                    return r
-                await p.send("  Elige 1, 2 o 3.")
-        acc1, acc2 = await asyncio.gather(elegir(p1), elegir(p2))
-
-        # Resolver acción de p1 sobre p2
-        async def aplicar(atacante, defensor, accion, hp_def):
-            p = atacante.personaje
-            if accion == "1":
-                num = ataques_por_turno(p.get("ataquesTurno", 1))
-                for _ in range(num):
-                    d = calcular_danio(p["danioBase"])
-                    hp_def = max(0, hp_def - d)
-                    await atacante.send(f"  Atacas a {defensor.nombre} -{d} HP  ({hp_def} HP restante)")
-                    await defensor.send(f"  {atacante.nombre} te ataca -{d} HP  ({hp_def} HP restante)")
-            elif accion == "2":
-                costo = p.get("costoEspecial", 0)
-                if p["manaActual"] >= costo:
-                    p["manaActual"] -= costo
-                    d = calcular_danio(p.get("danioEspecial", p["danioBase"]))
-                    hp_def = max(0, hp_def - d)
-                    await atacante.send(f"  Usas especial en {defensor.nombre} -{d} HP  ({hp_def} HP restante)")
-                    await defensor.send(f"  {atacante.nombre} usa especial -{d} HP  ({hp_def} HP restante)")
-                else:
-                    await atacante.send("  Sin mana. Pasas el turno.")
-            elif accion == "3":
-                await atacante.send("  Pasas el turno.")
-            return hp_def
-
-        hp2 = await aplicar(p1, p2, acc1, hp2)
-        if hp2 > 0:
-            hp1 = await aplicar(p2, p1, acc2, hp1)
-
-    # Determinar ganador
-    if hp1 <= 0 and hp2 <= 0:
-        await p1.send("  ¡Empate!")
-        await p2.send("  ¡Empate!")
-    elif hp2 <= 0:
-        ganador, perdedor = p1, p2
-    else:
-        ganador, perdedor = p2, p1
-
-    if ganador:
-        # Pérdida de XP: 15% del XP actual
-        xp_perdido = max(10, int(perdedor.xp * 0.15))
-        perdedor.xp = max(0, perdedor.xp - xp_perdido)
-
-        # Transferir monedas apostadas
-        if monedas_apuesta:
-            monedas_reales = min(monedas_apuesta, perdedor.monedas)
-            perdedor.monedas  -= monedas_reales
-            ganador.monedas   += monedas_reales
-
-        await ganador.send(
-            f"\n  🏆 ¡VICTORIA!\n"
-            f"  Derrotaste a {perdedor.nombre}."
-            + (f"\n  +{monedas_apuesta} 💰 ganadas." if monedas_apuesta else "")
-        )
-        await perdedor.send(
-            f"\n  💀 DERROTA — {ganador.nombre} te venció.\n"
-            f"  -{xp_perdido} XP  (te quedan {perdedor.xp})"
-            + (f"\n  -{monedas_apuesta} 💰 perdidas." if monedas_apuesta else "")
-        )
-        await broadcast_todos(f"  ⚔ {ganador.nombre} derrotó a {perdedor.nombre} en duelo.")
-
-        # Actualizar HP real
-        ganador.personaje["vidaActual"]  = max(1, hp1 if ganador == p1 else hp2)
-        perdedor.personaje["vidaActual"] = 1
-
-    # Liberar marcador de combate
-    p1.combate = None
-    p2.combate = None
-    await notify_web_session(p1)
-    await notify_web_session(p2)
-
-
-# Rate limiting: max 1 comando cada 0.5s per jugador
-_last_cmd_time: dict = {}
-
-async def _periodic_cleanup():
-    """Periodically clean up completed tasks to prevent memory leaks."""
-    global _background_tasks, _cleanup_tasks
-    leaderboard_update_count = 0
+            dmg = calcular_danio(p.get("danioEspecial", p["danioBase"]))
+            if player.buff_danio:
+                dmg = int(dmg * 1.3)
+                player.buff_danio = False
+            obj["vida_actual"] = max(0, obj["vida_actual"] - dmg)
+            await broadcast_sala(sala_id, f"✨ {player.nombre} usa habilidad especial en {obj['nombre']} por {dmg} dmg")
     
-    while True:
-        await asyncio.sleep(60)  # Check every minute
-        
-        # Clean up completed background tasks
-        completed_tasks = {t for t in _background_tasks if t.done()}
-        _background_tasks -= completed_tasks
-        
-        # Clean up completed cleanup tasks
-        completed_cleanup = {t for t in _cleanup_tasks if t.done()}
-        _cleanup_tasks -= completed_cleanup
-        
-        # Also clean up old rate limiting entries (older than 1 hour)
-        import time
-        cutoff_time = time.time() - 3600
-        old_entries = [k for k, v in _last_cmd_time.items() if v < cutoff_time]
-        for k in old_entries:
-            _last_cmd_time.pop(k, None)
-        
-        # Update leaderboard every 5 minutes
-        leaderboard_update_count += 1
-        if leaderboard_update_count >= 5:
-            leaderboard_update_count = 0
-            try:
-                await broadcast_leaderboard()
-            except Exception as e:
-                print(f"[LB] Error actualizando leaderboard periódicamente: {e}")
+    elif accion == "3":  # Pass
+        await broadcast_sala(sala_id, f"💤 {player.nombre} pasa el turno")
 
+async def boss_respawn(sala_id, delay):
+    await asyncio.sleep(delay)
+    boss_vivo[sala_id] = True
+    await broadcast_sala(sala_id, f"👹 {BOSS_SALAS[sala_id][0]} ha reaparecido!")
 
-async def procesar_comando(player: Player, cmd: str):
-    # Combat actions bypass rate limit
+async def respawn(player):
+    player.muerto = True
+    await player.send({"type": "message", "text": f"Has muerto. Reapareces en {TIEMPO_RESPAWN}s..."})
+    await asyncio.sleep(TIEMPO_RESPAWN)
+    
+    if player.personaje:
+        player.personaje["vidaActual"] = max(1, player.personaje["vidaMax"] // 2)
+        player.personaje["manaActual"] = player.personaje["manaMax"]
+    
+    player.sala_id = SALA_RESPAWN
+    player.muerto = False
+    await player.send({"type": "respawn", "sala_id": SALA_RESPAWN})
+    await describe_sala(player)
+
+# ==================== SALA NAVIGATION ====================
+async def describe_sala(player):
+    sala = SALAS.get(player.sala_id)
+    if not sala:
+        return
+    
+    bioma_info = ""
+    if "bioma" in sala:
+        bioma = BIOMAS.get(sala["bioma"], {})
+        bioma_info = f" [{bioma.get('emoji', '')} {sala['bioma']}]"
+    
+    tiene_enemigos = False
+    if player.sala_id not in player.salas_limpias:
+        if "bioma" in sala or sala.get("encuentros"):
+            tiene_enemigos = True
+    
+    enemy_msg = " ⚠️ ENEMIGOS! Escribe 'atacar' para luchar" if tiene_enemigos else ""
+    
+    # Players in room
+    others = [p.nombre for p in jugadores_conectados if p.sala_id == player.sala_id and p != player and p.nombre]
+    others_msg = f" 👥 Jugadores: {', '.join(others)}" if others else ""
+    
+    # Group
+    grupo_msg = ""
+    if player.grupo:
+        grupo_msg = f" 👥 Grupo: {', '.join([p.nombre for p in player.grupo['miembros']])}"
+    
+    msg = {
+        "type": "sala",
+        "sala_id": player.sala_id,
+        "nombre": sala["nombre"],
+        "descripcion": sala["descripcion"] + bioma_info,
+        "conexiones": sala.get("conexiones", {}),
+        "hospital": sala.get("hospital", False),
+        "tienda": sala.get("tienda", False),
+        "enemigos": tiene_enemigos,
+        "others": others_msg,
+        "grupo": grupo_msg
+    }
+    await player.send(msg)
+
+# ==================== MOVE ====================
+async def move_player(player, direction):
     if player.combate:
-        c = cmd.strip()
-        if c in ("1", "2", "3"):
-            player.combate.acciones[player.id] = c
-            await player.send(f"  Accio {c} enregistrada!")
+        await player.send({"type": "message", "text": "No puedes moverte en combate!"})
+        return
+    
+    if player.muerto:
+        await player.send({"type": "message", "text": "Estas muerto. Espera el respawn."})
+        return
+    
+    sala = SALAS.get(player.sala_id)
+    if not sala:
+        return
+    
+    # Check enemies
+    if player.sala_id not in player.salas_limpias:
+        if "bioma" in sala or sala.get("encuentros"):
+            await player.send({"type": "message", "text": "Hay enemigos! Derrotalos primero."})
             return
     
-    # Rate limit per altres comandos
-    now = asyncio.get_event_loop().time()
-    last = _last_cmd_time.get(id(player), 0)
-    if now - last < 0.5:
+    nueva = sala.get("conexiones", {}).get(direction)
+    if nueva is None:
+        await player.send({"type": "message", "text": f"No puedes ir al {direction}"})
         return
-    _last_cmd_time[id(player)] = now
+    
+    await broadcast_sala(player.sala_id, f"🚪 {player.nombre} se va al {direction}.", exclude=player)
+    player.sala_id = nueva
+    await broadcast_sala(player.sala_id, f"🚪 {player.nombre} ha llegado.", exclude=player)
+    await describe_sala(player)
+    
+    # Auto-join combat
+    if player.sala_id in combates_activos:
+        c = combates_activos[player.sala_id]
+        if player not in c.jugadores and not player.muerto:
+            c.jugadores.append(player)
+            player.combate = c
 
-    partes = cmd.lower().strip().split()
-    if not partes:
+# ==================== ATTACK ====================
+async def attack_player(player):
+    if player.combate:
+        await player.send({"type": "message", "text": "Ya estas en combate!"})
         return
-    ac = partes[0]
-
-    # ── Verificar si está en modo acertijos ─────────────────────────
-    sala = SALAS.get(player.sala_id, {})
-    if sala.get("acertijos") and player.sala_id not in player.acertijos_completados:
-        # El jugador está respondiendo a un acertijo
-        if len(cmd.strip()) > 0 and cmd.strip().lower() in ["a", "b", "c", "d"]:
-            await verificar_respuesta_acertijo(player, cmd.strip())
-            return
-        # Comandos permitidos durante acertijos
-        if ac not in ["decir", "d", "g", "stats", "estado", "jugadores", "who", "ayuda"]:
-            await player.send("  🧩 Estás resolviendo acertijos. Responde A, B, C o D, o usa 'decir' para hablar.")
-            return
-
-    if ac in ("norte", "sur", "este", "oeste", "n", "s", "e", "o"):
-        dirs = {"n": "norte", "s": "sur", "e": "este", "o": "oeste"}
-        await mover_jugador(player, dirs.get(ac, ac))
-
-    elif ac in ("mirar", "look", "l"):
-        await describir_sala(player)
-
-    elif ac in ("stats", "estado"):
-        p  = player.personaje
-        xf = XP_POR_NIVEL - player.xp
-        await player.send(
-            f"\n  {player.nombre} [{p['nombreClase']}]  Nv.{player.nivel}\n"
-            f"  HP:      {p['vidaActual']}/{p['vidaMax']}\n"
-            f"  Mana:    {p['manaActual']}/{p['manaMax']}\n"
-            f"  Dano:    {p['danioBase']}\n"
-            f"  XP:      {player.xp}/{XP_POR_NIVEL}  (faltan {xf})\n"
-            f"  Monedas: {player.monedas}"
-        )
-
-    elif ac in ("jugadores", "who"):
-        lineas = ["\n  Jugadores conectados:"]
-        for p in jugadores_conectados:
-            st     = "MUERTO" if p.muerto else f"Sala {p.sala_id}"
-            grp    = f" [Grupo {p.grupo.id}]" if p.grupo else ""
-            acertijo_status = ""
-            if p.sala_id in SALAS_ACERTIJOS and p.sala_id not in p.acertijos_completados:
-                acertijo_status = " [🧩Acertijos]"
-            lineas.append(f"  - {p.nombre} [Nv.{p.nivel} {p.personaje['nombreClase']}] ({st}){grp}{acertijo_status}")
-        await player.send("\n".join(lineas))
-
-    elif ac == "invitar":
-        nombre_obj = cmd[len(ac):].strip()
-        await cmd_invitar(player, nombre_obj)
-
-    elif ac == "aceptar":
-        await cmd_aceptar(player)
-
-    elif ac == "rechazar":
-        await cmd_rechazar(player)
-
-    elif ac in ("grupo", "party"):
-        await cmd_grupo(player)
-
-    elif ac in ("salirgrupo", "salirparty", "kickme"):
-        await cmd_salirgrupo(player)
-
-    elif ac in ("gc", "gchat"):
-        await cmd_gchat(player, cmd[len(ac):].strip())
-
-    elif ac == "duelo":
-        await cmd_duelo(player, cmd[len(ac):].strip())
-
-    elif ac == "aceptar_duelo":
-        await cmd_aceptar_duelo(player)
-
-    elif ac == "rechazar_duelo":
-        await cmd_rechazar_duelo(player)
-
-    elif ac == "atacar":
-        if player.muerto:
-            await player.send("  Estas muerto. Espera el respawn.")
-            return
-        sala = SALAS.get(player.sala_id)
-        tiene_combate = sala and ("bioma" in sala or bool(sala.get("encuentros")))
-        if not tiene_combate:
-            await player.send("  No hay enemigos en esta sala.")
-            return
-        # Si ya hay combate activo, unirse o continuar
-        if player.sala_id in combats_activos:
-            combate_existente = combats_activos[player.sala_id]
-            # Si no estás en el combate, únete
-            if player not in combate_existente.jugadores and combate_existente.enemigos_vivos():
-                if not player.muerto:
-                    combate_existente.jugadores.append(player)
-                    player.combate = combate_existente
-                    await player.send("  Te has unido al combate en curso!")
-                    await broadcast_sala(player.sala_id, f"  {player.nombre} se une al combate!")
-                    # Mostrar enemigos
-                    for e in combate_existente.enemigos_vivos():
-                        await player.send(f"  {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
-                    return
-            # Si ya estás, mostrar estado
-            if player in combate_existente.jugadores:
-                await player.send(f"  Ya estas en combate!HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}")
-                for e in combate_existente.enemigos_vivos():
-                    await player.send(f"  {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
-                return
-        # Iniciar nuevo combate si no hay
-        await iniciar_combate(player.sala_id)
-
-    elif ac in ("decir", "d"):
-        await cmd_chat(player, cmd[len(ac):].strip(), sala_solo=True)
-
-    elif ac == "g":
-        await cmd_chat(player, cmd[2:].strip(), sala_solo=False)
-
-    elif ac in ("tienda", "shop"):
-        if player.muerto:
-            await player.send("  Estas muerto.")
-        elif player.combate:
-            await player.send("  No puedes abrir la tienda en combate.")
-        elif not SALAS.get(player.sala_id, {}).get("tienda"):
-            await player.send("  No hay tienda en esta sala.")
-        else:
-            await cmd_tienda(player)
-
-    elif ac in ("hospital", "curar", "heal"):
-        if player.muerto:
-            await player.send("  Estas muerto. Espera el respawn.")
-        elif player.combate:
-            await player.send("  No puedes usar el hospital en combate.")
-        elif not SALAS.get(player.sala_id, {}).get("hospital"):
-            await player.send("  No hay hospital en esta sala.")
-        else:
-            await cmd_hospital(player)
-
-    elif ac in ("mochila", "inv", "inventario"):
-        await cmd_mochila(player)
-
-    elif ac == "usar":
-        if len(partes) < 2:
-            await player.send("  Uso: usar <objeto>  (vida / dano / gema)")
-            return
-        await usar_item(player, " ".join(partes[1:]))
-
-    elif ac in ("nivel", "level"):
-        await player.send(
-            f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}")
-
-    elif ac in ("guardar", "save"):
-        await guardar_cuenta_async(player, immediate=True)
-        await player.send("  Progreso guardado.")
-
-    elif ac == "ayuda":
-        await player.send(
-            "\n  MOVER:    n s e o  (norte sur este oeste)\n"
-            "           ⚠ Derrota los monstruos de la sala para avanzar\n"
-            "           🧩 Resuelve los acertijos en salas especiales\n"
-            "  ACCION:   mirar | atacar\n"
-            "  TIENDA:   tienda | mochila | usar <objeto>\n"
-            "  HOSPITAL: hospital  (solo en salas con 🏥)\n"
-            "  INFO:     stats | nivel | jugadores\n"
-            "  CUENTA:   guardar\n"
-            "  GRUPO:    invitar <nombre> | aceptar | rechazar\n"
-            "            grupo | salirgrupo | gc <msg>\n"
-            "  PvP:      duelo <nombre> [monedas] | aceptar_duelo | rechazar_duelo\n"
-            "  CHAT:     decir <msg> (sala) | g <msg> (global)\n"
-            "  QUESTS:   quests"
-        )
-
-    elif ac in ("quests", "quest", "misiones", "missio"):
-        await cmd_quests(player)
-
+    
+    if player.muerto:
+        await player.send({"type": "message", "text": "Estas muerto."})
+        return
+    
+    sala = SALAS.get(player.sala_id)
+    if not sala:
+        return
+    
+    if player.sala_id in player.salas_limpias:
+        await player.send({"type": "message", "text": "No hay enemigos aqui."})
+        return
+    
+    if "bioma" not in sala and not sala.get("encuentros"):
+        await player.send({"type": "message", "text": "No hay enemigos aqui."})
+        return
+    
+    # Join existing combat or start new
+    if player.sala_id in combates_activos:
+        c = combates_activos[player.sala_id]
+        if player not in c.jugadores:
+            c.jugadores.append(player)
     else:
-        await player.send(f"  Desconocido: '{cmd}'. Escribe 'ayuda'.")
+        await iniciar_combate(player.sala_id, [player])
 
-
-# ============================================================
-# HANDLE GAME WS
-# ============================================================
-
-async def handle_game_ws(ws, usuario: str):
-    player = Player(ws)
-    player.usuario = usuario
-
-    if usuario in BANNED_USERS:
-        await player.send("  🚫 Tu cuenta ha sido baneada. Contacta con el administrador.")
+# ==================== COMMANDS ====================
+async def process_command(player, cmd):
+    cmd = cmd.strip().lower()
+    
+    if not cmd:
         return
-
-    if len(jugadores_conectados) >= MAX_JUGADORES:
-        await player.send("Servidor lleno (max 5 jugadores).")
-        return
-
-    jugadores_conectados.append(player)
-
-    async def reader_task():
-        try:
-            async for msg in ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    await player.input_queue.put(msg.data)
-                elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
-                    break
-        except Exception:
-            pass
-        finally:
-            await player.input_queue.put(None)
-
-    rt = asyncio.create_task(reader_task())
-
-    try:
-        await cargar_cuenta_async(player, usuario)
-    except ValueError as e:
-        print(f"[GAME] Error cargando cuenta {usuario}: {e}")
-        await player.send(f"  Error cargando tu cuenta: {e}\n  Contacta con el administrador.")
-        jugadores_conectados.remove(player)
-        rt.cancel()
-        return
-
-    await player.send(
-        f"\n  Bienvenido de vuelta, {player.nombre}!\n"
-        f"  Nivel {player.nivel}  XP:{player.xp}/{xp_para_subir(player.nivel)}  Monedas:{player.monedas}\n"
-        f"  HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}  "
-        f"Mana:{player.personaje['manaActual']}/{player.personaje['manaMax']}"
-    )
-    await player.send_status()
-    # Lore inicial — solo la primera vez
-    if not player.lore_mostrado:
-        await mostrar_lore_inicial(player)
-    # Enviar leaderboard global al conectar
-    lb = await get_leaderboard_async()
-    try:
-        await player.ws.send_json({"type": "leaderboard", "ranking": lb})
-    except Exception:
-        pass
-    await broadcast_todos(f"\n  {player.nombre} se unio al dungeon!")
-    await broadcast_players_to_web()
-    await describir_sala(player)
-
-    try:
-        while True:
-            if player.combate and player.combate.estado != EstadoCombate.FINALIZADO:
-                await asyncio.sleep(0.05)
-                continue
-            raw = await player.recv()
-            if raw is None:
-                break
-            if not raw.strip():
-                continue
-            try:
-                await procesar_comando(player, raw.strip())
-            except Exception as e:
-                print(f"[CMD] Error en '{raw.strip()}': {e}")
-                try:
-                    await player.send("  Error procesando comando.")
-                except Exception:
-                    pass
-
-    except Exception as e:
-        print(f"[GAME] Error: {e}")
-    finally:
-        if player.usuario and player.personaje:
-            await guardar_cuenta_async(player, immediate=True)
-            print(f"[SAVE] {player.usuario}")
+    
+    # Combat actions
+    if player.combate:
+        if cmd in ["1", "2", "3"]:
+            player.combate.acciones[player.id] = cmd
+            await player.send({"type": "message", "text": f"Accion {cmd} seleccionada."})
+            return
+        elif cmd == "4" and player.inventario:
+            await player.send({"type": "message", "text": "Usa: usar <objeto>"})
+            return
+    
+    # Movement
+    if cmd in ["n", "norte"]:
+        await move_player(player, "norte")
+    elif cmd in ["s", "sur"]:
+        await move_player(player, "sur")
+    elif cmd in ["e", "este"]:
+        await move_player(player, "este")
+    elif cmd in ["o", "oeste"]:
+        await move_player(player, "oeste")
+    
+    # Actions
+    elif cmd in ["atacar", "attack", "luchar"]:
+        await attack_player(player)
+    
+    elif cmd == "mirar":
+        await describe_sala(player)
+    
+    elif cmd == "stats":
+        if player.personaje:
+            await player.send({
+                "type": "stats",
+                "nombre": player.nombre,
+                "clase": player.personaje.get("nombreClase", "?"),
+                "nivel": player.nivel,
+                "xp": player.xp,
+                "xpMax": xp_para_subir(player.nivel),
+                "hp": player.personaje.get("vidaActual", 0),
+                "hpMax": player.personaje.get("vidaMax", 1),
+                "mana": player.personaje.get("manaActual", 0),
+                "manaMax": player.personaje.get("manaMax", 1),
+                "danio": player.personaje.get("danioBase", 0),
+                "monedas": player.monedas,
+                "inventario": player.inventario
+            })
+    
+    elif cmd.startswith("decir "):
+        msg = cmd[6:]
+        await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg}", exclude=player)
+    
+    elif cmd.startswith("g ") or cmd.startswith("global "):
+        msg = cmd[2:] if cmd.startswith("g ") else cmd[7:]
+        await broadcast_global(f"[Global] {player.nombre}: {msg}", exclude=player)
+    
+    elif cmd.startswith("gc ") or cmd.startswith("grup "):
+        msg = cmd[3:] if cmd.startswith("gc ") else cmd[5:]
         if player.grupo:
-            asyncio.create_task(cmd_salirgrupo(player))
-        for p in jugadores_conectados:
-            if p.invitacion_de == player:
-                p.invitacion_de = None
-                asyncio.create_task(p.send(f"  La invitacion de {player.nombre} expiro."))
-        rt.cancel()
-        # Cleanup rate-limit dict to prevent memory leak
-        _last_cmd_time.pop(id(player), None)
-        if player in jugadores_conectados:
-            jugadores_conectados.remove(player)
-        if player.nombre:
-            await broadcast_todos(f"\n  {player.nombre} abandono el dungeon.")
-            await broadcast_players_to_web()
-        print(f"[GAME] Desconectado: {usuario}")
-
-
-# ============================================================
-# HANDLE DASHBOARD WS
-# ============================================================
-
-async def handle_dashboard_ws(ws, usuario: str):
-    chat_ws_clients.add(ws)
-    web_sessions[usuario] = ws
-    print(f"[DASH] {usuario} conectado")
-
-    try:
-        player_online = next((p for p in jugadores_conectados if p.usuario == usuario), None)
-        if player_online and player_online.personaje:
-            p = player_online.personaje
-            stats = {
-                "hp": p["vidaActual"],        "hpMax":         p["vidaMax"],
-                "mana": p["manaActual"],      "manaMax":       p["manaMax"],
-                "nivel": player_online.nivel, "xp":            player_online.xp,
-                "xpMax": xp_para_subir(player_online.nivel), "monedas": player_online.monedas,
-                "clase": p["nombreClase"],    "nombre":        player_online.nombre,
-                "sala_id": player_online.sala_id,
-                "danioBase": p["danioBase"],
-                "ataquesTurno": p.get("ataquesTurno", 1),
-                "costoEspecial": p.get("costoEspecial", 0),
-                "inventario": player_online.inventario,
-                "online": True,
-            }
+            await broadcast_grupo(player.grupo, f"[Grupo] {player.nombre}: {msg}", exclude=player)
         else:
-            # Cargar desde Supabase o fichero local
-            if USAR_SUPABASE:
-                row = await _sb_get(usuario)
-                save_raw = row or {}
-                save = save_raw.get("data", save_raw) or {}
+            await player.send({"type": "message", "text": "No estas en un grupo."})
+    
+    elif cmd == "hospital":
+        sala = SALAS.get(player.sala_id)
+        if sala and sala.get("hospital"):
+            if player.personaje:
+                player.personaje["vidaActual"] = player.personaje["vidaMax"]
+                player.personaje["manaActual"] = player.personaje["manaMax"]
+            await player.send({"type": "message", "text": "🏥 Te han curado completamente!"})
+            await player.send({"type": "status", "hp": player.personaje.get("vidaActual", 0), "hpMax": player.personaje.get("vidaMax", 1), "mana": player.personaje.get("manaActual", 0), "manaMax": player.personaje.get("manaMax", 1)})
+        else:
+            await player.send({"type": "message", "text": "No hay hospital aqui."})
+    
+    elif cmd == "tienda":
+        sala = SALAS.get(player.sala_id)
+        if sala and sala.get("tienda"):
+            items = []
+            for iid, item in CATALOGO.items():
+                qty = player.inventario.get(iid, 0)
+                items.append({"id": iid, "nombre": item["nombre"], "emoji": item["emoji"], "precio": item["precio"], "qty": qty})
+            await player.send({"type": "tienda", "items": items, "monedas": player.monedas})
+        else:
+            await player.send({"type": "message", "text": "No hay tienda aqui."})
+    
+    elif cmd.startswith("comprar "):
+        item_id = cmd[8:].strip()
+        if item_id in CATALOGO:
+            precio = CATALOGO[item_id]["precio"]
+            if player.monedas >= precio:
+                player.monedas -= precio
+                player.inventario[item_id] = player.inventario.get(item_id, 0) + 1
+                await player.send({"type": "message", "text": f"Comprado: {CATALOGO[item_id]['nombre']}!"})
             else:
-                save_raw = _leer_fichero(usuario) or {}
-                save = save_raw.get("data", save_raw) or {}
-            p_save = save.get("personaje", {})
-            clase  = p_save.get("nombreClase", "guerrero")
-            base_c = CLASES.get(clase, {})
-            stats = {
-                "hp": p_save.get("vidaActual", 0),   "hpMax":   p_save.get("vidaMax", 0),
-                "mana": p_save.get("manaActual", 0), "manaMax": p_save.get("manaMax", 0),
-                "nivel": save.get("nivel", 1),        "xp":     save.get("xp", 0),
-                "xpMax": xp_para_subir(save.get("nivel",1)), "monedas":save.get("monedas", 0),
-                "clase": clase,                        "nombre": save.get("nombre", usuario),
-                "sala_id": save.get("sala_id", 1),
-                "danioBase": p_save.get("danioBase", 0),
-                "ataquesTurno": base_c.get("ataquesTurno", 1),
-                "costoEspecial": base_c.get("costoEspecial", 0),
-                "inventario": save.get("inventario", {}),
-                "online": False,
-            }
+                await player.send({"type": "message", "text": "No tienes suficientes monedas."})
+        else:
+            await player.send({"type": "message", "text": "Item no encontrado."})
+    
+    elif cmd.startswith("usar "):
+        item_id = cmd[5:].strip()
+        if item_id in player.inventario and player.inventario[item_id] > 0:
+            if item_id == "pocion_vida" and player.personaje:
+                player.personaje["vidaActual"] = player.personaje["vidaMax"]
+                player.inventario[item_id] -= 1
+                await player.send({"type": "message", "text": "🧪 Has usado Pocion de Vida!"})
+                await player.send({"type": "status", "hp": player.personaje["vidaActual"], "hpMax": player.personaje["vidaMax"]})
+            elif item_id == "pocion_danio":
+                player.buff_danio = True
+                player.inventario[item_id] -= 1
+                await player.send({"type": "message", "text": "⚗️ +30% dano por este combate!"})
+            elif item_id == "gema_teleporte":
+                player.inventario[item_id] -= 1
+                await player.send({"type": "message", "text": "💎 Elige una sala (1-150):"})
+                # Simplified: just go to spawn
+                player.sala_id = SALA_RESPAWN
+                await describe_sala(player)
+        else:
+            await player.send({"type": "message", "text": "No tienes ese objeto."})
+    
+    elif cmd == "mochila":
+        items = []
+        for iid, qty in player.inventario.items():
+            if qty > 0:
+                item = CATALOGO.get(iid, {"nombre": iid, "emoji": "📦"})
+                items.append(f"{item.get('emoji', '📦')} {item['nombre']} x{qty}")
+        if items:
+            await player.send({"type": "message", "text": "🎒 Tu inventario:\n" + "\n".join(items)})
+        else:
+            await player.send({"type": "message", "text": "🎒 Inventario vacio."})
+    
+    # Group commands
+    elif cmd == "invitar" or cmd.startswith("invitar "):
+        if player.grupo and player.grupo["lider"] != player:
+            await player.send({"type": "message", "text": "No eres lider del grupo."})
+            return
+        
+        target_name = cmd.split(" ", 1)[1] if " " in cmd else None
+        if not target_name:
+            await player.send({"type": "message", "text": "Uso: invitar <nombre>"})
+            return
+        
+        target = next((p for p in jugadores_conectados if p.nombre and p.nombre.lower() == target_name.lower()), None)
+        if not target:
+            await player.send({"type": "message", "text": "Jugador no encontrado."})
+            return
+        
+        if target.grupo:
+            await player.send({"type": "message", "text": f"{target.nombre} ya esta en un grupo."})
+            return
+        
+        if not player.grupo:
+            player.grupo = {"lider": player, "miembros": [player]}
+            grupos[id(player)] = player.grupo
+        
+        target.grupo = player.grupo
+        player.grupo["miembros"].append(target)
+        await player.send({"type": "message", "text": f"Invitacion enviada a {target.nombre}"})
+        await target.send({"type": "message", "text": f"{player.nombre} te ha inviteado al grupo. Escribe 'aceptar' para unirse."})
+    
+    elif cmd == "aceptar":
+        if player.grupo:
+            await player.send({"type": "message", "text": "Ya estas en un grupo."})
+        # Simplified - auto-accept for demo
+    
+    elif cmd == "salirgrupo":
+        if player.grupo:
+            player.grupo["miembros"].remove(player)
+            if len(player.grupo["miembros"]) == 0:
+                grupos.pop(id(player.grupo), None)
+            player.grupo = None
+            await player.send({"type": "message", "text": "Has dejado el grupo."})
+        else:
+            await player.send({"type": "message", "text": "No estas en un grupo."})
+    
+    elif cmd == "grupo":
+        if player.grupo:
+            miembros = [p.nombre for p in player.grupo["miembros"]]
+            lider = player.grupo["lider"].nombre
+            await player.send({"type": "message", "text": f"👥 Grupo (Lider: {lider}): {', '.join(miembros)}"})
+        else:
+            await player.send({"type": "message", "text": "No estas en un grupo. Usa 'invitar <nombre>' para crear uno."})
+    
+    elif cmd == "ranking":
+        await send_ranking(player)
+    
+    elif cmd == "ayuda":
+        ayuda = """
+COMANDOS:
+  Moverse: n, s, e, o (norte, sur, este, oeste)
+  Acciones: atacar, mirar, stats
+  Chat: decir <msg>, g <msg>, gc <msg>
+  Grupo: invitar, aceptar, salirgrupo, grupo
+  Tienda: tienda, comprar <item>, usar <item>, mochila
+  General: hospital, ranking, ayuda
+COMBATE:
+  1 - Atacar (auto)
+  2 - Habilidad especial
+  3 - Pasar
+  4 - Usar objeto
+"""
+        await player.send({"type": "message", "text": ayuda})
+    
+    else:
+        await player.send({"type": "message", "text": f"Comando '{cmd}' desconocido. Escribe 'ayuda'."})
 
-        try:
-            await ws.send_json({"type": "auth_ok", "stats": stats})
-        except Exception:
-            return ws
+async def send_ranking(player):
+    global _lb_cache, _lb_cache_time
+    
+    if time.time() - _lb_cache_time > 60:
+        # Rebuild cache
+        _lb_cache = []
+        for p in jugadores_conectados:
+            if p.nombre and p.nivel:
+                _lb_cache.append({"nombre": p.nombre, "nivel": p.nivel, "clase": p.personaje.get("nombreClase", "?") if p.personaje else "?"})
+        _lb_cache.sort(key=lambda x: x["nivel"], reverse=True)
+        _lb_cache_time = time.time()
+    
+    ranking = _lb_cache[:10]
+    if ranking:
+        text = "🏆 RANKING\n" + "-"*20 + "\n"
+        for i, r in enumerate(ranking, 1):
+            text += f"{i}. {r['nombre']} - Nivel {r['nivel']} ({r['clase']})\n"
+        await player.send({"type": "ranking", "ranking": ranking})
+    else:
+        await player.send({"type": "message", "text": "No hay jugadores en linea."})
 
-        map_data = {}
-        for s_id, s in SALAS.items():
-            tiene_boss = any(
-                ENEMIGOS.get(tipo, {}).get("tier") in ("Boss", "Elite")
-                for tipo, _ in s.get("encuentros", [])
-            )
-            es_acertijos = s.get("acertijos", False)
-            map_data[str(s_id)] = {
-                "nombre": s["nombre"],    "bioma":    s.get("bioma"),
-                "tienda": s.get("tienda", False),
-                "hospital": s.get("hospital", False),
-                "boss": tiene_boss,
-                "acertijos": es_acertijos,
-                "segura": not ("bioma" in s or bool(s.get("encuentros")) or es_acertijos),
-            }
-        try:
-            await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
-        except Exception:
-            pass
-        await broadcast_players_to_web()
-
+# ==================== WEBSOCKET HANDLER ====================
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    player = Player(ws)
+    jugadores_conectados.append(player)
+    
+    try:
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.TEXT:
                 try:
-                    d = json.loads(msg.data)
-                    if d.get("type") == "chat":
-                        mensaje = d.get("mensaje", "").strip()[:300]
-                        scope   = d.get("scope", "global")
-                        nombre  = stats["nombre"]
-                        if not mensaje:
-                            continue
-                        await broadcast_chat_ws(scope, nombre, mensaje)
-                        tag = "[Global-Web]" if scope == "global" else "[Web-Sala]"
-                        await broadcast_todos(f"  {tag} {nombre}: {mensaje}")
+                    data = json.loads(msg.data)
+                    
+                    if data.get("type") == "login":
+                        player.nombre = data.get("nombre", "Jugador")
+                        player.usuario = data.get("usuario", player.nombre)
+                        
+                        # Create character
+                        clase = data.get("clase", "guerrero")
+                        if clase not in CLASES:
+                            clase = "guerrero"
+                        
+                        base = deepcopy(CLASES[clase])
+                        player.personaje = {
+                            "nombre": player.nombre,
+                            "nombreClase": clase,
+                            "vidaMax": base["vidaMax"],
+                            "vidaActual": base["vidaMax"],
+                            "manaMax": base["manaMax"],
+                            "manaActual": base["manaMax"],
+                            "danioBase": base["danioBase"],
+                            "manaTurno": base.get("manaTurno", 0),
+                            "ataquesTurno": base.get("ataquesTurno", 1),
+                            "costoEspecial": base.get("costoEspecial", 0),
+                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
+                            "curacionEspecial": base.get("curacionEspecial", 0),
+                        }
+                        
+                        await player.send({
+                            "type": "login_ok",
+                            "nombre": player.nombre,
+                            "clase": clase,
+                            "nivel": player.nivel,
+                            "hp": player.personaje["vidaActual"],
+                            "hpMax": player.personaje["vidaMax"],
+                            "mana": player.personaje["manaActual"],
+                            "manaMax": player.personaje["manaMax"]
+                        })
+                        
+                        # Send lore
+                        if not player.lore_mostrado:
+                            await player.send({"type": "lore", "titulo": "EL RETORNO A HIGHDOWN", "text": LORE_INICIAL})
+                            player.lore_mostrado = True
+                        
+                        await describe_sala(player)
+                        await send_ranking(player)
+                    
+                    elif data.get("type") == "command":
+                        await process_command(player, data.get("cmd", ""))
+                    
+                    elif data.get("type") == "action":
+                        if player.combate:
+                            action = data.get("action", "1")
+                            player.combate.acciones[player.id] = action
+                            await player.send({"type": "message", "text": f"Accion {action} seleccionada"})
+                    
+                    elif data.get("type") == "chat":
+                        msg_text = data.get("message", "").strip()
+                        if msg_text:
+                            scope = data.get("scope", "sala")
+                            if scope == "sala":
+                                await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg_text}", exclude=player)
+                            elif scope == "global":
+                                await broadcast_global(f"[Global] {player.nombre}: {msg_text}", exclude=player)
+                            elif scope == "grupo" and player.grupo:
+                                await broadcast_grupo(player.grupo, f"[Grupo] {player.nombre}: {msg_text}", exclude=player)
+                    
+                    elif data.get("type") == "ranking":
+                        await send_ranking(player)
+                
                 except json.JSONDecodeError:
-                    pass
+                    await process_command(player, msg.data)
+            
             elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
                 break
-
-    except Exception as e:
-        print(f"[DASH] Error: {e}")
+    
     finally:
-        chat_ws_clients.discard(ws)
-        web_sessions.pop(usuario, None)
-        print(f"[DASH] {usuario} desconectado")
+        if player in jugadores_conectados:
+            jugadores_conectados.remove(player)
+        if player.grupo and player in player.grupo.get("miembros", []):
+            player.grupo["miembros"].remove(player)
+    
+    return ws
 
+# ==================== HTTP HANDLER ====================
+async def index(request):
+    return web.Response(text=HTML, content_type="text/html")
 
-# ============================================================
-# HTML EMBEBIDO
-# ============================================================
-
-def get_html() -> str:
-    return r"""<!DOCTYPE html>
+# ==================== HTML ====================
+HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Return to Highdown</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
+*{margin:0;padding:0;box-sizing:border-box}
 :root{
   --bg:#0d0d0d;--bg2:#141414;--bg3:#1c1c1c;--bg4:#222;
-  --border:#272727;--border2:#333;
-  --gold:#c9a84c;--gold2:#e8c55c;
-  --green:#43a047;--red:#e53935;--red2:#ff1744;
-  --blue:#42a5f5;--mana:#5c6bc0;--purple:#8e44ad;
-  --orange:#f39c12;--teal:#00bcd4;
-  --text:#d0d0d0;--dim:#4a4a4a;--dim2:#222;
+  --text:#e0e0e0;--text2:#888;--accent:#c9a227;--accent2:#8b5cf6;
+  --danger:#ef4444;--success:#22c55e;--info:#3b82f6;
+  --hp:#dc2626;--mana:#2563eb;
 }
-body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
-     height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+body{font-family:'Courier New',monospace;background:var(--bg);color:var(--text);min-height:100vh}
+#app{max-width:1200px;margin:0 auto;padding:10px;display:grid;grid-template-columns:1fr 300px;gap:10px;min-height:100vh}
+#main{flex:1;display:flex;flex-direction:column;gap:10px}
+#sidebar{display:flex;flex-direction:column;gap:10px}
 
-/* LOGIN */
-#lo{position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;
-    align-items:center;justify-content:center;z-index:999;}
-#lb{background:var(--bg2);border:1px solid var(--gold);border-radius:8px;
-    padding:28px 36px;text-align:center;min-width:290px;max-width:360px;width:90%;}
-#lb h1{color:var(--gold);font-size:17px;margin-bottom:3px;}
-#lb p{color:var(--dim);font-size:10px;margin-bottom:13px;}
-.li{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);
-    padding:7px 10px;font-family:monospace;font-size:12px;border-radius:3px;
-    outline:none;margin-bottom:6px;transition:border-color .15s;}
-.li:focus{border-color:var(--gold);}
-.li::placeholder{color:var(--dim);}
-.abtn{width:100%;background:var(--gold);border:none;color:#000;padding:8px;
-      font-weight:bold;font-size:12px;cursor:pointer;border-radius:3px;font-family:monospace;}
-.abtn:hover{background:var(--gold2);}
-#lerr{color:var(--red);font-size:10px;margin-top:6px;min-height:14px;}
-.tabs{display:flex;gap:4px;margin-bottom:10px;}
-.tab{flex:1;padding:4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;
-     font-family:monospace;font-size:10px;color:var(--dim);background:var(--bg3);}
-.tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
-#reg-p{display:none;}
+/* Login */
+#login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000}
+#login-screen.hidden{display:none}
+.login-box{background:var(--bg2);padding:30px;border-radius:10px;border:1px solid var(--accent);width:350px;text-align:center}
+.login-box h1{color:var(--accent);margin-bottom:20px;font-size:24px}
+.login-box input,.login-box select{width:100%;padding:12px;margin:8px 0;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:5px;font-size:14px}
+.login-box button{width:100%;padding:12px;margin:8px 0;background:var(--accent);color:#000;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:14px;transition:transform 0.1s}
+.login-box button:hover{transform:scale(1.02)}
+.login-box button.secondary{background:var(--bg3);color:var(--text);border:1px solid #444}
 
-/* TOPBAR */
-#topbar{background:var(--bg2);border-bottom:1px solid var(--border);
-        padding:3px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;height:26px;}
-#tb-title{color:var(--gold);font-weight:bold;font-size:11px;}
-#tb-player{color:var(--text);font-size:10px;}
-#tb-player span{color:var(--gold);}
-#cdot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--red);}
-#cdot.on{background:var(--green);}
+/* Header */
+header{background:var(--bg2);padding:15px;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+header h1{color:var(--accent);font-size:18px}
+#player-info{display:flex;gap:15px;align-items:center;font-size:13px}
+.stat{background:var(--bg3);padding:5px 10px;border-radius:4px}
+.stat.hp{color:var(--hp)}
+.stat.mana{color:var(--mana)}
 
-/* MAIN GRID */
-#app{flex:1;display:grid;overflow:hidden;
-     grid-template-columns:155px 1fr 195px;
-     grid-template-rows:1fr 38px;
-     gap:1px;background:var(--border);}
+/* Stats Panel */
+#stats-panel{background:var(--bg2);padding:15px;border-radius:8px}
+#stats-panel h3{color:var(--accent);margin-bottom:10px;font-size:14px}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px}
+.stat-row{display:flex;justify-content:space-between}
+.stat-label{color:var(--text2)}
 
-/* LEFT */
-#left{background:var(--bg2);grid-column:1;grid-row:1;
-      display:flex;flex-direction:column;overflow:hidden;}
-#stats-pane{padding:7px 8px;overflow-y:auto;flex:1;min-height:0;}
-.sp-name{font-size:12px;color:var(--gold);font-weight:bold;text-align:center;
-         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.sp-cls{font-size:9px;color:var(--dim);text-align:center;margin-bottom:5px;}
-.sh{color:var(--gold);font-size:9px;text-transform:uppercase;letter-spacing:1px;
-    border-bottom:1px solid var(--border);padding-bottom:2px;margin:5px 0 3px;}
-.lvr{display:flex;justify-content:space-between;align-items:center;
-     font-size:9px;margin-bottom:3px;}
-.lvb{background:var(--gold);color:#000;padding:1px 5px;border-radius:5px;
-     font-weight:bold;font-size:9px;}
-.bl{display:flex;justify-content:space-between;font-size:9px;margin-bottom:1px;}
-.bl-n{color:var(--dim);}
-.bw{width:100%;height:8px;background:var(--bg3);border-radius:4px;
-    overflow:hidden;border:1px solid var(--border);margin-bottom:4px;}
-.bf{height:100%;border-radius:4px;transition:width .35s,background .35s;}
-.bf-hp{background:var(--red);}.bf-mp{background:var(--mana);}
-.xw{width:100%;height:3px;background:var(--bg3);border-radius:2px;
-    overflow:hidden;margin-bottom:4px;}
-.bf-xp{background:var(--purple);}
-.sr{display:flex;justify-content:space-between;padding:2px 0;
-    border-bottom:1px solid var(--dim2);font-size:9px;}
-.sr:last-child{border-bottom:none;}
-.sr-l{color:var(--dim);}
-.sr-v{font-weight:bold;}
+/* Room */
+#room{background:var(--bg2);padding:15px;border-radius:8px;flex:1}
+#room-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+#room-name{color:var(--accent);font-size:16px;font-weight:bold}
+#room-desc{color:var(--text2);font-size:13px;margin-bottom:10px;line-height:1.5}
+#exits{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.exit-btn{background:var(--bg3);border:1px solid #333;padding:8px 12px;border-radius:4px;color:var(--text);cursor:pointer;font-size:12px;transition:all 0.1s}
+.exit-btn:hover{background:var(--accent);color:#000}
+.room-features{display:flex;gap:10px;margin:10px 0}
+.feature{background:var(--bg3);padding:5px 10px;border-radius:4px;font-size:11px}
+.feature.hospital{color:var(--success)}
+.feature.enemy{color:var(--danger)}
+.feature.store{color:var(--accent)}
 
-/* Mochila */
-#bag-pane{padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0;}
-.bag-title{color:var(--gold);font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}
-.bag-coins{font-size:11px;color:var(--gold);margin-bottom:3px;}
-.bag-item{font-size:9px;color:var(--text);padding:1px 0;}
-.bag-empty{font-size:9px;color:var(--dim);}
-
-/* Servicios */
-#services-pane{padding:4px 8px;border-top:1px solid var(--border);
-               flex-shrink:0;display:flex;gap:3px;}
-.svc-btn{flex:1;background:var(--bg3);border:1px solid var(--border);
-         color:var(--dim);padding:3px 2px;font-size:9px;cursor:pointer;
-         border-radius:3px;font-family:monospace;text-align:center;
-         display:none;transition:all .15s;}
-.svc-btn.visible{display:block;}
-.svc-btn.hosp{border-color:#1a4a1a;color:var(--green);}
-.svc-btn.shop{border-color:#4a3a0a;color:var(--orange);}
-
-/* CENTER */
-#center{background:var(--bg);grid-column:2;grid-row:1;
-        display:flex;flex-direction:column;overflow:hidden;position:relative;}
-#minimap-btn{position:absolute;top:6px;right:6px;width:85px;height:60px;
-             background:var(--bg2);border:1px solid var(--orange);
-             border-radius:3px;cursor:pointer;z-index:10;overflow:hidden;}
-#minimap-btn:hover{border-color:var(--gold2);}
-#minimap-label{position:absolute;bottom:2px;left:0;right:0;text-align:center;
-               font-size:7px;color:var(--orange);pointer-events:none;}
-#glog{flex:1;overflow-y:auto;padding:7px 10px;font-size:12px;line-height:1.6;}
-#glog::-webkit-scrollbar{width:3px;}
-#glog::-webkit-scrollbar-thumb{background:var(--border);}
-.gm{margin-bottom:1px;white-space:pre-wrap;word-break:break-word;}
-.gg{color:var(--text);}.gp2{color:var(--blue);}.gc{color:#e67e22;}
-.gv{color:var(--gold);font-weight:bold;}.gd{color:var(--red);}
-.gi{color:var(--teal);}.gs{color:var(--dim);font-style:italic;}
-.gl{color:var(--gold);background:#1a1300;border:1px solid var(--gold);
-    padding:2px 5px;border-radius:2px;display:inline-block;margin:2px 0;}
-
-/* RIGHT */
-#right{background:var(--bg2);grid-column:3;grid-row:1;
-       display:flex;flex-direction:column;overflow:hidden;}
-
-/* Leaderboard */
-#lb-pane{flex:0 0 auto;max-height:45%;display:flex;flex-direction:column;overflow:hidden;
-         border-bottom:1px solid var(--border);}
-#lb-hdr{padding:4px 8px;font-size:9px;color:var(--gold);text-transform:uppercase;
-        letter-spacing:1px;flex-shrink:0;border-bottom:1px solid var(--border);}
-#lb-list{flex:1;overflow-y:auto;padding:3px;}
-#lb-list::-webkit-scrollbar{width:3px;}
-.lbi{display:flex;align-items:center;gap:4px;padding:2px 4px;
-     border-bottom:1px solid var(--dim2);font-size:9px;}
-.lbi:last-child{border-bottom:none;}
-.lbi-pos{color:var(--dim);width:14px;flex-shrink:0;text-align:right;}
-.lbi-pos.gold{color:#ffd700;font-weight:bold;}
-.lbi-pos.silver{color:#c0c0c0;font-weight:bold;}
-.lbi-pos.bronze{color:#cd7f32;font-weight:bold;}
-.lbi-name{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.lbi-name.me{color:var(--gold);font-weight:bold;}
-.lbi-info{color:var(--dim);flex-shrink:0;font-size:8px;}
-.lbi-lvl{color:var(--green);font-weight:bold;font-size:9px;flex-shrink:0;}
+/* Players in room */
+#players-in-room{margin-top:10px;font-size:12px;color:var(--text2)}
+#group-info{margin-top:10px;font-size:12px;color:var(--accent2)}
 
 /* Chat */
-#chat-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;}
-#chat-tabs{display:flex;padding:3px 5px;gap:2px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.ctab{flex:1;background:none;border:1px solid var(--border);color:var(--dim);
-      padding:2px 3px;border-radius:2px;cursor:pointer;font-size:9px;font-family:monospace;}
-.ctab.cs{background:#0d1f0d;color:var(--green);border-color:var(--green);}
-.ctab.cg{background:#1f1500;color:var(--orange);border-color:var(--orange);}
-.ctab.cgr{background:#0d0d1f;color:var(--mana);border-color:var(--mana);}
-#chat-pane{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:4px;
-           margin-top:6px;background:var(--bg2);min-height:160px;max-height:220px;}
-#chat-log{flex:1;overflow-y:auto;padding:3px 6px;font-size:10px;line-height:1.5;}
-#chat-log::-webkit-scrollbar{width:3px;}
-#chat-log::-webkit-scrollbar-thumb{background:var(--border);}
-.cm{display:flex;gap:3px;align-items:baseline;margin-bottom:1px;}
-.cm-t{color:var(--dim);font-size:8px;flex-shrink:0;}
-.cm-n{font-weight:bold;font-size:9px;flex-shrink:0;}
-.cm-tx{color:var(--text);font-size:10px;word-break:break-word;}
-.cn-s{color:var(--green);}.cn-g{color:var(--orange);}.cn-gr{color:var(--mana);}
-#chat-in-row{display:flex;gap:3px;padding:4px 5px;border-top:1px solid var(--border);flex-shrink:0;}
-#chat-in{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);
-         padding:3px 6px;font-family:monospace;font-size:10px;border-radius:3px;outline:none;}
-#chat-in:focus{border-color:var(--gold);}
-#chat-in:disabled{opacity:.4;}
-#chat-send{background:var(--gold);border:none;color:#000;padding:3px 7px;
-           font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:10px;}
-#chat-send:disabled{opacity:.4;cursor:default;}
+#chat{background:var(--bg2);padding:15px;border-radius:8px;display:flex;flex-direction:column;max-height:300px}
+#chat-tabs{display:flex;gap:5px;margin-bottom:10px}
+.chat-tab{background:var(--bg3);border:none;padding:8px 15px;border-radius:4px;color:var(--text2);cursor:pointer;font-size:12px}
+.chat-tab.active{background:var(--accent);color:#000}
+#chat-messages{flex:1;overflow-y:auto;background:var(--bg3);padding:10px;border-radius:4px;font-size:12px;min-height:150px;max-height:200px}
+.chat-msg{margin:5px 0;word-break:break-word}
+.chat-msg .from{color:var(--accent);font-weight:bold}
+.chat-msg.global .from{color:var(--info)}
+.chat-msg.grupo .from{color:var(--accent2)}
+#chat-input{display:flex;gap:5px;margin-top:10px}
+#chat-input input{flex:1;padding:10px;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:4px}
+#chat-input button{background:var(--accent);border:none;padding:10px 20px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold}
 
-/* BOTTOM CONTROLS */
-#controls{background:var(--bg2);grid-column:1/4;grid-row:2;
-          display:flex;align-items:center;gap:2px;padding:0 6px;
-          border-top:1px solid var(--border);}
-.cb{background:var(--bg3);border:1px solid var(--border);color:var(--dim);
-    padding:3px 6px;font-size:9px;cursor:pointer;border-radius:3px;
-    font-family:monospace;white-space:nowrap;flex-shrink:0;}
-.cb:hover{color:var(--text);border-color:var(--gold);}
-.cb.dir{border-color:#1a2a3a;color:var(--blue);}.cb.dir:hover{background:#08101a;}
-.cb.atk{border-color:#1a3a1a;color:var(--green);}.cb.atk:hover{background:#081408;}
-.cb.pvp{border-color:#3a1a1a;color:var(--red);}.cb.pvp:hover{background:#180808;}
-.cb.gold-btn{background:var(--gold);color:#000;border-color:var(--gold);font-weight:bold;margin-left:auto;}
-.cb.gold-btn:hover{background:var(--gold2);}
-.cb-sep{width:1px;height:16px;background:var(--border);flex-shrink:0;margin:0 1px;}
-#input-bar{display:flex;gap:2px;flex:1;min-width:0;max-width:220px;margin:0 4px;}
-#cmd{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);
-     padding:3px 7px;font-family:"Courier New",monospace;font-size:11px;
-     border-radius:3px;outline:none;min-width:0;}
-#cmd:focus{border-color:var(--gold);}
-#cmd:disabled{opacity:.4;}
-#cmd::placeholder{color:var(--dim);}
-#sbtn{background:var(--gold);border:none;color:#000;padding:3px 7px;
-      font-weight:bold;cursor:pointer;border-radius:3px;font-family:monospace;font-size:11px;}
-#sbtn:disabled{opacity:.4;cursor:default;}
+/* Combat */
+#combat{background:var(--bg3);padding:15px;border-radius:8px;border:2px solid var(--danger);display:none}
+#combat.active{display:block}
+#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+#combat-title{color:var(--danger);font-weight:bold}
+#combat-turn{color:var(--text2);font-size:12px}
+#enemies{background:var(--bg2);padding:10px;border-radius:4px;margin-bottom:10px}
+.enemy-row{display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--bg3);margin:5px 0;border-radius:4px}
+.enemy-name{color:var(--danger)}
+.enemy-hp{color:var(--text2);font-size:12px}
+.enemy-hp-bar{width:100px;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+.enemy-hp-fill{height:100%;background:var(--hp);transition:width 0.3s}
+#combat-actions{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
+.combat-btn{background:var(--bg2);border:1px solid var(--danger);padding:15px;border-radius:4px;color:var(--text);cursor:pointer;text-align:center;transition:all 0.1s;font-size:13px}
+.combat-btn:hover{background:var(--danger);color:#fff}
+.combat-btn.selected{background:var(--danger);color:#fff}
+.combat-btn:disabled{opacity:0.5;cursor:not-allowed}
 
-/* MAP MODAL */
-#map-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
-           z-index:500;align-items:center;justify-content:center;}
-#map-modal.open{display:flex;}
-#map-inner{background:var(--bg2);border:1px solid var(--gold);border-radius:6px;
-           padding:10px;position:relative;}
-#map-close{position:absolute;top:5px;right:8px;background:none;border:none;
-           color:var(--dim);font-size:15px;cursor:pointer;font-family:monospace;}
-#map-close:hover{color:var(--text);}
+/* Log */
+#log{background:var(--bg2);padding:15px;border-radius:8px;max-height:200px;overflow-y:auto}
+#log-entries{font-size:12px;line-height:1.6}
+.log-entry{color:var(--text2);margin:3px 0}
+.log-entry.error{color:var(--danger)}
+.log-entry.success{color:var(--success)}
+.log-entry.info{color:var(--info)}
+.log-entry.combat{color:var(--danger)}
+.log-entry.loot{color:var(--accent)}
 
-/* HELP MODAL */
-#help-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
-            z-index:500;align-items:center;justify-content:center;}
-#help-modal.open{display:flex;}
-#help-inner{background:var(--bg2);border:1px solid var(--border);border-radius:6px;
-            padding:14px 18px;max-width:460px;width:90%;max-height:80vh;overflow-y:auto;}
-#help-inner h2{color:var(--gold);font-size:12px;margin-bottom:8px;}
-.hr{display:flex;gap:8px;margin-bottom:4px;font-size:10px;}
-.hk{color:var(--gold);width:150px;flex-shrink:0;}
-.hv{color:var(--text);}.hclose{margin-top:10px;background:var(--bg3);border:1px solid var(--border);
-        color:var(--dim);padding:4px 10px;cursor:pointer;border-radius:3px;
-        font-family:monospace;font-size:10px;}
+/* Ranking */
+#ranking{background:var(--bg2);padding:15px;border-radius:8px}
+#ranking h3{color:var(--accent);margin-bottom:10px;font-size:14px}
+#ranking-list{font-size:12px}
+.ranking-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bg3)}
+.ranking-row:nth-child(1){color:var(--accent);font-weight:bold}
+.ranking-pos{color:var(--text2);margin-right:10px}
 
-/* COMBAT POPUP */
-#combat-popup{display:none;position:fixed;bottom:50px;left:50%;transform:translateX(-50%);
-              background:var(--bg2);border:1px solid var(--green);border-radius:6px;
-              padding:10px 14px;z-index:400;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.6);}
-#combat-popup.open{display:block;}
-#cp-title{color:var(--green);font-size:11px;font-weight:bold;margin-bottom:6px;text-align:center;}
-#cp-enemies{font-size:10px;color:var(--text);margin-bottom:8px;}
-.cp-enemy{display:flex;justify-content:space-between;padding:1px 0;border-bottom:1px solid var(--dim2);}
-.cp-enemy:last-child{border-bottom:none;}
-#cp-btns{display:flex;gap:5px;justify-content:center;}
-.cp-btn{padding:5px 12px;border:none;border-radius:4px;cursor:pointer;
-        font-family:monospace;font-size:11px;font-weight:bold;}
-#cp-atk{background:var(--green);color:#000;}
-#cp-esp{background:var(--mana);color:#fff;}
-#cp-pas{background:var(--bg3);color:var(--dim);border:1px solid var(--border);}
-#cp-obj{background:var(--orange);color:#000;}
+/* Buttons */
+.btn{background:var(--accent);border:none;padding:8px 16px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold;font-size:12px;transition:transform 0.1s}
+.btn:hover{transform:scale(1.05)}
+.btn.secondary{background:var(--bg3);color:var(--text);border:1px solid #444}
 
-/* ACERTIJO POPUP */
-#acertijo-popup{display:none;position:fixed;top:50%;left:50%;
-                transform:translate(-50%,-50%);
-                background:var(--bg2);border:2px solid var(--purple);border-radius:8px;
-                padding:20px 24px;z-index:600;min-width:320px;max-width:400px;text-align:center;
-                box-shadow:0 6px 30px rgba(0,0,0,.7);}
-#acertijo-popup.open{display:block;}
-#acertijo-title{color:var(--purple);font-size:14px;font-weight:bold;margin-bottom:10px;}
-#acertijo-counter{color:var(--dim);font-size:10px;margin-bottom:8px;}
-#acertijo-pregunta{color:var(--text);font-size:12px;margin-bottom:15px;line-height:1.4;}
-#acertijo-opciones{display:flex;flex-direction:column;gap:6px;margin-bottom:15px;}
-.acertijo-opt{background:var(--bg3);border:1px solid var(--border);color:var(--text);
-              padding:8px 12px;font-size:11px;cursor:pointer;border-radius:4px;
-              font-family:monospace;text-align:left;transition:all .15s;}
-.acertijo-opt:hover{background:var(--border);border-color:var(--purple);}
-.acertijo-opt.correct{background:#0d3a0d;border-color:var(--green);color:var(--green);}
-.acertijo-opt.wrong{background:#3a0d0d;border-color:var(--red);color:var(--red);}
-#acertijo-msg{font-size:10px;min-height:14px;margin-top:8px;}
+/* Popups */
+.popup{position:fixed;inset:0;background:rgba(0,0,0,0.9);display:none;align-items:center;justify-content:center;z-index:500;padding:20px}
+.popup.active{display:flex}
+.popup-content{background:var(--bg2);padding:30px;border-radius:10px;max-width:600px;max-height:80vh;overflow-y:auto;border:2px solid var(--accent)}
+.popup-title{color:var(--accent);font-size:20px;margin-bottom:15px}
+.popup-text{line-height:1.8;white-space:pre-wrap;color:var(--text2)}
+.popup-close{background:var(--accent);border:none;padding:10px 30px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold;margin-top:20px}
 
-/* PVP CHALLENGE POPUP */
-#pvp-popup{display:none;position:fixed;top:50%;left:50%;
-           transform:translate(-50%,-50%);
-           background:var(--bg2);border:2px solid var(--red);border-radius:8px;
-           padding:20px 24px;z-index:600;min-width:260px;text-align:center;
-           box-shadow:0 6px 30px rgba(0,0,0,.7);}
-#pvp-popup.open{display:block;}
-#pvp-title{color:var(--red);font-size:14px;font-weight:bold;margin-bottom:6px;}
-#pvp-info{color:var(--text);font-size:11px;margin-bottom:14px;}
-#pvp-btns{display:flex;gap:8px;justify-content:center;}
-#pvp-accept{background:var(--green);color:#000;border:none;padding:7px 18px;
-            border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
-#pvp-reject{background:var(--red);color:#fff;border:none;padding:7px 18px;
-            border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;}
+/* Inventory */
+#inventory{background:var(--bg2);padding:15px;border-radius:8px}
+#inventory h3{color:var(--accent);margin-bottom:10px;font-size:14px}
+.inventory-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.inventory-item{background:var(--bg3);padding:10px;border-radius:4px;text-align:center;cursor:pointer;transition:all 0.1s}
+.inventory-item:hover{background:var(--accent);color:#000}
+.inventory-item .emoji{font-size:20px}
+.inventory-item .name{font-size:10px;margin-top:5px}
 
-/* LORE POPUP */
-#lore-popup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:800;
-            align-items:center;justify-content:center;}
-#lore-popup.open{display:flex;}
-#lore-inner{background:var(--bg2);border:2px solid var(--gold);border-radius:8px;
-            padding:28px 32px;max-width:600px;width:90%;max-height:80vh;
-            overflow-y:auto;position:relative;text-align:left;
-            box-shadow:0 8px 40px rgba(0,0,0,.8);}
-#lore-title{color:var(--gold);font-size:15px;font-weight:bold;margin-bottom:16px;
-            text-align:center;letter-spacing:1px;}
-#lore-text{color:var(--text);font-size:11px;line-height:1.8;white-space:pre-wrap;}
-#lore-close{display:block;margin:20px auto 0;background:var(--gold);color:#000;
-            border:none;padding:9px 28px;border-radius:4px;cursor:pointer;
-            font-weight:bold;font-family:monospace;font-size:12px;}
-#lore-close:hover{background:var(--gold2);}
+/* Shop */
+#shop{background:var(--bg2);padding:15px;border-radius:8px;display:none}
+#shop.active{display:block}
+#shop h3{color:var(--accent);margin-bottom:15px}
+.shop-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);margin:5px 0;border-radius:4px}
+.shop-item-info{display:flex;align-items:center;gap:10px}
+.shop-item-emoji{font-size:24px}
+.shop-item-name{font-size:13px}
+.shop-item-price{color:var(--accent);font-size:12px}
+.shop-buy-btn{background:var(--accent);border:none;padding:5px 15px;border-radius:4px;color:#000;cursor:pointer;font-size:11px}
 
-/* BOSS CONVERSATION POPUP */
-#boss-conv-popup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
-                 z-index:750;align-items:center;justify-content:center;}
-#boss-conv-popup.open{display:flex;}
-#boss-conv-inner{background:var(--bg2);border:2px solid var(--red);border-radius:8px;
-                 padding:22px 28px;max-width:520px;width:90%;
-                 box-shadow:0 6px 32px rgba(0,0,0,.8);}
-#boss-conv-name{color:var(--red);font-size:14px;font-weight:bold;margin-bottom:10px;}
-#boss-conv-text{color:var(--text);font-size:11px;line-height:1.7;margin-bottom:14px;white-space:pre-wrap;}
+/* Health/Mana bars */
+.bar-container{width:100%;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;margin:2px 0}
+.bar-fill{height:100%;transition:width 0.3s}
+.bar-fill.hp{background:var(--hp)}
+.bar-fill.mana{background:var(--mana)}
+
+/* Responsive */
+@media(max-width:768px){
+  #app{grid-template-columns:1fr}
+  #sidebar{display:none}
+}
 </style>
 </head>
 <body>
-
-<!-- LOGIN -->
-<div id="lo">
-  <div id="lb">
-    <h1>⚔ The Return to Highdown</h1>
-    <p>MUD Multiplayer</p>
-    <div class="tabs">
-      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
-      <button class="tab" onclick="showTab('register')">Crear cuenta</button>
-    </div>
-    <div id="login-p">
-      <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
-      <input class="li" id="lp" type="password" placeholder="Contraseña">
-      <button class="abtn" onclick="doLogin()">ENTRAR</button>
-    </div>
-    <div id="reg-p">
-      <input class="li" id="ru"  type="text"     placeholder="Usuario (mín. 3 chars)" autocomplete="off">
-      <input class="li" id="rp1" type="password" placeholder="Contraseña (mín. 4 chars)">
-      <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
-      <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
-      <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
-    </div>
-    <div id="lerr"></div>
-  </div>
-</div>
-
-<!-- LORE POPUP -->
-<div id="lore-popup">
-  <div id="lore-inner">
-    <div id="lore-title">⚔ EL RETORNO A HIGHDOWN</div>
-    <div id="lore-text"></div>
-    <button id="lore-close" onclick="closeLorePopup()">Comenzar la aventura</button>
-  </div>
-</div>
-
-<!-- BOSS CONVERSATION POPUP -->
-<div id="boss-conv-popup">
-  <div id="boss-conv-inner">
-    <div id="boss-conv-name"></div>
-    <div id="boss-conv-text"></div>
-  </div>
-</div>
-
-<!-- MAP MODAL -->
-<div id="map-modal" onclick="if(event.target===this)closeMapBtn()">
-  <div id="map-inner">
-    <button id="map-close" onclick="closeMapBtn()">✕</button>
-    <svg id="map-svg-full" viewBox="0 0 860 820" width="740" height="820" xmlns="http://www.w3.org/2000/svg">
-      <defs><filter id="glowf"><feGaussianBlur stdDeviation="4" result="b"/>
-        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-      <!-- NIEVE -->
-      <rect x="5" y="5" width="810" height="310" rx="5" fill="#06090f" stroke="#1a3a4a" stroke-width="1"/>
-      <text x="14" y="20" fill="#4a6a7a" font-size="9" font-family="monospace">❄ NIEVE (73–148)</text>
-      <!-- MAR -->
-      <rect x="5" y="320" width="810" height="280" rx="5" fill="#06060f" stroke="#1a2a4a" stroke-width="1"/>
-      <text x="14" y="335" fill="#1565c0" font-size="9" font-family="monospace">🌊 MAR (33–72)</text>
-      <!-- OASIS -->
-      <rect x="360" y="608" width="80" height="38" rx="3" fill="#081408" stroke="#2e7d32" stroke-width="1"/>
-      <text x="400" y="631" fill="#2e7d32" font-size="8" font-family="monospace" text-anchor="middle">🌴 OASIS</text>
-      <!-- TUTORIAL -->
-      <rect x="650" y="608" width="160" height="38" rx="3" fill="#0d0d0d" stroke="#444" stroke-width="1"/>
-      <text x="730" y="631" fill="#888" font-size="8" font-family="monospace" text-anchor="middle">📚 TUTORIAL</text>
-      <!-- DESIERTO -->
-      <rect x="5" y="650" width="810" height="255" rx="5" fill="#0f0700" stroke="#302000" stroke-width="1"/>
-      <text x="14" y="666" fill="#8b6914" font-size="9" font-family="monospace">🏜 DESIERTO (1–32)</text>
-      <g id="map-conn-full"></g><g id="map-rooms-full"></g>
-    </svg>
-  </div>
-</div>
-
-<!-- HELP MODAL -->
-<div id="help-modal" onclick="if(event.target===this)closeHelpBtn()">
-  <div id="help-inner">
-    <h2>❓ Comandos</h2>
-    <div class="hr"><span class="hk">n / s / e / o</span><span class="hv">Moverse</span></div>
-    <div class="hr"><span class="hk">atacar</span><span class="hv">Iniciar combate</span></div>
-    <div class="hr"><span class="hk">1/2/3/4</span><span class="hv">Combate: Atacar/Especial/Pasar/Objeto</span></div>
-    <div class="hr"><span class="hk">mirar</span><span class="hv">Describir sala actual</span></div>
-    <div class="hr"><span class="hk">stats</span><span class="hv">Ver estadísticas</span></div>
-    <div class="hr"><span class="hk">tienda / hospital</span><span class="hv">Servicios (si disponibles)</span></div>
-    <div class="hr"><span class="hk">mochila</span><span class="hv">Ver inventario</span></div>
-    <div class="hr"><span class="hk">usar vida/dano/gema</span><span class="hv">Usar objeto</span></div>
-    <div class="hr"><span class="hk">invitar &lt;nombre&gt;</span><span class="hv">Invitar a grupo</span></div>
-    <div class="hr"><span class="hk">aceptar / rechazar</span><span class="hv">Responder invitación</span></div>
-    <div class="hr"><span class="hk">grupo / salirgrupo</span><span class="hv">Ver/Abandonar grupo</span></div>
-    <div class="hr"><span class="hk">duelo &lt;nombre&gt; [monedas]</span><span class="hv">Retar a PvP</span></div>
-    <div class="hr"><span class="hk">A/B/C/D</span><span class="hv">Responder acertijos</span></div>
-    <div class="hr"><span class="hk">guardar</span><span class="hv">Guardar progreso</span></div>
-    <button class="hclose" onclick="closeHelpBtn()">Cerrar</button>
-  </div>
-</div>
-
-<!-- COMBAT POPUP -->
-<div id="combat-popup">
-  <div id="cp-title">⚔ COMBATE EN CURSO</div>
-  <div id="cp-enemies"></div>
-  <div id="cp-btns">
-    <button class="cp-btn" id="cp-atk" onclick="send('1')">① Atacar</button>
-    <button class="cp-btn" id="cp-esp" onclick="send('2')">② Especial</button>
-    <button class="cp-btn" id="cp-pas" onclick="send('3')">③ Pasar</button>
-    <button class="cp-btn" id="cp-obj" onclick="send('4')">④ Objeto</button>
-  </div>
-</div>
-
-<!-- ACERTIJO POPUP -->
-<div id="acertijo-popup">
-  <div id="acertijo-title">🧩 ACERTIJO</div>
-  <div id="acertijo-counter"></div>
-  <div id="acertijo-pregunta"></div>
-  <div id="acertijo-opciones"></div>
-  <div id="acertijo-msg"></div>
-</div>
-
-<!-- PVP CHALLENGE POPUP -->
-<div id="pvp-popup">
-  <div id="pvp-title">⚔ RETO A DUELO</div>
-  <div id="pvp-info"></div>
-  <div id="pvp-btns">
-    <button id="pvp-accept" onclick="acceptDuelo()">✓ Aceptar</button>
-    <button id="pvp-reject" onclick="rejectDuelo()">✗ Rechazar</button>
-  </div>
-</div>
-
-<!-- TOPBAR -->
-<div id="topbar">
-  <div id="tb-title">⚔ MUD</div>
-  <div id="tb-player">—</div>
-  <div id="cdot"></div>
-</div>
-
-<!-- APP GRID -->
 <div id="app">
-
-  <!-- LEFT -->
-  <div id="left">
-    <div id="stats-pane">
-      <div class="sp-emoji" id="s-emoji" style="font-size:28px;text-align:center;margin-bottom:4px">⚔️</div>
-      <div class="sp-name" id="s-nm">—</div>
-      <div class="sp-cls"  id="s-cl">—</div>
-      <div>
-        <div class="lvr">
-          <span style="color:var(--dim);font-size:9px">Nivel</span>
-          <span class="lvb" id="s-nv">1</span>
-        </div>
-        <div class="bl"><span class="bl-n">XP</span><span id="s-xp">0/150</span></div>
-        <div class="xw"><div class="bf bf-xp" id="b-xp" style="width:0%"></div></div>
-      </div>
-      <div class="sh">Vida &amp; Mana</div>
-      <div>
-        <div class="bl"><span class="bl-n">❤ HP</span><span id="s-hp">—</span></div>
-        <div class="bw"><div class="bf bf-hp" id="b-hp" style="width:100%"></div></div>
-        <div class="bl"><span class="bl-n">✦ Mana</span><span id="s-mp">—</span></div>
-        <div class="bw"><div class="bf bf-mp" id="b-mp" style="width:100%"></div></div>
-      </div>
-      <div class="sh">Combate</div>
-      <div>
-        <div class="sr"><span class="sr-l">Daño</span><span class="sr-v" id="s-dmg">—</span></div>
-        <div class="sr"><span class="sr-l">Ataques</span><span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
-        <div class="sr"><span class="sr-l">Especial</span><span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
+  <div id="main">
+    <!-- Login -->
+    <div id="login-screen">
+      <div class="login-box">
+        <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
+        <input type="text" id="username" placeholder="Nombre de usuario">
+        <input type="text" id="char-name" placeholder="Nombre de tu personaje">
+        <select id="char-class">
+          <option value="guerrero">Guerrero - Alta vida, dano medio</option>
+          <option value="mago">Mago - Baja vida, magia poderosa</option>
+          <option value="arquero">Arquero - Dano bajo, ataques rapidos</option>
+          <option value="curandero">Curandero - Pode curarse</option>
+          <option value="nigromante">Nigromante - Mucho mana, ataques multiples</option>
+          <option value="hechicero">Hechicero - Magia avanzada</option>
+          <option value="caballero">Caballero - Equilibrado</option>
+          <option value="cazador">Cazador - Alto dano fisico</option>
+          <option value="asesino">Asesino - Críticos letales</option>
+          <option value="barbaro">Barbaro - Dano brutal</option>
+        </select>
+        <button onclick="login()">🎮 JUGAR</button>
       </div>
     </div>
-    <div id="bag-pane">
-      <div class="bag-title">🎒 Mochila</div>
-      <div class="bag-coins" id="bag-coins">0 💰</div>
-      <div id="bag-items"><div class="bag-empty">Vacía</div></div>
+    
+    <header>
+      <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
+      <div id="player-info">
+        <span class="stat" id="stat-level">Nivel 1</span>
+        <span class="stat hp" id="stat-hp">HP: 0/0</span>
+        <span class="stat mana">Mana: 0/0</span>
+        <span class="stat" id="stat-medas">💰 0</span>
+      </div>
+    </header>
+    
+    <!-- Combat -->
+    <div id="combat">
+      <div id="combat-header">
+        <span id="combat-title">⚔️ COMBATE</span>
+        <span id="combat-turn">Turno 1</span>
+      </div>
+      <div id="enemies"></div>
+      <div id="combat-actions">
+        <button class="combat-btn" onclick="sendAction('1')">⚔️ ATACAR</button>
+        <button class="combat-btn" onclick="sendAction('2')">✨ ESPECIAL</button>
+        <button class="combat-btn" onclick="sendAction('3')">💤 PASAR</button>
+        <button class="combat-btn" onclick="showInventory()">🎒 OBJETO</button>
+      </div>
     </div>
-    <div id="services-pane">
-      <button class="svc-btn hosp" id="btn-hosp" onclick="send('hospital')">🏥 Hospital</button>
-      <button class="svc-btn shop" id="btn-shop" onclick="send('tienda')">🏪 Tienda</button>
+    
+    <!-- Room -->
+    <div id="room">
+      <div id="room-header">
+        <span id="room-name">Cargando...</span>
+        <button class="btn" onclick="refreshRoom()">🔄</button>
+      </div>
+      <div id="room-desc"></div>
+      <div class="room-features" id="room-features"></div>
+      <div id="exits"></div>
+      <div id="players-in-room"></div>
+      <div id="group-info"></div>
+    </div>
+    
+    <!-- Log -->
+    <div id="log">
+      <div id="log-entries"></div>
     </div>
   </div>
-
-  <!-- CENTER -->
-  <div id="center">
-    <div id="glog"></div>
-    <!-- CHAT integrado en center -->
-    <div id="chat-pane">
+  
+  <div id="sidebar">
+    <!-- Stats -->
+    <div id="stats-panel">
+      <h3>📊 TUS ESTADISTICAS</h3>
+      <div class="stats-grid">
+        <div class="stat-row"><span class="stat-label">Nombre:</span><span id="sp-nombre">-</span></div>
+        <div class="stat-row"><span class="stat-label">Clase:</span><span id="sp-clase">-</span></div>
+        <div class="stat-row"><span class="stat-label">Nivel:</span><span id="sp-nivel">1</span></div>
+        <div class="stat-row"><span class="stat-label">XP:</span><span id="sp-xp">0/150</span></div>
+        <div class="stat-row"><span class="stat-label">Daño:</span><span id="sp-dano">0</span></div>
+        <div class="stat-row"><span class="stat-label">Monedas:</span><span id="sp-medas">0</span></div>
+      </div>
+    </div>
+    
+    <!-- Chat -->
+    <div id="chat">
       <div id="chat-tabs">
-        <button class="ctab cs" id="ct-sala"   onclick="setChatTab('sala')">💬 Sala</button>
-        <button class="ctab"    id="ct-global" onclick="setChatTab('global')">🌐 Global</button>
-        <button class="ctab"    id="ct-grupo"  onclick="setChatTab('grupo')">👥 Grupo</button>
+        <button class="chat-tab active" onclick="setChat('sala')">Sala</button>
+        <button class="chat-tab" onclick="setChat('global')">Global</button>
+        <button class="chat-tab" onclick="setChat('grupo')">Grupo</button>
       </div>
-      <div id="chat-log"></div>
-      <div id="chat-in-row">
-        <input id="chat-in" type="text" placeholder="Escribe un mensaje... (Enter para enviar)" disabled
-               onkeydown="if(event.key==='Enter')sendChat()">
-        <button id="chat-send" onclick="sendChat()" disabled>↵</button>
+      <div id="chat-messages"></div>
+      <div id="chat-input">
+        <input type="text" id="chat-msg" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()">➤</button>
       </div>
     </div>
-  </div>
-
-  <!-- RIGHT -->
-  <div id="right">
-    <div id="lb-pane">
-      <div id="lb-hdr">🏆 Ranking Global</div>
-      <div id="lb-list"><div style="color:var(--dim);font-size:9px;padding:5px">Cargando...</div></div>
+    
+    <!-- Ranking -->
+    <div id="ranking">
+      <h3>🏆 RANKING</h3>
+      <div id="ranking-list"></div>
     </div>
   </div>
+</div>
 
-  <!-- CONTROLS -->
-  <div id="controls">
-    <button class="cb dir" onclick="send('n')">N</button>
-    <button class="cb dir" onclick="send('s')">S</button>
-    <button class="cb dir" onclick="send('e')">E</button>
-    <button class="cb dir" onclick="send('o')">O</button>
-    <div class="cb-sep"></div>
-    <button class="cb atk" onclick="send('atacar')">⚔ Atacar</button>
-    <div class="cb-sep"></div>
-    <button class="cb pvp" onclick="promptDuelo()">☠ Duelo</button>
-    <div class="cb-sep"></div>
-    <button class="cb" onclick="send('mirar')">👁</button>
-    <button class="cb" onclick="send('guardar')">💾</button>
-    <button class="cb" onclick="send('stats')">📊</button>
-    <div id="input-bar">
-      <input id="cmd" type="text" placeholder="Comando..." disabled
-             autocomplete="off" spellcheck="false"
-             onkeydown="if(event.key==='Enter')doSend()">
-      <button id="sbtn" onclick="doSend()" disabled>↵</button>
-    </div>
-    <button class="cb gold-btn" onclick="openHelp()">❓</button>
+<!-- Lore Popup -->
+<div id="lore-popup" class="popup">
+  <div class="popup-content">
+    <div class="popup-title" id="lore-title"></div>
+    <div class="popup-text" id="lore-text"></div>
+    <button class="popup-close" onclick="closeLore()">CONTINUAR</button>
   </div>
-
 </div>
 
 <script>
-/* MAP */
-/* MAP DATA — 150 salas (Tutorial + Desierto + Mar + Nieve + Oasis) */
-const RPOS={
- /* TUTORIAL */
- "0.1":{x:760,y:790,n:"Tutorial: Combate",b:"tutorial"},
- "0.2":{x:796,y:760,n:"Tutorial: Objetos",b:"tutorial"},
- "0.3":{x:760,y:730,n:"Tutorial: Estructuras",b:"tutorial"},
- "0.4":{x:796,y:730,n:"Tutorial: UI",b:"tutorial"},
- /* DESIERTO */
- 1:{x:28,y:700,n:"North Mass",b:"desierto"},
- 2:{x:80,y:700,n:"Dunas del Norte",b:"desierto"},
- 3:{x:132,y:700,n:"Ruinas del Desierto",b:"desierto"},
- 4:{x:184,y:700,n:"Ciudad Abrasada",b:"desierto",boss:true},
- 5:{x:236,y:700,n:"Valle Muerto",b:"desierto"},
- 6:{x:288,y:700,n:"Oasis",b:"safe"},
- 7:{x:340,y:700,n:"Sala del Viento",b:"desierto"},
- 8:{x:392,y:700,n:"Camara del Oasis",b:"desierto"},
- 9:{x:444,y:700,n:"Salon del Sol",b:"desierto"},
- 10:{x:496,y:700,n:"Cripta de las Dunas",b:"desierto"},
- 11:{x:548,y:700,n:"Caravana Fantasma",b:"desierto"},
- 12:{x:600,y:700,n:"Fosa de Titanes",b:"desierto"},
- 13:{x:652,y:700,n:"Altar del Soberano",b:"desierto",boss:true},
- 14:{x:704,y:700,n:"Extension de Azhar",b:"desierto"},
- 15:{x:756,y:700,n:"Mar de Dunas",b:"desierto"},
- 16:{x:808,y:700,n:"Vestigios Enterrados",b:"desierto"},
- 17:{x:28,y:652,n:"Santuario Carmesi",b:"desierto"},
- 18:{x:80,y:652,n:"Sepulcro de Colosos",b:"desierto"},
- 19:{x:132,y:652,n:"Trono del Abismo",b:"desierto"},
- 20:{x:184,y:652,n:"Llanura de Fuego",b:"desierto"},
- 21:{x:236,y:652,n:"Dunas del Murmullo",b:"desierto"},
- 22:{x:288,y:652,n:"Columnas del Olvido",b:"desierto"},
- 23:{x:340,y:652,n:"Templo de Sangre",b:"desierto"},
- 24:{x:392,y:652,n:"Abismo de los Caidos",b:"desierto"},
- 25:{x:444,y:652,n:"Trono del Devastador",b:"desierto",boss:true},
- 26:{x:496,y:652,n:"Horizonte Quebrado",b:"desierto"},
- 27:{x:548,y:652,n:"Dunas del Hambre",b:"desierto"},
- 28:{x:600,y:652,n:"Ruinas del Eco",b:"desierto"},
- 29:{x:652,y:652,n:"Santuario de la Marca",b:"desierto"},
- 30:{x:704,y:652,n:"Campos de Huesos",b:"desierto"},
- 31:{x:756,y:652,n:"Trono Ultimo Senor",b:"desierto",boss:true},
- 32:{x:808,y:652,n:"Falla de los Antiguos",b:"desierto"},
- 149:{x:820,y:700,n:"Oasis Tranquilo",b:"safe"},
- /* MAR */
- 33:{x:28,y:510,n:"Embarcadero 1",b:"mar",acertijos:true},
- 34:{x:80,y:510,n:"Abismo Coralino",b:"mar"},
- 35:{x:132,y:510,n:"Trono del Oceano",b:"mar",boss:true},
- 36:{x:184,y:510,n:"Cripta de las Algas",b:"mar"},
- 37:{x:236,y:510,n:"Embarcadero 2",b:"mar",acertijos:true},
- 38:{x:288,y:510,n:"Fosa de Sombras",b:"mar"},
- 39:{x:340,y:510,n:"Arrecife Susurrante",b:"mar"},
- 40:{x:392,y:510,n:"Caverna de la Bruma",b:"mar"},
- 41:{x:444,y:510,n:"Templo de las Olas",b:"mar"},
- 42:{x:496,y:510,n:"Laguna de Naufragos",b:"mar"},
- 43:{x:548,y:510,n:"Pantano del Silencio",b:"mar"},
- 44:{x:600,y:510,n:"Refugio de las Medusas",b:"mar"},
- 45:{x:652,y:510,n:"Camara del Pulpo",b:"mar"},
- 46:{x:704,y:510,n:"Bosque de Manglares",b:"mar"},
- 47:{x:756,y:510,n:"Isla de la Lluvia",b:"mar"},
- 48:{x:808,y:510,n:"Grieta Abisal",b:"mar"},
- 49:{x:28,y:462,n:"Playa de los Ecos",b:"mar"},
- 50:{x:80,y:462,n:"Torre del Vigia",b:"mar"},
- 51:{x:132,y:462,n:"Gruta de las Mareas",b:"mar"},
- 52:{x:184,y:462,n:"Pantano de las Raices",b:"mar"},
- 53:{x:236,y:462,n:"Caverna del Coral",b:"mar"},
- 54:{x:288,y:462,n:"Estuario del Viento",b:"mar"},
- 55:{x:340,y:462,n:"Pozo de Agua",b:"mar"},
- 56:{x:392,y:462,n:"Acantilado Lluvia",b:"mar"},
- 57:{x:444,y:462,n:"Laguna de Sombras",b:"mar"},
- 58:{x:496,y:462,n:"Bosque Inundado",b:"mar"},
- 59:{x:548,y:462,n:"Camara de Corrientes",b:"mar"},
- 60:{x:600,y:462,n:"Isla del Horizonte",b:"mar"},
- 61:{x:652,y:462,n:"Fosa de la Marea",b:"mar"},
- 62:{x:704,y:462,n:"Playa de Arena Humeda",b:"mar"},
- 63:{x:756,y:462,n:"Gruta del Agua",b:"mar"},
- 64:{x:808,y:462,n:"Delta de Canales",b:"mar"},
- 65:{x:28,y:414,n:"Arrecife de Espinas",b:"mar"},
- 66:{x:80,y:414,n:"Pantano de Lluvia",b:"mar"},
- 67:{x:132,y:414,n:"Caverna del Vapor",b:"mar"},
- 68:{x:184,y:414,n:"Laguna de Reflejos",b:"mar"},
- 69:{x:236,y:414,n:"Sendero del Lodo",b:"mar"},
- 70:{x:288,y:414,n:"Bahia de la Niebla",b:"mar"},
- 71:{x:340,y:414,n:"Cumbre del Leviatan",b:"mar",boss:true},
- 72:{x:392,y:414,n:"Cumbre del Kraken",b:"mar",boss:true},
- 150:{x:820,y:510,n:"Puerto Abandonado",b:"safe"},
- /* NIEVE */
- 73:{x:28,y:295,n:"Ventisca Eterna",b:"nieve"},
- 74:{x:80,y:295,n:"Bosque de Hielo Negro",b:"nieve"},
- 75:{x:132,y:295,n:"Grieta del Frio",b:"nieve"},
- 76:{x:184,y:295,n:"Llanura del Silencio",b:"nieve"},
- 77:{x:236,y:295,n:"Cementerio Congelado",b:"nieve"},
- 78:{x:288,y:295,n:"Tormenta Errante",b:"nieve"},
- 79:{x:340,y:295,n:"Picos del Desgarro",b:"nieve"},
- 80:{x:392,y:295,n:"Hondonada del Eco",b:"nieve"},
- 81:{x:444,y:295,n:"Rio de Hielo",b:"nieve"},
- 82:{x:496,y:295,n:"Fauces de la Tormenta",b:"nieve"},
- 83:{x:548,y:295,n:"Campo de Estatuas",b:"nieve"},
- 84:{x:600,y:295,n:"Abismo Nevado",b:"nieve"},
- 85:{x:652,y:295,n:"Cumbre del Viento",b:"nieve"},
- 86:{x:704,y:295,n:"Valle de Sombras",b:"nieve"},
- 87:{x:756,y:295,n:"Ruinas Congeladas",b:"nieve"},
- 88:{x:808,y:295,n:"Paso del Susurro",b:"nieve"},
- 89:{x:28,y:247,n:"Glaciar Viviente",b:"nieve"},
- 90:{x:80,y:247,n:"Fosa del Olvido",b:"nieve"},
- 91:{x:132,y:247,n:"Torres de Escarcha",b:"nieve"},
- 92:{x:184,y:247,n:"Velo de Nieve",b:"nieve"},
- 93:{x:236,y:247,n:"Lago de Cristal",b:"nieve"},
- 94:{x:288,y:247,n:"Bosque de Agujas",b:"nieve"},
- 95:{x:340,y:247,n:"Furia Blanca",b:"nieve"},
- 96:{x:392,y:247,n:"Caverna de Escarcha",b:"nieve"},
- 97:{x:444,y:247,n:"Paso del Ultimo Aliento",b:"nieve"},
- 98:{x:496,y:247,n:"Colmillos del Invierno",b:"nieve"},
- 99:{x:548,y:247,n:"Valle del Sueno",b:"nieve"},
- 100:{x:600,y:247,n:"Niebla Blanca",b:"nieve"},
- 101:{x:652,y:247,n:"Cumbre Quebrada",b:"nieve"},
- 102:{x:704,y:247,n:"Territorio del Frio",b:"nieve"},
- 103:{x:756,y:247,n:"Sendero del Hielo",b:"nieve"},
- 104:{x:808,y:247,n:"Vigilantes de Escarcha",b:"nieve"},
- 105:{x:28,y:199,n:"Desierto Blanco",b:"nieve"},
- 106:{x:80,y:199,n:"Garganta del Viento",b:"nieve"},
- 107:{x:132,y:199,n:"Ruinas del Invierno",b:"nieve"},
- 108:{x:184,y:199,n:"Campo de Fragmentos",b:"nieve"},
- 109:{x:236,y:199,n:"Pozo de Escarcha",b:"nieve"},
- 110:{x:288,y:199,n:"Travesia del Frio",b:"nieve"},
- 111:{x:340,y:199,n:"Tormenta Estatica",b:"nieve"},
- 112:{x:392,y:199,n:"Cascada Congelada",b:"nieve"},
- 113:{x:444,y:199,n:"Circulo de Hielo",b:"nieve"},
- 114:{x:496,y:199,n:"Bosque de Sombras",b:"nieve"},
- 115:{x:548,y:199,n:"Frontera del Frio",b:"nieve"},
- 116:{x:600,y:199,n:"Vertice Nevado",b:"nieve"},
- 117:{x:652,y:199,n:"Hogar de la Escarcha",b:"nieve"},
- 118:{x:704,y:199,n:"Sendero de los Perdidos",b:"nieve"},
- 119:{x:756,y:199,n:"Falla Glacial",b:"nieve"},
- 120:{x:808,y:199,n:"Campo de Huesos",b:"nieve"},
- 121:{x:28,y:151,n:"Tormenta Silenciosa",b:"nieve"},
- 122:{x:80,y:151,n:"Nucleo de Hielo",b:"nieve"},
- 123:{x:132,y:151,n:"Paso de los Colosos",b:"nieve"},
- 124:{x:184,y:151,n:"Mar de Escarcha",b:"nieve"},
- 125:{x:236,y:151,n:"Colina del Ultimo Suspiro",b:"nieve"},
- 126:{x:288,y:151,n:"Catedral de Hielo",b:"nieve"},
- 127:{x:340,y:151,n:"Velo del Olvido",b:"nieve"},
- 128:{x:392,y:151,n:"Fauces Heladas",b:"nieve"},
- 129:{x:444,y:151,n:"Bosque del Frio",b:"nieve"},
- 130:{x:496,y:151,n:"Campo de Escarcha Oscura",b:"nieve"},
- 131:{x:548,y:151,n:"Trampa de Nieve",b:"nieve"},
- 132:{x:600,y:151,n:"Cumbre del Olvido",b:"nieve"},
- 133:{x:652,y:151,n:"Rugido Blanco",b:"nieve"},
- 134:{x:704,y:151,n:"Valle del Frio Eterno",b:"nieve"},
- 135:{x:756,y:151,n:"Sombras Bajo el Hielo",b:"nieve"},
- 136:{x:808,y:151,n:"Paso de la Escarcha",b:"nieve"},
- 137:{x:28,y:103,n:"Caverna del Viento",b:"nieve"},
- 138:{x:80,y:103,n:"Campos del Silencio",b:"nieve"},
- 139:{x:132,y:103,n:"Colapso Glacial",b:"nieve"},
- 140:{x:184,y:103,n:"Tormenta del Norte",b:"nieve"},
- 141:{x:236,y:103,n:"Grieta del Ultimo Invierno",b:"nieve"},
- 142:{x:288,y:103,n:"Altar de Hielo",b:"nieve"},
- 143:{x:340,y:103,n:"Sendero del Frio Infinito",b:"nieve"},
- 144:{x:392,y:103,n:"Cupula de Escarcha",b:"nieve"},
- 145:{x:444,y:103,n:"Ruinas del Viento Blanco",b:"nieve"},
- 146:{x:496,y:103,n:"Frontera del Vacio",b:"nieve"},
- 147:{x:548,y:103,n:"Crater de Hielo",b:"nieve"},
- 148:{x:600,y:103,n:"Trono del Invierno",b:"nieve",boss:true},
-};
+let ws = null;
+let currentChat = 'sala';
+let inCombat = false;
+let currentAction = '1';
 
-const CONNS=[
- /* Tutorial */
- ["0.1","0.2"],["0.2","0.3"],["0.3","0.4"],
- /* Desierto */
- [1,2],[1,6],[1,13],[2,3],[3,4],[3,16],[4,5],[5,6],[6,7],[7,8],[7,9],[8,9],[10,11],[10,6],
- [11,12],[11,17],[12,13],[12,18],[13,14],[13,19],[14,15],[15,16],[16,22],[17,18],[18,27],
- [19,20],[20,21],[20,25],[21,22],[22,23],[23,24],[24,30],[24,32],[25,26],[26,19],[27,28],
- [28,29],[29,30],[30,31],[31,32],[32,33],[6,37],
- /* Mar */
- [33,34],[33,38],[33,39],[34,35],[35,36],[36,37],[36,41],[37,38],[37,42],[38,39],[38,44],
- [39,40],[39,44],[40,41],[41,46],[42,43],[42,52],[43,44],[43,51],[44,45],[44,50],[46,47],
- [46,48],[47,48],[48,59],[49,50],[49,56],[50,51],[50,55],[51,52],[51,54],[52,53],[53,54],
- [54,55],[56,49],[57,58],[57,59],[58,60],[59,60],[59,62],[60,61],[61,62],[61,64],[62,63],
- [63,66],[64,65],[65,66],[66,68],[68,69],[69,70],[70,71],[71,72],[72,73],
- /* Nieve */
- [73,74],[74,75],[74,76],[75,76],[76,77],[77,78],[77,83],[78,79],[79,80],[79,98],[80,83],
- [81,82],[82,83],[83,84],[83,96],[84,85],[84,95],[85,86],[86,87],[86,89],[88,89],[90,91],
- [91,92],[92,93],[92,101],[93,102],[94,95],[94,103],[95,96],[95,104],[96,97],[96,105],
- [98,99],[98,107],[99,108],[100,109],[101,118],[102,117],[103,104],[104,105],[104,115],
- [105,106],[106,107],[107,112],[108,109],[108,111],[109,110],[110,111],[111,112],[112,125],
- [113,114],[113,124],[114,123],[115,116],[115,122],[116,121],[117,120],[118,119],[119,128],
- [120,121],[120,129],[121,122],[122,123],[122,132],[123,133],[124,125],[125,134],[126,127],
- [126,135],[127,136],[128,145],[129,144],[130,143],[131,142],[132,141],[133,140],[134,135],
- [134,139],[137,138],[138,139],[139,140],[140,141],[141,142],[141,146],[142,143],[144,145],
- [145,146],[146,147],[146,148],[147,148],
- /* Oasis y extras */
- [24,149],[32,149],[71,150]
-];
-
-const BC={desierto:"#8b6914",mar:"#1565c0",nieve:"#546e7a",safe:"#2e7d32",tutorial:"#555"};
-
-const SNAMES={
- 1:"North Mass",2:"Dunas del Norte",3:"Ruinas del Desierto",4:"Ciudad Abrasada",
- 5:"Valle Muerto",6:"Oasis",7:"Sala del Viento",8:"Camara del Oasis",
- 9:"Salon del Sol",10:"Cripta de las Dunas",11:"Caravana Fantasma",12:"Fosa de Titanes",
- 13:"Altar del Soberano",14:"Extension de Azhar",15:"Mar de Dunas",16:"Vestigios Enterrados",
- 17:"Santuario Carmesi",18:"Sepulcro de Colosos",19:"Trono del Abismo",
- 20:"Llanura de Fuego",21:"Dunas del Murmullo",22:"Columnas del Olvido",
- 23:"Templo de Sangre",24:"Abismo de los Caidos",25:"Trono del Devastador",
- 26:"Horizonte Quebrado",27:"Dunas del Hambre",28:"Ruinas del Eco",
- 29:"Santuario de la Marca",30:"Campos de Huesos",31:"Trono del Ultimo Senor",
- 32:"Falla de los Antiguos",33:"Embarcadero 1",34:"Abismo Coralino",
- 35:"Trono del Oceano",36:"Cripta de las Algas",37:"Embarcadero 2",
- 38:"Fosa de Sombras",39:"Arrecife Susurrante",40:"Caverna de la Bruma",
- 41:"Templo de las Olas",42:"Laguna de Naufragos",43:"Pantano del Silencio",
- 44:"Refugio de las Medusas",45:"Camara del Pulpo",46:"Bosque de Manglares",
- 47:"Isla de la Lluvia",48:"Grieta Abisal",49:"Playa de los Ecos",
- 50:"Torre del Vigia",51:"Gruta de las Mareas",52:"Pantano de las Raices",
- 53:"Caverna del Coral",54:"Estuario del Viento",55:"Pozo de Agua",
- 56:"Acantilado de la Lluvia",57:"Laguna de Sombras",58:"Bosque Inundado",
- 59:"Camara de Corrientes",60:"Isla del Horizonte",61:"Fosa de la Marea",
- 62:"Playa de Arena Humeda",63:"Gruta del Agua",64:"Delta de Canales",
- 65:"Arrecife de Espinas",66:"Pantano de Lluvia",67:"Caverna del Vapor",
- 68:"Laguna de Reflejos",69:"Sendero del Lodo",70:"Bahia de la Niebla",
- 71:"Cumbre del Leviatan",72:"Cumbre del Kraken",73:"Ventisca Eterna",
- 74:"Bosque de Hielo Negro",75:"Grieta del Frio",76:"Llanura del Silencio",
- 77:"Cementerio Congelado",78:"Tormenta Errante",79:"Picos del Desgarro",
- 80:"Hondonada del Eco",81:"Rio de Hielo",82:"Fauces de la Tormenta",
- 83:"Campo de Estatuas",84:"Abismo Nevado",85:"Cumbre del Viento",
- 86:"Valle de Sombras",87:"Ruinas Congeladas",88:"Paso del Susurro",
- 89:"Glaciar Viviente",90:"Fosa del Olvido",91:"Torres de Escarcha",
- 92:"Velo de Nieve",93:"Lago de Cristal",94:"Bosque de Agujas",
- 95:"Furia Blanca",96:"Caverna de Escarcha",97:"Paso del Ultimo Aliento",
- 98:"Colmillos del Invierno",99:"Valle del Sueno",100:"Niebla Blanca",
- 101:"Cumbre Quebrada",102:"Territorio del Frio",103:"Sendero del Hielo",
- 104:"Vigilantes de Escarcha",105:"Desierto Blanco",106:"Garganta del Viento",
- 107:"Ruinas del Invierno",108:"Campo de Fragmentos",109:"Pozo de Escarcha",
- 110:"Travesia del Frio",111:"Tormenta Estatica",112:"Cascada Congelada",
- 113:"Circulo de Hielo",114:"Bosque de Sombras",115:"Frontera del Frio",
- 116:"Vertice Nevado",117:"Hogar de la Escarcha",118:"Sendero de los Perdidos",
- 119:"Falla Glacial",120:"Campo de Huesos",121:"Tormenta Silenciosa",
- 122:"Nucleo de Hielo",123:"Paso de los Colosos",124:"Mar de Escarcha",
- 125:"Colina del Ultimo Suspiro",126:"Catedral de Hielo",127:"Velo del Olvido",
- 128:"Fauces Heladas",129:"Bosque del Frio",130:"Campo de Escarcha",
- 131:"Trampa de Nieve",132:"Cumbre del Olvido",133:"Rugido Blanco",
- 134:"Valle del Frio Eterno",135:"Sombras Bajo el Hielo",136:"Paso de la Escarcha",
- 137:"Caverna del Viento",138:"Campos del Silencio",139:"Colapso Glacial",
- 140:"Tormenta del Norte",141:"Grieta del Ultimo Invierno",142:"Altar de Hielo",
- 143:"Sendero del Frio Infinito",144:"Cupula de Escarcha",145:"Ruinas del Viento",
- 146:"Frontera del Vacio",147:"Crater de Hielo",148:"Trono del Invierno",
- 149:"Oasis Tranquilo",150:"Trono del Invierno 2"
-};
-
-function buildMap(connId,roomId){
-  const ns="http://www.w3.org/2000/svg";
-  const cg=document.getElementById(connId),rg=document.getElementById(roomId);
-  if(!cg||!rg)return;
-  while(cg.firstChild)cg.removeChild(cg.firstChild);
-  while(rg.firstChild)rg.removeChild(rg.firstChild);
-  CONNS.forEach(([a,b])=>{
-    const pa=RPOS[a],pb=RPOS[b];if(!pa||!pb)return;
-    const l=document.createElementNS(ns,"line");
-    l.setAttribute("x1",pa.x);l.setAttribute("y1",pa.y);
-    l.setAttribute("x2",pb.x);l.setAttribute("y2",pb.y);
-    l.setAttribute("stroke","#252525");l.setAttribute("stroke-width","1");
-    cg.appendChild(l);
-  });
-  Object.entries(RPOS).forEach(([id,r])=>{
-    const safeId=String(id).replace(".","_");
-    const g=document.createElementNS(ns,"g");
-    g.setAttribute("id",roomId+"-r"+safeId);g.setAttribute("data-sid",id);
-    const W=r.boss?40:r.acertijos?36:32,H=14;
-    const rect=document.createElementNS(ns,"rect");
-    rect.setAttribute("x",r.x-W/2);rect.setAttribute("y",r.y-H/2);
-    rect.setAttribute("width",W);rect.setAttribute("height",H);rect.setAttribute("rx",2);
-    let fillColor="#0d0d0d";
-    let strokeColor=BC[r.b]||"#2a2a2a";
-    if(r.boss){fillColor="#150000";strokeColor="#7a1a1a";}
-    else if(r.acertijos){fillColor="#150015";strokeColor="#8e44ad";}
-    rect.setAttribute("fill",fillColor);
-    rect.setAttribute("stroke",strokeColor);
-    rect.setAttribute("stroke-width","1");
-    const txt=document.createElementNS(ns,"text");
-    txt.setAttribute("x",r.x);txt.setAttribute("y",r.y+1);
-    txt.setAttribute("text-anchor","middle");txt.setAttribute("dominant-baseline","middle");
-    let textColor=r.boss?"#cc3333":r.acertijos?"#8e44ad":(BC[r.b]||"#555");
-    txt.setAttribute("fill",textColor);
-    txt.setAttribute("font-size","6");txt.setAttribute("font-family","monospace");
-    txt.textContent=id;
-    g.appendChild(rect);g.appendChild(txt);
-    if(roomId==="map-rooms-full"){
-      let tt=null;
-      g.addEventListener("mouseenter",e=>{
-        tt=document.createElement("div");
-        tt.style.cssText="position:fixed;background:#1a1a1a;border:1px solid #444;padding:3px 7px;border-radius:3px;font-size:10px;color:#ccc;pointer-events:none;z-index:600;white-space:nowrap;font-family:monospace";
-        let extra=r.boss?" [BOSS]":r.acertijos?" [🧩ACERTIJOS]":"";
-        tt.textContent="["+id+"] "+(SNAMES[id]||r.n)+extra;document.body.appendChild(tt);
-      });
-      g.addEventListener("mousemove",e=>{if(tt){tt.style.left=(e.clientX+10)+"px";tt.style.top=(e.clientY-5)+"px";}});
-      g.addEventListener("mouseleave",()=>{if(tt){tt.remove();tt=null;}});
-    }
-    rg.appendChild(g);
-  });
+function log(msg, type='info'){
+  const el = document.getElementById('log-entries');
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + type;
+  div.textContent = msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
 }
 
-function highlightRoom(id){
-  const safeId=String(id).replace(".","_");
-  ["mini","full"].forEach(suf=>{
-    const pfx=suf==="mini"?"map-rooms-mini":"map-rooms-full";
-    document.querySelectorAll("[id^='"+pfx+"-r']").forEach(g=>{
-      const rid=g.getAttribute("data-sid");
-      const r=RPOS[rid]||RPOS[String(rid)];if(!r)return;
-      const rect=g.querySelector("rect");if(!rect)return;
-      let fillColor="#0d0d0d";
-      let strokeColor=BC[r.b]||"#2a2a2a";
-      if(r.boss){fillColor="#150000";strokeColor="#7a1a1a";}
-      else if(r.acertijos){fillColor="#150015";strokeColor="#8e44ad";}
-      rect.setAttribute("fill",fillColor);
-      rect.setAttribute("stroke",strokeColor);
-      rect.setAttribute("stroke-width","1");rect.removeAttribute("filter");
-    });
-    const g=document.getElementById(pfx+"-r"+safeId);
-    if(g){const rect=g.querySelector("rect");if(rect){
-      rect.setAttribute("fill","#1f1200");rect.setAttribute("stroke","#c9a84c");
-      rect.setAttribute("stroke-width","2");
-      if(suf==="full")rect.setAttribute("filter","url(#glowf)");
-    }}
-  });
-}
-
-/* STATE */
-let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,acertijoActivo=false;
-
-/* LOGIN */
-function showTab(t){
-  document.getElementById("login-p").style.display=t==="login"?"block":"none";
-  document.getElementById("reg-p").style.display=t==="register"?"block":"none";
-  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
-}
-showTab("login");
-
-function getWsUrl(){const l=window.location;return(l.protocol==="https:"?"wss:":"ws:")+"//"+l.host+"/ws";}
-
-function doLogin(){
-  const u=document.getElementById("lu").value.trim();
-  const p=document.getElementById("lp").value;
-  const err=document.getElementById("lerr");
-  if(!u||!p){err.textContent="Rellena usuario y contraseña.";return;}
-  err.textContent="Conectando...";
-  connect({type:"game_auth",usuario:u,password:p});
-}
-function doRegister(){
-  const u=document.getElementById("ru").value.trim();
-  const p1=document.getElementById("rp1").value;
-  const p2=document.getElementById("rp2").value;
-  const nom=document.getElementById("rn").value.trim()||u;
-  const err=document.getElementById("lerr");
-  if(!u||!p1||!p2){err.textContent="Rellena todos los campos.";return;}
-  if(u.length<3){err.textContent="Usuario: mín 3 chars.";return;}
-  if(p1.length<4){err.textContent="Contraseña: mín 4 chars.";return;}
-  if(p1!==p2){err.textContent="Contraseñas no coinciden.";return;}
-  err.textContent="Creando...";
-  connect({type:"game_register",usuario:u,password:p1,nombre:nom});
-}
-function connect(authMsg){
-  ws=new WebSocket(getWsUrl());
-  ws.onopen=()=>ws.send(JSON.stringify(authMsg));
-  ws.onmessage=e=>{try{handle(JSON.parse(e.data));}catch(_){}};
-  ws.onclose=()=>{setConn(false);appendLog("Conexión cerrada.","gd");disableUI();};
-  ws.onerror=()=>{document.getElementById("lerr").textContent="No se pudo conectar.";ws=null;};
-}
-["lu","lp"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
-["ru","rp1","rp2","rn"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{if(e.key==="Enter")doRegister();}));
-
-/* MSG HANDLER */
-function handle(m){
-  if(m.type==="auth_ok"){
-    document.getElementById("lo").style.display="none";
-    setConn(true);enableUI();
-    if(m.stats){
-      saveLocal(m.stats);  // Save locally first for optimistic UI
-    }
-    startSync();  // Start 5s sync interval
-    setupServerSync();  // Listen for server updates
-    document.getElementById("cmd").focus();
-  } else if(m.type==="auth_fail"){
-    document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
-  } else if(m.type==="game"){
-    appendLog(m.text,classify(m.text));
-  } else if(m.type==="prompt"){
-    appendLog(m.text,"gp2");
-  } else if(m.type==="levelup"){
-    appendLog(m.text,"gl");
-  } else if(m.type==="status"||m.type==="stats"){
-    updateStats(m);
-  } else if(m.type==="chat"){
-    appendChat(m.nombre,m.scope,m.text||m.mensaje||"");
-  } else if(m.type==="lore"){
-    openLorePopup(m.titulo||"LORE",m.text||"");
-  } else if(m.type==="boss_conv"){
-    openBossConvPopup(m.boss||"",m.text||"");
-  } else if(m.type==="leaderboard"){
-    renderLeaderboard(m.ranking);
-  } else if(m.type==="combat_start"){
-    openCombatPopup(m.enemigos);
-  } else if(m.type==="combat_end"){
-    closeCombatPopup();
-  } else if(m.type==="pvp_challenge"){
-    openPvpPopup(m.retador,m.monedas);
-  } else if(m.type==="acertijo"){
-    openAcertijoPopup(m.pregunta,m.opciones,m.indice,m.total);
-  } else if(m.type==="acertijo_end"){
-    closeAcertijoPopup(m.exito);
-  } else if(m.type==="map"){
-    // Store map data for services (hospital/tienda)
-    window._mapData = m.salas;
-    // Also use it to update services immediately if already in game
-    if(myStats && myStats.sala_id){
-      updateServices(myStats.sala_id);
-    }
-  }
-}
-
-function classify(t){
-  if(!t)return "gg";
-  const l=t.toLowerCase();
-  if(l.includes("victoria")||l.includes("🏆"))return "gv";
-  if(l.includes("caido")||l.includes("derrota")||l.includes("muerto")||l.includes("💀"))return "gd";
-  if(l.includes("turno")||l.includes("combate")||l.includes("ataca")||l.includes("golpea")||l.includes("especial"))return "gc";
-  if(l.includes("acertijo")||l.includes("🧩"))return "gp2";
-  if(l.includes("+")&&(l.includes("xp")||l.includes("hp")||l.includes("mana")))return "gi";
-  if(l.includes("╔")||l.includes("║")||l.includes("╚"))return "gl";
-  return "gg";
-}
-
-/* GAME LOG */
-function appendLog(text,cls){
-  if(!text)return;
-  const log=document.getElementById("glog");
-  text.split("\n").forEach(line=>{
-    const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
-  });
-  log.scrollTop=log.scrollHeight;
-}
-
-/* LOCAL-FIRST SYNC SYSTEM */
-let _localData = {};  // Local copy of player data
-let _dirtyFields = new Set();  // Fields that changed locally
-let _syncInterval = null;
-
-// Save data locally instantly (optimistic UI)
-function saveLocal(data){
-  _localData = {..._localData, ...data};
-  // Mark all received fields as dirty
-  Object.keys(data).forEach(k => _dirtyFields.add(k));
-  // Save to localStorage
-  try{
-    localStorage.setItem('playerData', JSON.stringify(_localData));
-  }catch(e){}
-  // Update UI immediately
-  if(data.hp!==undefined || data.hpMax!==undefined || data.mana!==undefined || 
-     data.manaMax!==undefined || data.nivel!==undefined || data.xp!==undefined ||
-     data.monedas!==undefined){
-    updateStats(_localData);
-  }
-}
-
-// Load local data
-function loadLocal(){
-  try{
-    const saved = localStorage.getItem('playerData');
-    if(saved){
-      _localData = JSON.parse(saved);
-      // Apply to UI
-      if(_localData.hp)updateStats(_localData);
-    }
-  }catch(e){}
-}
-
-// Sync with server every 5 seconds
-async function startSync(){
-  if(_syncInterval)return;
+function login(){
+  const usuario = document.getElementById('username').value.trim();
+  const nombre = document.getElementById('char-name').value.trim() || usuario;
+  const clase = document.getElementById('char-class').value;
   
-  // Initial load
-  loadLocal();
+  if(!usuario){alert('Introduce un nombre');return;}
   
-  // Sync every 5 seconds
-  _syncInterval = setInterval(async ()=>{
-    if(!ws || ws.readyState!==WebSocket.OPEN || _dirtyFields.size===0)return;
-    
-    // Build diff with only changed fields
-    const diff = {};
-    _dirtyFields.forEach(k => {
-      if(_localData[k]!==undefined)diff[k] = _localData[k];
-    });
-    
-    if(Object.keys(diff).length===0)return;
-    
-    // Send diff to server
-    ws.send(JSON.stringify({type:'sync', data:diff}));
-    
-    // Clear dirty flag (server will confirm)
-    _dirtyFields.clear();
-  }, 5000);
-}
-
-// Listen for server updates (for leaderboard, etc.)
-function setupServerSync(){
-  // Override original handle to add server→local sync
-  const origHandle = handle;
-  handle = function(m){
-    origHandle(m);
-    // Update local data from server broadcasts
-    if(m.type==='status' || m.type==='stats'){
-      // Server has authoritative data, update local
-      _localData = {..._localData, ...m};
-      _dirtyFields.clear();
-      try{
-        localStorage.setItem('playerData', JSON.stringify(_localData));
-      }catch(e){}
-    }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(protocol + '//' + window.location.host + '/ws?u=' + encodeURIComponent(usuario));
+  
+  ws.onopen = () => {
+    ws.send(JSON.stringify({type:'login', usuario, nombre, clase}));
+    document.getElementById('login-screen').classList.add('hidden');
+  };
+  
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handleMessage(data);
+  };
+  
+  ws.onclose = () => {
+    log('Conexion perdida. Recargando...','error');
+    setTimeout(()=>location.reload(), 2000);
   };
 }
 
-/* STATS */
-const CLASE_EMOJI={
-  "guerrero":"🛡️","mago":"🔥","arquero":"🏹","curandero":"💚",
-  "nigromante":"💀","hechicero":"👁️","caballero":"⚔️","cazador":"🎯",
-  "asesino":"🗡️","bárbaro":"🪓","barbaro":"🪓"
-};
-function updateStats(s){
-  myStats=s;
-  set("s-nm",s.nombre||"—");
-  set("s-cl",s.clase?(s.clase[0].toUpperCase()+s.clase.slice(1)):"—");
-  const emojiEl=document.getElementById("s-emoji");
-  if(emojiEl)emojiEl.textContent=CLASE_EMOJI[(s.clase||"").toLowerCase()]||"⚔️";
-  set("s-nv","Nv."+s.nivel);
-  document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
-
-  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
-  document.getElementById("b-xp").style.width=xpPct+"%";
-  set("s-xp",s.xp+"/"+s.xpMax);
-
-  const hpPct=s.hpMax>0?Math.min(100,s.hp/s.hpMax*100):0;
-  const bh=document.getElementById("b-hp");
-  bh.style.width=hpPct+"%";
-  bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#e67e22":"var(--red)";
-  set("s-hp",s.hp+"/"+s.hpMax);
-
-  const mpPct=s.manaMax>0?Math.min(100,s.mana/s.manaMax*100):0;
-  document.getElementById("b-mp").style.width=mpPct+"%";
-  set("s-mp",s.mana+"/"+s.manaMax);
-
-  const atqs=s.ataquesTurno;
-  set("s-dmg",s.danioBase||"—");
-  set("s-atq",Array.isArray(atqs)?atqs[0]+"-"+atqs[1]:String(atqs||"—"));
-  set("s-mc",(s.costoEspecial||0)+" mana");
-
-  set("bag-coins",(s.monedas||0)+" 💰");
-  if(s.inventario!==undefined)renderBag(s.inventario);
-  if(s.sala_id!==undefined)updateServices(s.sala_id);
-  if(s.sala_id)highlightRoom(s.sala_id);
-}
-
-function renderBag(inv){
-  const N={"pocion_vida":"🧪 Poción Vida","pocion_danio":"⚗️ Poc. Daño","gema_teleporte":"💎 Gema Tele."};
-  const div=document.getElementById("bag-items");
-  const items=Object.entries(inv||{}).filter(([k,v])=>v>0);
-  if(!items.length){div.innerHTML='<div class="bag-empty">Vacía</div>';return;}
-  div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
-}
-
-// Generate services dynamically from map data
-let SALAS_SVC = {};
-function updateServices(sid) {
-  // Get services from map data (sent by server)
-  const mapData = window._mapData || {};
-  const sala = mapData[sid] || {};
-  document.getElementById("btn-hosp").classList.toggle("visible", !!sala.hospital);
-  document.getElementById("btn-shop").classList.toggle("visible", !!sala.tienda);
-}
-
-/* LEADERBOARD */
-function renderLeaderboard(ranking){
-  const div=document.getElementById("lb-list");
-  if(!ranking||!ranking.length){div.innerHTML='<div style="color:var(--dim);font-size:9px;padding:5px">Sin datos</div>';return;}
-  const myName=myStats?myStats.nombre:"";
-  div.innerHTML=ranking.map((p,i)=>{
-    const pos=i+1;
-    const pc=pos===1?"gold":pos===2?"silver":pos===3?"bronze":"";
-    const medal=pos===1?"🥇":pos===2?"🥈":pos===3?"🥉":"";
-    const isMe=p.nombre===myName;
-    return `<div class="lbi" ${isMe?"style='background:#1a1500'":''}>`+
-      `<span class="lbi-pos ${pc}">${medal||pos}</span>`+
-      `<span class="lbi-name ${isMe?"me":""}">${esc(p.nombre)}</span>`+
-      `<span class="lbi-info">${esc(p.clase||"?")}</span>`+
-      `<span class="lbi-lvl">Nv.${p.nivel}</span>`+
-      `</div>`;
-  }).join("");
-}
-
-/* CHAT */
-function setChatTab(t){
-  chatTab=t;
-  document.getElementById("ct-sala").className  ="ctab"+(t==="sala"  ?" cs":"");
-  document.getElementById("ct-global").className="ctab"+(t==="global"?" cg":"");
-  document.getElementById("ct-grupo").className ="ctab"+(t==="grupo" ?" cgr":"");
-  const el=document.getElementById("ct-"+t);if(el)el.style.boxShadow="";
-}
-function appendChat(nombre,scope,texto){
-  const log=document.getElementById("chat-log");
-  const now=new Date();
-  const t=now.getHours().toString().padStart(2,"0")+":"+now.getMinutes().toString().padStart(2,"0");
-  const nc=scope==="sala"?"cn-s":scope==="global"?"cn-g":"cn-gr";
-  const d=document.createElement("div");d.className="cm";
-  d.innerHTML=`<span class="cm-t">${t}</span><span class="cm-n ${nc}">${esc(nombre||"")}</span><span class="cm-tx">${esc(texto)}</span>`;
-  log.appendChild(d);log.scrollTop=log.scrollHeight;
-  if(scope!==chatTab){const el=document.getElementById("ct-"+scope);if(el)el.style.boxShadow="0 0 0 1px var(--gold)";}
-}
-function sendChat(){
-  const inp=document.getElementById("chat-in");
-  const msg=inp.value.trim();
-  if(!msg||!ws||ws.readyState!==WebSocket.OPEN)return;
-  const cmd=chatTab==="sala"?"decir "+msg:chatTab==="global"?"g "+msg:"gc "+msg;
-  ws.send(cmd);
-  appendChat(myStats?myStats.nombre:"Tú",chatTab,msg);
-  inp.value="";
-  const el=document.getElementById("ct-"+chatTab);if(el)el.style.boxShadow="";
-}
-
-/* COMBAT POPUP */
-function openCombatPopup(enemigos){
-  const popup=document.getElementById("combat-popup");
-  const div=document.getElementById("cp-enemies");
-  div.innerHTML=(enemigos||[]).map(e=>`<div class="cp-enemy"><span>${esc(e.nombre)}</span><span style="color:var(--red)">${e.hp}/${e.hpMax} HP</span></div>`).join("");
-  popup.classList.add("open");
-}
-function closeCombatPopup(){
-  document.getElementById("combat-popup").classList.remove("open");
-}
-
-/* ACERTIJO POPUP */
-function openAcertijoPopup(pregunta,opciones,indice,total){
-  acertijoActivo=true;
-  const popup=document.getElementById("acertijo-popup");
-  document.getElementById("acertijo-title").textContent="🧩 ACERTIJO "+(indice+1)+"/"+total;
-  document.getElementById("acertijo-counter").textContent="Progreso: "+indice+"/"+total+" completados";
-  document.getElementById("acertijo-pregunta").textContent=pregunta;
-  document.getElementById("acertijo-msg").textContent="";
-  const div=document.getElementById("acertijo-opciones");
-  div.innerHTML="";
-  opciones.forEach((opt,idx)=>{
-    const btn=document.createElement("button");
-    btn.className="acertijo-opt";
-    btn.textContent=opt;
-    btn.onclick=()=>responderAcertijo(String.fromCharCode(97+idx)); // a, b, c, d
-    div.appendChild(btn);
-  });
-  popup.classList.add("open");
-  disableUI();
-}
-function responderAcertijo(letra){
-  if(!acertijoActivo)return;
-  send(letra);
-}
-function closeAcertijoPopup(exito){
-  acertijoActivo=false;
-  document.getElementById("acertijo-popup").classList.remove("open");
-  enableUI();
-  if(exito){
-    appendLog("  🎉 ¡Acertijos completados! Puedes continuar.","gv");
+function handleMessage(data){
+  if(data.type === 'login_ok'){
+    log('Bienvenido a The Return to Highdown!','success');
+  }
+  else if(data.type === 'message'){
+    log(data.text, data.text.includes('!') ? 'success' : 'info');
+  }
+  else if(data.type === 'sala'){
+    document.getElementById('room-name').textContent = data.nombre;
+    document.getElementById('room-desc').textContent = data.descripcion;
+    
+    let exitsHtml = '';
+    for(let dir in data.conexiones){
+      exitsHtml += `<button class="exit-btn" onclick="move('${dir}')">${dir.toUpperCase()}</button>`;
+    }
+    document.getElementById('exits').innerHTML = exitsHtml;
+    
+    let features = '';
+    if(data.hospital) features += '<span class="feature hospital">🏥 Hospital</span>';
+    if(data.tienda) features += '<span class="feature store">🏪 Tienda</span>';
+    if(data.enemigos) features += '<span class="feature enemy">⚠️ ENEMIGOS</span>';
+    document.getElementById('room-features').innerHTML = features;
+    
+    if(data.others) document.getElementById('players-in-room').innerHTML = data.others;
+    else document.getElementById('players-in-room').innerHTML = '';
+    
+    if(data.grupo) document.getElementById('group-info').innerHTML = data.grupo;
+    else document.getElementById('group-info').innerHTML = '';
+  }
+  else if(data.type === 'status'){
+    updateStats(data);
+  }
+  else if(data.type === 'combat_start'){
+    inCombat = true;
+    document.getElementById('combat').classList.add('active');
+    updateEnemies(data.enemigos);
+    log('COMBATE INICIADO!','combat');
+  }
+  else if(data.type === 'combat_end'){
+    inCombat = false;
+    document.getElementById('combat').classList.remove('active');
+    if(data.victory){
+      log('VICTORIA! +' + data.xp + ' XP','loot');
+    }else{
+      log('DERROTA...','error');
+    }
+  }
+  else if(data.type === 'combat_update'){
+    updateEnemies(data.enemigos);
+    document.getElementById('combat-turn').textContent = 'Turno ' + data.turno;
+  }
+  else if(data.type === 'chat'){
+    addChatMessage(data.scope, data.from, data.text);
+  }
+  else if(data.type === 'ranking'){
+    updateRanking(data.ranking);
+  }
+  else if(data.type === 'lore'){
+    document.getElementById('lore-title').textContent = data.titulo;
+    document.getElementById('lore-text').textContent = data.text;
+    document.getElementById('lore-popup').classList.add('active');
+  }
+  else if(data.type === 'level_up'){
+    log('🎉 SUBISTE AL NIVEL ' + data.nivel + '!','success');
+  }
+  else if(data.type === 'respawn'){
+    refreshRoom();
+  }
+  else if(data.type === 'tienda'){
+    showShop(data.items, data.monedas);
   }
 }
 
-/* PVP POPUP */
-function openPvpPopup(retador,monedas){
-  document.getElementById("pvp-info").textContent=
-    retador+" te reta a duelo"+(monedas?" - Apuesta: "+monedas+" monedas":"")+". Aceptas?";
-  document.getElementById("pvp-popup").classList.add("open");
-}
-function acceptDuelo(){
-  send("aceptar_duelo");
-  document.getElementById("pvp-popup").classList.remove("open");
-}
-function rejectDuelo(){
-  send("rechazar_duelo");
-  document.getElementById("pvp-popup").classList.remove("open");
-}
-
-/* PVP PROMPT */
-function promptDuelo(){
-  const nom=prompt("Nombre del jugador a retar:");
-  if(!nom)return;
-  const mon=prompt("Monedas a apostar (0 = sin apuesta):");
-  if(mon===null)return;
-  send("duelo "+nom+" "+(parseInt(mon)||0));
+function updateStats(data){
+  document.getElementById('stat-level').textContent = 'Nivel ' + (data.nivel || 1);
+  document.getElementById('stat-hp').textContent = 'HP: ' + (data.hp || 0) + '/' + (data.hpMax || 1);
+  document.getElementById('stat-medas').textContent = '💰 ' + (data.monedas || 0);
+  
+  const manaEl = document.querySelector('#player-info .stat:nth-child(3)');
+  if(manaEl) manaEl.textContent = 'Mana: ' + (data.mana || 0) + '/' + (data.manaMax || 1);
+  
+  document.getElementById('sp-nombre').textContent = data.nombre || '-';
+  document.getElementById('sp-clase').textContent = data.clase || '-';
+  document.getElementById('sp-nivel').textContent = data.nivel || 1;
+  document.getElementById('sp-xp').textContent = (data.xp || 0) + '/' + (data.xpMax || 150);
+  document.getElementById('sp-dano').textContent = data.danio || 0;
+  document.getElementById('sp-medas').textContent = data.monedas || 0;
 }
 
-/* MAP */
-function openMap(){document.getElementById("map-modal").classList.add("open");}
-
-/* LORE POPUP */
-function openLorePopup(titulo,texto){
-  document.getElementById("lore-title").textContent=titulo;
-  document.getElementById("lore-text").textContent=texto;
-  document.getElementById("lore-popup").classList.add("open");
-}
-function closeLorePopup(){
-  document.getElementById("lore-popup").classList.remove("open");
-}
-
-/* BOSS CONVERSATION POPUP */
-function openBossConvPopup(boss,texto){
-  document.getElementById("boss-conv-name").textContent=boss.toUpperCase()+":";
-  document.getElementById("boss-conv-text").textContent=texto;
-  document.getElementById("boss-conv-popup").classList.add("open");
-  setTimeout(()=>{document.getElementById("boss-conv-popup").classList.remove("open");},5000);
-}
-function closeMapBtn(){document.getElementById("map-modal").classList.remove("open");}
-function openHelp(){document.getElementById("help-modal").classList.add("open");}
-function closeHelpBtn(){document.getElementById("help-modal").classList.remove("open");}
-
-/* SEND */
-function send(text){if(!ws||ws.readyState!==WebSocket.OPEN)return;ws.send(text);}
-function doSend(){
-  const inp=document.getElementById("cmd");
-  const cmd=inp.value.trim();
-  if(!cmd)return;
-  hist.unshift(cmd);if(hist.length>60)hist.pop();hidx=-1;
-  send(cmd);appendLog("> "+cmd,"gs");inp.value="";
-}
-document.addEventListener("DOMContentLoaded",()=>{
-  document.getElementById("cmd").addEventListener("keydown",e=>{
-    if(e.key==="ArrowUp"){hidx=Math.min(hidx+1,hist.length-1);e.target.value=hist[hidx]||"";e.preventDefault();}
-    else if(e.key==="ArrowDown"){hidx=Math.max(hidx-1,-1);e.target.value=hidx===-1?"":hist[hidx];e.preventDefault();}
+function updateEnemies(enemies){
+  const el = document.getElementById('enemies');
+  let html = '';
+  enemies.forEach(e => {
+    const pct = (e.hp / e.hpMax) * 100;
+    html += `<div class="enemy-row">
+      <span class="enemy-name">${e.nombre}</span>
+      <div>
+        <span class="enemy-hp">${e.hp}/${e.hpMax}</span>
+        <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${pct}%"></div></div>
+      </div>
+    </div>`;
   });
+  el.innerHTML = html;
+}
+
+function sendAction(action){
+  currentAction = action;
+  document.querySelectorAll('.combat-btn').forEach((btn,i) => {
+    btn.classList.toggle('selected', (i+1).toString() === action);
+  });
+  ws.send(JSON.stringify({type:'action', action}));
+}
+
+function move(dir){
+  ws.send(JSON.stringify({type:'command', cmd:dir}));
+}
+
+function refreshRoom(){
+  ws.send(JSON.stringify({type:'command', cmd:'mirar'}));
+}
+
+function setChat(scope){
+  currentChat = scope;
+  document.querySelectorAll('.chat-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function sendChat(){
+  const input = document.getElementById('chat-msg');
+  const msg = input.value.trim();
+  if(!msg) return;
+  ws.send(JSON.stringify({type:'chat', scope:currentChat, message:msg}));
+  input.value = '';
+}
+
+function addChatMessage(scope, from, text){
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + scope;
+  div.innerHTML = `<span class="from">[${scope.toUpperCase()}] ${from}:</span> ${text}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateRanking(ranking){
+  const el = document.getElementById('ranking-list');
+  let html = '';
+  ranking.forEach((r,i) => {
+    html += `<div class="ranking-row">
+      <span><span class="ranking-pos">${i+1}.</span>${r.nombre}</span>
+      <span>Nv.${r.nivel}</span>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function closeLore(){
+  document.getElementById('lore-popup').classList.remove('active');
+}
+
+function showInventory(){
+  ws.send(JSON.stringify({type:'command', cmd:'mochila'}));
+}
+
+function showShop(items, monedas){
+  let html = '<h3>🏪 TIENDA (' + monedas + ' monedas)</h3>';
+  items.forEach(item => {
+    html += `<div class="shop-item">
+      <div class="shop-item-info">
+        <span class="shop-item-emoji">${item.emoji}</span>
+        <span class="shop-item-name">${item.nombre} (x${item.qty})</span>
+      </div>
+      <button class="shop-buy-btn" onclick="buy('${item.id}')">${item.precio}💰</button>
+    </div>`;
+  });
+  document.getElementById('shop').innerHTML = html;
+  document.getElementById('shop').classList.add('active');
+}
+
+function buy(item){
+  ws.send(JSON.stringify({type:'command', cmd:'comprar ' + item}));
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if(document.getElementById('login-screen').classList.contains('hidden')){
+    if(e.key === '1' && inCombat) sendAction('1');
+    if(e.key === '2' && inCombat) sendAction('2');
+    if(e.key === '3' && inCombat) sendAction('3');
+    if(e.key === '4' && inCombat) sendAction('4');
+    if(e.key === 'n') move('norte');
+    if(e.key === 's') move('sur');
+    if(e.key === 'e') move('este');
+    if(e.key === 'o') move('oeste');
+  }
 });
-
-/* UI */
-function enableUI(){
-  ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
-  ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=false;});
-}
-function disableUI(){
-  ["cmd","chat-in"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
-  ["sbtn","chat-send"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
-  if(!acertijoActivo)closeCombatPopup();
-}
-function setConn(on){document.getElementById("cdot").className=on?"on":"";}
-function set(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-
-buildMap("map-conn-mini","map-rooms-mini");
-buildMap("map-conn-full","map-rooms-full");
 </script>
 </body>
-</html>"""
+</html>
+"""
 
+# ==================== APP ====================
+app = web.Application()
+app.router.add_get('/', index)
+app.router.add_get('/ws', websocket_handler)
 
-async def http_handler(request: web.Request) -> web.Response:
-    """Sirve el HTML para cualquier petición HTTP (GET, HEAD, etc.)."""
-    html = get_html().encode("utf-8")
-    return web.Response(
-        body=html,
-        content_type="text/html",
-        charset="utf-8",
-    )
-
-
-async def ws_handler(request: web.Request) -> web.WebSocketResponse:
-    """Maneja conexiones WebSocket."""
-    ws = web.WebSocketResponse(heartbeat=30)
-    await ws.prepare(request)
-
-    print(f"[WS] Conexion: {request.remote}")
-
-    try:
-        # Primer mensaje: auth
-        msg = await asyncio.wait_for(ws.__anext__(), timeout=30)
-    except (asyncio.TimeoutError, StopAsyncIteration):
-        return ws
-
-    if msg.type != aiohttp.WSMsgType.TEXT:
-        return ws
-
-    try:
-        data = json.loads(msg.data)
-    except json.JSONDecodeError:
-        return ws
-
-    msg_type = data.get("type", "")
-    usuario  = data.get("usuario", "").strip().lower()
-    password = data.get("password", "").strip()
-
-    # ── Local-first sync handler (batch updates) ────────────────
-    if msg_type == "sync":
-        # Client sends local diff, process in batch
-        sync_data = data.get("data", {})
-        # Find player
-        player = next((p for p in jugadores_conectados if p.usuario == usuario), None)
-        if player and sync_data:
-            # Apply changes locally (no DB write yet)
-            for key, value in sync_data.items():
-                if key == "xp":
-                    player.xp = value
-                elif key == "nivel":
-                    player.nivel = value
-                elif key == "monedas":
-                    player.monedas = value
-                elif key == "inventario":
-                    player.inventario = value
-            # DB save will happen on disconnect or periodic
-            try:
-                await player.ws.send_json({"type": "sync_ok"})
-            except Exception:
-                pass
-        return ws
-
-    # ── Auth ──────────────────────────────────────────────────
-    if msg_type == "game_register":
-        # Registro nuevo
-        nombre   = data.get("nombre", "").strip() or usuario
-        if len(usuario) < 3:
-            try:
-                await ws.send_json({"type": "auth_fail", "msg": "Usuario: minimo 3 caracteres."})
-            except Exception:
-                pass
-            return ws
-        if len(password) < 4:
-            try:
-                await ws.send_json({"type": "auth_fail", "msg": "Contrasena: minimo 4 caracteres."})
-            except Exception:
-                pass
-            return ws
-        if await cuenta_existe_async(usuario):
-            try:
-                await ws.send_json({"type": "auth_fail", "msg": "Ese usuario ya existe."})
-            except Exception:
-                pass
-            return ws
-
-        await crear_cuenta_async(usuario, password)
-        tmp = Player(ws)
-        tmp.usuario = usuario
-        tmp.nombre  = nombre
-
-        async def reg_reader():
-            try:
-                async for m in ws:
-                    if m.type == aiohttp.WSMsgType.TEXT:
-                        await tmp.input_queue.put(m.data)
-                    elif m.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
-                        break
-            except Exception:
-                pass
-            finally:
-                await tmp.input_queue.put(None)
-
-        rt = asyncio.create_task(reg_reader())
-        try:
-            await ws.send_json({"type": "auth_ok"})
-        except Exception:
-            rt.cancel()
-            return ws
-        lineas = ["\nCLASES DISPONIBLES:"]
-        for i, (clase, s) in enumerate(CLASES.items(), 1):
-            atqs = s["ataquesTurno"]
-            atq_str = f"{atqs[0]}-{atqs[1]}" if isinstance(atqs, list) else str(atqs)
-            lineas.append(f"  {i:2}. {clase:<12}  HP:{s['vidaMax']:>3}  Dano:{s['danioBase']:>3}  Mana:{s['manaMax']:>3}  Atqs:{atq_str}")
-        await tmp.send("\n".join(lineas))
-
-        clase_elegida = None
-        while True:
-            el = (await tmp.send_prompt("\nElige clase (nombre o numero): ")).strip().lower()
-            if el.isdigit() and 0 <= int(el)-1 < len(CLASES):
-                clase_elegida = list(CLASES.keys())[int(el)-1]
-                break
-            elif el in CLASES:
-                clase_elegida = el
-                break
-            await tmp.send("  Clase no encontrada.")
-
-        base = deepcopy(CLASES[clase_elegida])
-        tmp.personaje = {
-            "nombre": nombre, "nombreClase": clase_elegida,
-            "vidaActual": base["vidaMax"], "manaActual": base["manaMax"], **base,
-        }
-        await guardar_cuenta_async(tmp)
-        rt.cancel()
-        await tmp.send(f"\nCuenta creada! {nombre} el {clase_elegida.capitalize()}")
-        await handle_game_ws(ws, usuario)
-
-    elif msg_type == "game_auth":
-        if not await cuenta_existe_async(usuario) or not await verificar_password_async(usuario, password):
-            try:
-                await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
-            except Exception:
-                pass
-            return ws
-        ya = any(p.usuario == usuario for p in jugadores_conectados)
-        if ya:
-            # Reconnect: expulsar sessió antiga i permetre la nova
-            old_player = next((p for p in jugadores_conectados if p.usuario == usuario), None)
-            if old_player:
-                try:
-                    await old_player.ws.send_json({"type": "auth_fail", "msg": "Sesion cerrada: nuevo inicio de sesion detectado."})
-                except Exception:
-                    pass
-                if old_player in jugadores_conectados:
-                    jugadores_conectados.remove(old_player)
-                _last_cmd_time.pop(id(old_player), None)
-        try:
-            await ws.send_json({"type": "auth_ok"})
-        except Exception:
-            return ws
-        await handle_game_ws(ws, usuario)
-
-    elif msg_type == "auth":
-        if not await cuenta_existe_async(usuario) or not await verificar_password_async(usuario, password):
-            try:
-                await ws.send_json({"type": "auth_fail", "msg": "Usuario o contrasena incorrectos"})
-            except Exception:
-                pass
-            return ws
-        await handle_dashboard_ws(ws, usuario)
-
-    else:
-        try:
-            await ws.send_json({"type": "auth_fail", "msg": "Tipo desconocido"})
-        except Exception:
-            pass
-
-    return ws
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-async def main():
-    port = int(os.environ.get("PORT", 8080))
-
-    app = web.Application()
-    app.router.add_route("*", "/ws", ws_handler)
-    app.router.add_route("*", "/{tail:.*}", http_handler)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-
-    print(f"[SERVER] Puerto: {port}")
-    print(f"[SERVER] Abre http://localhost:{port} para jugar")
-    print(f"[SERVER] Clases: {len(CLASES)}  Enemigos: {len(ENEMIGOS)}  Max: {MAX_JUGADORES}")
-    print(f"[SERVER] Salas con acertijos: 33, 37")
-    print("[SERVER] Listo.\n")
-
-    # Start periodic cleanup task
-    _cleanup_task = asyncio.create_task(_periodic_cleanup())
-    _cleanup_tasks.add(_cleanup_task)
-
-    # ── Graceful shutdown on SIGTERM (Render sends this on restart/deploy) ──
-    loop = asyncio.get_running_loop()
-    shutdown_event = asyncio.Event()
-
-    def _handle_sigterm():
-        print("[SERVER] SIGTERM rebut — guardant jugadors...")
-        shutdown_event.set()
-
-    import signal
-    try:
-        loop.add_signal_handler(signal.SIGTERM, _handle_sigterm)
-        loop.add_signal_handler(signal.SIGINT,  _handle_sigterm)
-    except NotImplementedError:
-        pass  # Windows no suporta add_signal_handler
-
-    await shutdown_event.wait()
-
-    # Save all connected players before exiting
-    saved = 0
-    for player in list(jugadores_conectados):
-        if player.usuario and player.personaje:
-            try:
-                await guardar_cuenta_async(player, immediate=True)
-                saved += 1
-            except Exception as e:
-                print(f"[SAVE] Error guardando {player.usuario}: {e}")
-    print(f"[SERVER] {saved} jugadores guardados. Apagant...")
-    
-    # Cancel cleanup task
-    if _cleanup_task and not _cleanup_task.done():
-        _cleanup_task.cancel()
-        try:
-            await _cleanup_task
-        except asyncio.CancelledError:
-            pass
-    
-    await runner.cleanup()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
+if __name__ == '__main__':
+    print(f"🚀 Server starting on port {PORT}")
+    web.run_app(app, host='0.0.0.0', port=PORT)
