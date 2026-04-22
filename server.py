@@ -1926,6 +1926,24 @@ async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
     chat_ws_clients.difference_update(muertos)
 
 
+async def broadcast_grupo(grupo_id: str, nombre: str, mensaje: str):
+    """Enviar mensaje a todos los miembros del grupo."""
+    if grupo_id not in grupos:
+        return
+        
+    grupo = grupos[grupo_id]
+    payload = {"type": "chat", "scope": "grupo", "nombre": nombre, "text": mensaje}
+    
+    # Enviar a todos los miembros del grupo
+    for pid in grupo.miembros:
+        jugador = next((p for p in jugadores_conectados if p.id == pid), None)
+        if jugador and jugador.ws:
+            try:
+                await jugador.ws.send_json(payload)
+            except Exception:
+                pass
+
+
 async def notify_web_session(player: "Player"):
     """Empuja stats actualizadas al jugador (mismo WebSocket que usa para jugar)."""
     if not player.personaje:
@@ -2295,6 +2313,10 @@ async def _flush_save_queue():
 async def guardar_cuenta_async(player: "Player", immediate=False):
     if not player.usuario or not player.personaje:
         return
+    
+    # Los admins guardan siempre instantáneamente
+    if hasattr(player, 'is_admin') and player.is_admin:
+        immediate = True
     
     # Leer salt/hash previos
     if USAR_SUPABASE:
@@ -2924,6 +2946,10 @@ async def loop_combate(combate: Combate):
             await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
             if not combate.enemigos_vivos():
                 break
+        
+        # Si ya no hay enemigos, terminar el combate
+        if not combate.enemigos_vivos():
+            break
 
         # Turno enemigos
         if combate.enemigos_vivos() and combate.jugadores_vivos():
@@ -3707,6 +3733,19 @@ async def procesar_comando(player: Player, cmd: str):
 
     elif ac == "g":
         await cmd_chat(player, cmd[2:].strip(), sala_solo=False)
+        
+    elif ac == "gc":
+        # Chat de grupo - solo si está en un grupo
+        if not player.grupo_id:
+            await player.send("  No estás en ningún grupo.")
+            return
+        mensaje = cmd[3:].strip()
+        if not mensaje:
+            await player.send("  Qué quieres decir al grupo?")
+            return
+        # Límite de seguridad
+        mensaje = mensaje[:300]
+        await broadcast_grupo(player.grupo_id, player.nombre, mensaje)
 
     elif ac in ("tienda", "shop"):
         if player.muerto:
@@ -5132,18 +5171,13 @@ function renderBag(inv){
   div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
-const SALAS_SVC={
- "0.3":{h:true,s:true},4:{h:true,s:false},5:{h:true,s:false},6:{h:true,s:true},
- 8:{h:true,s:true},13:{h:false,s:true},17:{h:false,s:false},21:{h:true,s:true},
- 25:{h:true,s:true},34:{h:true,s:false},38:{h:true,s:false},39:{h:false,s:true},
- 44:{h:true,s:true},53:{h:true,s:false},58:{h:false,s:true},70:{h:true,s:false},
- 87:{h:true,s:false},94:{h:true,s:false},105:{h:true,s:false},131:{h:true,s:false},
- 142:{h:true,s:false},147:{h:true,s:true},149:{h:true,s:true}
-};
-function updateServices(sid){
-  const sv=SALAS_SVC[sid]||{};
-  document.getElementById("btn-hosp").classList.toggle("visible",!!sv.h);
-  document.getElementById("btn-shop").classList.toggle("visible",!!sv.s);
+/* Generate services dynamically from map data */
+function updateServices(sid) {
+  // Get services from map data (sent by server)
+  const mapData = window._mapData || {};
+  const sala = mapData[sid] || {};
+  document.getElementById("btn-hosp").classList.toggle("visible", !!sala.hospital);
+  document.getElementById("btn-shop").classList.toggle("visible", !!sala.tienda);
 }
 
 /* LEADERBOARD */
