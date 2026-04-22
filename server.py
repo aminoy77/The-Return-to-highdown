@@ -2949,53 +2949,35 @@ async def loop_combate(combate: Combate):
         # Esperar 5 segons entre torns
         await asyncio.sleep(5)
 
-    # FI combat
-    await broadcast_sala(sala_id, "\n  COMBAT ACABAT!")
-    for p in combate.jugadores:
-        if p.personaje["vidaActual"] > 0 and p.ws:
-            try: await p.ws.send_json({"type": "combat_end"})
-            except: pass
-            pass
-    
-    # Verificar resultado: si NO hay enemigos vivos = victoria
+    # FI - verificar victoria ANTES de tancar pantalla
     enemigos_derrotados = len(combate.enemigos) > 0 and not combate.enemigos_vivos()
-    jugadores_sobrevivieron = bool(combate.jugadores_vivos())
+    jugadores_viven = [p for p in combate.jugadores if p.personaje["vidaActual"] > 0]
     
-    if not enemigos_derrotados or not jugadores_sobrevivieron:
-        await broadcast_sala(sala_id, "\n  DERROTA.")
-    else:
-        await broadcast_sala(sala_id, "\n  VICTORIA!")
+    if enemigos_derrotados and jugadores_viven:
+        # VICTORIA
         xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f"  {xp} XP para cada superviviente.")
-        for p in combate.jugadores_vivos():
+        for p in jugadores_viven:
+            await broadcast_sala(sala_id, f"\n  VICTORIA! {xp} XP!")
             await dar_xp(p, xp)
             p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
             p.salas_limpias.add(sala_id)
-            await p.send_status()   # actualizar HP tras +20
-        await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
-        await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
+            if p.ws:
+                await p.send_status()
+            await donar_loot(p, combate.enemigos)
         
-        # IMPORTANTE: Limpiar la战斗 del diccionario global
         if sala_id in combates_activos:
             del combates_activos[sala_id]
-
-        # ── LORE post-combat per salas de boss ──
-        for p in combate.jugadores_vivos():
-            await mostrar_lore_post_combate(p, sala_id)
-
-        # ── LOOT DROP per cada enemic derrotat ──
-        for p in combate.jugadores_vivos():
-            for e in combate.enemigos:
-                tier = e.get("tier", "Base")
-                await donar_loot(p, tier)
-            # Kills counter per quests
-            if not hasattr(p, 'kills_total'):
-                p.kills_total = 0
-            p.kills_total += len(combate.enemigos)
-            await comprovar_quests(p, "kill")
-
-        # ── BOSS RESPAWN TIMER ──
-        boss_defeated(sala_id)
+    else:
+        # DERROTA
+        await broadcast_sala(sala_id, "\n  DERROTA.")
+    
+    # Enviar combat_end a TOTS
+    for p in combate.jugadores:
+        p.combate = None
+        if p.ws:
+            try: await p.ws.send_json({"type": "combat_end"})
+            except: pass
+    await broadcast_sala(sala_id, "  Combat acabat. pots moure't!" if enemigos_derrotados else "  Has perdut!")
 
     # Limpiar buffs
     for p in combate.jugadores:
