@@ -2884,88 +2884,80 @@ async def iniciar_combate(sala_id: int):
 
 
 async def loop_combate(combate: Combate):
+    """Combat auto - 5 segons/turn, auto-atac, botons per triar accions"""
     sala_id = combate.sala_id
+    torn = 0
 
     while combate.enemigos_vivos() and combate.jugadores_vivos():
-        combate.turno   += 1
-        combate.acciones = {}
-        combate.estado   = EstadoCombate.ESPERANDO_ACCIONES
+        torn += 1
+        await broadcast_sala(sala_id, f"\n{'='*45}\n  COMBAT! Torn {torn}\n{'='*45}")
 
-        # Regen mana
+        # Regenerar mana
         for p in combate.jugadores_vivos():
-            p.personaje["manaActual"] = min(
-                p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
-                p.personaje["manaMax"]
-            )
+            p.personaje["manaActual"] = min(p.personaje["manaActual"] + p.personaje.get("manaTurno", 0), p.personaje["manaMax"])
 
-        # Mostrar estado del turno
-        await broadcast_sala(sala_id, f"\n{'-'*52}\n  TURNO {combate.turno}\n{'-'*52}")
-        for e in combate.enemigos_vivos():
-            await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}")
+        # Resoldre - auto-atac (1) per defecte, o l'accio triada
         for p in combate.jugadores_vivos():
-            await p.send(
-                f"  TU [{p.personaje['nombreClase']}]  "
-                f"HP:{p.personaje['vidaActual']}/{p.personaje['vidaMax']}  "
-                f"Mana:{p.personaje['manaActual']}/{p.personaje['manaMax']}"
-            )
-
-        await broadcast_sala(sala_id, "  Esperando acciones de todos...")
-
-        # Todos los jugadores vivos eligen en paralelo
-        await asyncio.gather(*[
-            asyncio.create_task(pedir_accion(p, combate))
-            for p in combate.jugadores_vivos()
-        ])
-
-        # Resolución
-        combate.estado = EstadoCombate.RESOLVIENDO
-        await broadcast_sala(sala_id, "\n  --- RESOLUCION ---")
-        for p in list(combate.jugadores_vivos()):
-            await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
+            if p.personaje["vidaActual"] > 0:
+                ac = combate.acciones.get(p.id, "1")
+                await resolver_accion(p, ac, combate)
             if not combate.enemigos_vivos():
                 break
 
-        # Turno enemigos
-        if combate.enemigos_vivos() and combate.jugadores_vivos():
-            combate.estado = EstadoCombate.TURNO_ENEMIGO
-            await broadcast_sala(sala_id, "\n  --- TURNO ENEMIGOS ---")
-            for e in combate.enemigos_vivos():
-                vivos_jug = combate.jugadores_vivos()
-                if not vivos_jug:
-                    break
-                obj = random.choice(vivos_jug)
-                for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
-                    if obj.personaje["vidaActual"] <= 0:
-                        break
-                    d = calcular_danio(e["danioBase"])
-                    obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
-                    await broadcast_sala(
-                        sala_id,
-                        f"  {e['nombre']} golpea a {obj.nombre} -{d}  "
-                        f"({obj.personaje['vidaActual']}/{obj.personaje['vidaMax']})"
-                    )
+        if not combate.enemigos_vivos():
+            break
 
-        # Detectar muertes
+        # Enemics atacan
+        for e in combate.enemigos_vivos():
+            jugs = combate.jugadores_vivos()
+            if not jugs:
+                break
+            obj = random.choice(jugs)
+            d = calcular_danio(e["danioBase"])
+            obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
+            await broadcast_sala(sala_id, f"  {e['nombre']} → {obj.nombre} -{d}")
+
+        # Enviar stats
+        for p in combate.jugadores:
+            if p.ws:
+                await p.send_status()
+
+        # Respawn
         for p in combate.jugadores:
             if p.personaje["vidaActual"] <= 0 and not p.muerto:
-                await broadcast_sala(sala_id, f"  {p.nombre} ha caido!")
-                _t = asyncio.create_task(respawn(p))
-        _background_tasks.add(_t)
-        _t.add_done_callback(_background_tasks.discard)
+                p.muerto = True
+                await broadcast_sala(sala_id, f"  💀 {p.nombre} caigut!")
+                if p.ws:
+                    try:
+                        await p.ws.send_json({"type": "combat_end"})
+                    except:
+                        pass
+                asyncio.create_task(respawn(p))
 
-        # Actualizar stats en tiempo real (directo, sin create_task para evitar retrasos)
-        for p in combate.jugadores:
-            await p.send_status()
+        # Esperar 5 segons
+        await asyncio.sleep(5)
+        combate.acciones = {}
 
-    # ── FIN DEL COMBATE ──
-    combate.estado = EstadoCombate.FINALIZADO
+    # FI COMBAT
+    if combate.enemigos_vivos():
+        await broadcast_sala(sala_id, "\n  DERROTA. Torna a intentar!")
+    else:
+        xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
+        await broadcast_sala(sala_id, f"\n  VICTORIA! +{xp} XP")
+        for p in combate.jugadores_vivos():
+            if p.personaje["vidaActual"] > 0:
+                await dar_xp(p, xp)
+                p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
+                if p.ws:
+                    await p.send_status()
 
-    # Cerrar popup de combate en todos los jugadores
     for p in combate.jugadores:
-        try:
-            await p.ws.send_json({"type": "combat_end"})
-        except Exception:
-            pass
+        p.combate = None
+        if p.ws:
+            try:
+                await p.ws.send_json({"type": "combat_end"})
+            except:
+                pass
     
     # Verificar resultado: si NO hay enemigos vivos = victoria
     enemigos_derrotados = len(combate.enemigos) > 0 and not combate.enemigos_vivos()
@@ -3606,11 +3598,18 @@ async def _periodic_cleanup():
 
 
 async def procesar_comando(player: Player, cmd: str):
-    # Rate limit
+    # Combat actions bypass rate limit
+    if player.combate:
+        c = cmd.strip()
+        if c in ("1", "2", "3"):
+            player.combate.acciones[player.id] = c
+            await player.send(f"  Accio {c} enregistrada!")
+            return
+    
+    # Rate limit per altres comandos
     now = asyncio.get_event_loop().time()
     last = _last_cmd_time.get(id(player), 0)
     if now - last < 0.5:
-        # Silent rate limit — don't spam the user with messages
         return
     _last_cmd_time[id(player)] = now
 
