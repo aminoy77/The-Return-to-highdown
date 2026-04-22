@@ -1,0 +1,37 @@
+{
+  "usuario": "hola",
+  "password_hash": "bc8c97816c667099ec764195bc701f79b6147172d1faf3b145b81f53a0c22103",
+  "salt": "f051df9f7f71b57a",
+  "data": {
+    "nombre": "hola",
+    "nivel": 1,
+    "xp": 0,
+    "monedas": 0,
+    "inventario": {},
+    "sala_id": 1,
+    "lore_mostrado": true,
+    "personaje": {
+      "nombreClase": "mago",
+      "vidaMax": 50,
+      "vidaActual": 50,
+      "manaMax": 70,
+      "manaActual": 70,
+      "danioBase": 30
+    }
+  },
+  "nombre": "hola",
+  "nivel": 1,
+  "xp": 0,
+  "monedas": 0,
+  "inventario": {},
+  "sala_id": 1,
+  "lore_mostrado": true,
+  "personaje": {
+    "nombreClase": "mago",
+    "vidaMax": 50,
+    "vidaActual": 50,
+    "manaMax": 70,
+    "manaActual": 70,
+    "danioBase": 30
+  }
+}
