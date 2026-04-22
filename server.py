@@ -1085,8 +1085,9 @@ header h1{color:var(--accent);font-size:18px}
 #chat-input button{background:var(--accent);border:none;padding:10px 20px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold}
 
 /* Combat */
-#combat{background:var(--bg3);padding:15px;border-radius:8px;border:2px solid var(--danger);display:none}
+#combat{background:var(--bg3);padding:15px;border-radius:8px;border:2px solid var(--danger);display:none;margin:10px 0}
 #combat.active{display:block}
+#combat.hidden{display:none}
 #combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 #combat-title{color:var(--danger);font-weight:bold}
 #combat-turn{color:var(--text2);font-size:12px}
@@ -1100,11 +1101,16 @@ header h1{color:var(--accent);font-size:18px}
 .combat-btn{background:var(--bg2);border:1px solid var(--danger);padding:15px;border-radius:4px;color:var(--text);cursor:pointer;text-align:center;transition:all 0.1s;font-size:13px}
 .combat-btn:hover{background:var(--danger);color:#fff}
 .combat-btn.selected{background:var(--danger);color:#fff}
-.combat-btn:disabled{opacity:0.5;cursor:not-allowed}
+.attack-btn{background:var(--danger);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}}
 
 /* Log */
-#log{background:var(--bg2);padding:15px;border-radius:8px;max-height:200px;overflow-y:auto}
-#log-entries{font-size:12px;line-height:1.6}
+#log{background:var(--bg2);padding:15px;border-radius:8px;max-height:350px;min-height:200px;overflow-y:auto;flex:1;display:flex;flex-direction:column}
+#log-entries{font-size:13px;line-height:1.5;flex:1;overflow-y:auto}
+#log-input{display:flex;gap:5px;margin-top:8px}
+#log-input input{flex:1;padding:8px;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:4px}
+#log-input button{background:var(--accent);border:none;padding:8px 15px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold}
+#log-input button.secondary{background:var(--bg3);color:var(--text)}
 .log-entry{color:var(--text2);margin:3px 0}
 .log-entry.error{color:var(--danger)}
 .log-entry.success{color:var(--success)}
@@ -1169,12 +1175,13 @@ header h1{color:var(--accent);font-size:18px}
 <body>
 <div id="app">
   <div id="main">
-    <!-- Login -->
+<!-- Login -->
     <div id="login-screen">
       <div class="login-box">
         <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
-        <input type="text" id="username" placeholder="Nombre de usuario">
-        <input type="text" id="char-name" placeholder="Nombre de tu personaje">
+        <input type="text" id="username" placeholder="Usuario">
+        <input type="password" id="password" placeholder="Contrasena">
+        <input type="text" id="char-name" placeholder="Nombre de personaje">
         <select id="char-class">
           <option value="guerrero">Guerrero - Alta vida, dano medio</option>
           <option value="mago">Mago - Baja vida, magia poderosa</option>
@@ -1184,11 +1191,17 @@ header h1{color:var(--accent);font-size:18px}
           <option value="hechicero">Hechicero - Magia avanzada</option>
           <option value="caballero">Caballero - Equilibrado</option>
           <option value="cazador">Cazador - Alto dano fisico</option>
-          <option value="asesino">Asesino - Críticos letales</option>
+          <option value="asesino">Asesino - Criticos letales</option>
           <option value="barbaro">Barbaro - Dano brutal</option>
         </select>
         <button onclick="login()">🎮 JUGAR</button>
+        <button class="secondary" onclick="register()">Crear cuenta</button>
+        <div id="multiplayer-status" style="margin-top:15px;font-size:11px;color:var(--text2)">
+          🌐 Multijugador en vivo - <span id="online-count">0</span> jugadores online
+        </div>
+        <div id="login-error" style="color:var(--danger);font-size:12px;margin-top:10px;display:none"></div>
       </div>
+    </div>
     </div>
     
     <header>
@@ -1224,14 +1237,25 @@ header h1{color:var(--accent);font-size:18px}
       </div>
       <div id="room-desc"></div>
       <div class="room-features" id="room-features"></div>
+      <div id="room-actions">
+        <button class="btn attack-btn" id="btn-atacar" onclick="attack()" style="display:none">⚔️ ATACAR</button>
+        <button class="btn secondary" id="btn-hospital" onclick="hospital()" style="display:none">🏥 Hospital</button>
+        <button class="btn secondary" id="btn-tienda" onclick="openTienda()" style="display:none">🏪 Tienda</button>
+      </div>
       <div id="exits"></div>
       <div id="players-in-room"></div>
       <div id="group-info"></div>
     </div>
     
-    <!-- Log -->
+    <!-- Log / Console -->
     <div id="log">
       <div id="log-entries"></div>
+      <div id="log-input">
+        <input type="text" id="cmd-input" placeholder="Comando o mensaje..." onkeypress="if(event.key==='Enter')sendCmd()">
+        <button onclick="sendCmd()">➤</button>
+        <button class="secondary" onclick="sendCmd('stats')">Stats</button>
+        <button class="secondary" onclick="sendCmd('ranking')">Ranking</button>
+      </div>
     </div>
   </div>
   
@@ -1297,17 +1321,18 @@ function log(msg, type='info'){
 
 function login(){
   const usuario = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
   const nombre = document.getElementById('char-name').value.trim() || usuario;
   const clase = document.getElementById('char-class').value;
   
-  if(!usuario){alert('Introduce un nombre');return;}
+  if(!usuario){showLoginError('Introduce tu usuario');return;}
+  if(!password){showLoginError('Introduce tu contrasena');return;}
   
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(protocol + '//' + window.location.host + '/ws?u=' + encodeURIComponent(usuario));
+  ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
   
   ws.onopen = () => {
-    ws.send(JSON.stringify({type:'login', usuario, nombre, clase}));
-    document.getElementById('login-screen').classList.add('hidden');
+    ws.send(JSON.stringify({type:'login', usuario, password, nombre, clase}));
   };
   
   ws.onmessage = (e) => {
@@ -1316,17 +1341,71 @@ function login(){
   };
   
   ws.onclose = () => {
-    log('Conexion perdida. Recargando...','error');
+    log('Conexion perdida','error');
     setTimeout(()=>location.reload(), 2000);
   };
 }
 
+function register(){
+  const usuario = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const nombre = document.getElementById('char-name').value.trim() || usuario;
+  const clase = document.getElementById('char-class').value;
+  
+  if(!usuario){showLoginError('Introduce tu usuario');return;}
+  if(!password || password.length < 4){showLoginError('Contrasena minimo 4 caracteres');return;}
+  
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+  
+  ws.onopen = () => {
+    ws.send(JSON.stringify({type:'register', usuario, password, nombre, clase}));
+  };
+  
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handleMessage(data);
+  };
+  
+  ws.onclose = () => {
+    log('Conexion perdida','error');
+    setTimeout(()=>location.reload(), 2000);
+  };
+}
+
+function showLoginError(msg){
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function sendCmd(cmd){
+  if(!cmd){
+    const input = document.getElementById('cmd-input');
+    cmd = input.value.trim();
+    if(!cmd) return;
+    input.value = '';
+  }
+  ws.send(JSON.stringify({type:'command', cmd}));
+}
+
 function handleMessage(data){
   if(data.type === 'login_ok'){
+    document.getElementById('login-screen').classList.add('hidden');
     log('Bienvenido a The Return to Highdown!','success');
+  }
+  else if(data.type === 'register_ok'){
+    document.getElementById('login-screen').classList.add('hidden');
+    log('Cuenta creada! Bienvenido!','success');
+  }
+  else if(data.type === 'login_error'){
+    showLoginError(data.text || 'Error de login');
   }
   else if(data.type === 'message'){
     log(data.text, data.text.includes('!') ? 'success' : 'info');
+  }
+  else if(data.type === 'online_count'){
+    document.getElementById('online-count').textContent = data.count;
   }
   else if(data.type === 'sala'){
     document.getElementById('room-name').textContent = data.nombre;
@@ -1349,6 +1428,10 @@ function handleMessage(data){
     
     if(data.grupo) document.getElementById('group-info').innerHTML = data.grupo;
     else document.getElementById('group-info').innerHTML = '';
+    
+    document.getElementById('btn-atacar').style.display = data.enemigos ? 'block' : 'none';
+    document.getElementById('btn-hospital').style.display = data.hospital ? 'block' : 'none';
+    document.getElementById('btn-tienda').style.display = data.tienda ? 'block' : 'none';
   }
   else if(data.type === 'status'){
     updateStats(data);
@@ -1436,6 +1519,18 @@ function sendAction(action){
 
 function move(dir){
   ws.send(JSON.stringify({type:'command', cmd:dir}));
+}
+
+function attack(){
+  ws.send(JSON.stringify({type:'command', cmd:'atacar'}));
+}
+
+function hospital(){
+  ws.send(JSON.stringify({type:'command', cmd:'hospital'}));
+}
+
+function openTienda(){
+  ws.send(JSON.stringify({type:'command', cmd:'tienda'}));
 }
 
 function refreshRoom(){
