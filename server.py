@@ -2933,30 +2933,26 @@ async def loop_combate(combate: Combate):
 
         await broadcast_sala(sala_id, "  Esperando acciones de todos...")
 
-        # Pedir acciones - pero primero limpar queue y skip si ya tiene acción guardada
-        tareas = []
+        # Acudir accions - simplificat: NO esperar, només verificar si ja hi ha acció
+        # Si no hi ha acció, assignar "3" (passar torn)
         for p in combate.jugadores_vivos():
-            # Si ya tiene acción guardada del turno anterior, skip
-            if p.id in combate.acciones:
-                continue
-            # Netejar input antic i crear tasca
-            try:
-                while not p.input_queue.empty():
-                    p.input_queue.get_nowait()
-            except:
-                pass
-            tareas.append(asyncio.create_task(pedir_accion(p, combate)))
-        
-        if tareas:
-            await asyncio.gather(*tareas)
-        
-        # Limpiar input_queue después d'escollir
-        for p in combate.jugadores:
-            try:
-                while not p.input_queue.empty():
-                    p.input_queue.get_nowait()
-            except:
-                pass
+            if p.id not in combate.acciones:
+                # Netejar queue i esperar resposta ràpida (no esperar 60s)
+                try:
+                    while not p.input_queue.empty():
+                        p.input_queue.get_nowait()
+                except:
+                    pass
+                # IntentLlegir del queue amb timeout curt (3s)
+                try:
+                    raw = await asyncio.wait_for(p.recv(), timeout=3)
+                    if raw and raw.strip() in ("1", "2", "3", "4"):
+                        combate.acciones[p.id] = raw.strip()
+                except:
+                    pass
+                # Si res, assignar "3" (passar torn)
+                if p.id not in combate.acciones:
+                    combate.acciones[p.id] = "3"
 
         # Resolución
         combate.estado = EstadoCombate.RESOLVIENDO
@@ -3651,6 +3647,19 @@ async def _periodic_cleanup():
 
 
 async def procesar_comando(player: Player, cmd: str):
+    if player.combate:
+        # En combat? Redirigir a l'acció directament
+        if cmd.strip() in ("1", "2", "3", "atacar", "especial", "pasar", "objeto"):
+            player.combate.acciones[player.id] = cmd.strip()
+            await player.send("  Acció registrada!")
+            return
+        # Però permetent chat durant combat
+        if cmd.startswith("decir ") or cmd.startswith("d ") or cmd.startswith("g ") or cmd.startswith("gc "):
+            pass  # Permetre chat
+        else:
+            await player.send("  En combat! Escull 1-Atacar 2-Especial 3-Pasar")
+            return
+    
     # Rate limit
     now = asyncio.get_event_loop().time()
     last = _last_cmd_time.get(id(player), 0)
