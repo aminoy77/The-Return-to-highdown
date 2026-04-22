@@ -2821,12 +2821,12 @@ async def mover_jugador(player: Player, direccion: str):
 
 async def iniciar_combate(sala_id: int):
     # Si ya hay un combate activo, no iniciar uno nuevo
-    if sala_id in combats_activos:
+    if sala_id in combates_activos:
         # Pero verificar si el combate tiene enemigos - si no, limpiar y crear nuevo
-        combate_existente = combats_activos[sala_id]
+        combate_existente = combates_activos[sala_id]
         if not combate_existente.enemigos_vivos():
             # Limpiar combate finalizado
-            del combats_activos[sala_id]
+            del combates_activos[sala_id]
             for p in list(combate_existente.jugadores):
                 p.combate = None
         else:
@@ -2986,8 +2986,8 @@ async def loop_combate(combate: Combate):
         await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
         
         # IMPORTANTE: Limpiar la战斗 del diccionario global
-        if sala_id in combats_activos:
-            del combats_activos[sala_id]
+        if sala_id in combates_activos:
+            del combates_activos[sala_id]
 
         # ── LORE post-combat per salas de boss ──
         for p in combate.jugadores_vivos():
