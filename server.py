@@ -2952,6 +2952,13 @@ async def loop_combate(combate: Combate):
         for p in combate.jugadores:
             await p.send_status()
         
+        # Detectar morts i cridar respawn
+        for p in combate.jugadores:
+            if p.personaje["vidaActual"] <= 0 and not p.muerto:
+                p.muerto = True
+                await broadcast_sala(sala_id, f"  💀 {p.nombre} ha muerto!")
+                asyncio.create_task(respawn(p))
+        
         # Limpiar accions pel proper torn
         combate.acciones = {}
 
