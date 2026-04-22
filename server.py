@@ -2068,14 +2068,11 @@ async def dar_xp(player: Player, cantidad: int):
         )
         await broadcast_todos(f"  {player.nombre} subio al nivel {player.nivel}!")
         await comprovar_quests(player, "nivell", player.nivel)
-    await notify_web_session(player)
-    
-    # Only update leaderboard occasionally to reduce load
-    import random
-    if random.random() < 0.1:  # 10% chance to update leaderboard
+        # Always broadcast leaderboard on level up!
         _t = asyncio.create_task(broadcast_leaderboard())
         _background_tasks.add(_t)
         _t.add_done_callback(_background_tasks.discard)
+    await notify_web_session(player)
 
 
 # ============================================================
@@ -4458,8 +4455,9 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
     <h1>⚔ The Return to Highdown</h1>
     <p>MUD Multiplayer</p>
     <div class="tabs">
-      <button class="tab active" onclick="showTab('login')">Iniciar sesión</button>
+      <button class="tab active" onclick="showTab('login')">Multijugador</button>
       <button class="tab" onclick="showTab('register')">Crear cuenta</button>
+      <button class="tab" onclick="showTab('individual')">🎮 Individual</button>
     </div>
     <div id="login-p">
       <input class="li" id="lu" type="text" placeholder="Usuario" autocomplete="off">
@@ -4472,6 +4470,12 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
       <input class="li" id="rp2" type="password" placeholder="Repetir contraseña">
       <input class="li" id="rn"  type="text"     placeholder="Nombre en el juego">
       <button class="abtn" onclick="doRegister()">CREAR CUENTA</button>
+    </div>
+    <div id="ind-p" style="display:none;">
+      <p style="color:var(--gold);font-size:11px;margin-bottom:10px;">🎮 JUEGA SIN INTERNET</p>
+      <p style="color:var(--dim);font-size:9px;margin-bottom:15px;">Todo el progreso se guarda en tu navegador.<br>No necesitas conexión al servidor.</p>
+      <input class="li" id="iu" type="text" placeholder="Tu nombre" autocomplete="off">
+      <button class="abtn" onclick="startIndividual()">¡JUGAR!</button>
     </div>
     <div id="lerr"></div>
   </div>
@@ -5006,11 +5010,325 @@ let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,acertijoActivo=false;
 function showTab(t){
   document.getElementById("login-p").style.display=t==="login"?"block":"none";
   document.getElementById("reg-p").style.display=t==="register"?"block":"none";
-  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
+  document.getElementById("ind-p").style.display=t==="individual"?"block":"none";
+  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",
+    (i===0&&t==="login")||(i===1&&t==="register")||(i===2&&t==="individual")));
 }
 showTab("login");
 
-function getWsUrl(){const l=window.location;return(l.protocol==="https:"?"wss:":"ws:")+"//"+l.host+"/ws";}
+function getWsUrl(){const l=window.location;return(l.protocol==="https:"?"ws:")+"//"+l.host+"/ws";}
+
+/* INDIVIDUAL MODE - Offline single player */
+let _indMode = false;
+let _indData = {};
+
+// Static map for offline play
+const _IND_SALAS = {
+  1: {nombre:"North Mass",descripcion:"Arena caliente. El sol abrasa.",conexiones:{norte:2,este:13,sur:6},hospital:true,bioma:"desierto"},
+  2: {nombre:"Dune Village",descripcion:"Un pequeño pueblo en las dunas.",conexiones:{norte:3,sur:1,este:7},tienda:true,bioma:"desierto"},
+  3: {nombre:"Cracked Canyon",descripcion:"Grietas profundas en la tierra.",conexiones:{sur:2,norte:4},monstruos:[{tipo:"escorpion",nivel:2}],bioma:"desierto"},
+  4: {nombre:"Oasis",descripcion:"Un oasis sagrado.",conexiones:{sur:3,norte:5},hospital:true,bioma:"desierto"},
+  5: {nombre:"Ancient Ruins",descripcion:"Ruinas antiguas.",conexiones:{sur:4},monstruos:[{tipo:"esqueleto",nivel:3}],bioma:"desierto"},
+  6: {nombre:"Dry River",descripcion:"Lecho de rio seco.",conexiones:{norte:1,sur:11},monstruos:[{tipo:"aranya",nivel:1}],bioma:"desierto"},
+  7: {nombre:"Market Street",descripcion:"Calle comerciales.",conexiones:{sur:8,este:9,oeste:2},tienda:true,bioma:"desierto"},
+  8: {nombre:"Tavern",descripcion:"Una taberna acogedora.",conexiones:{norte:7},tienda:true,bioma:"desierto"},
+  9: {nombre:"Alley",descripcion:"Un callejon oscuro.",conexiones:{sur:10,oeste:7},monstruos:[{tipo:"rata",nivel:1}],bioma:"desierto"},
+  10: {nombre:"Secret Cave",descripcion:"Una cueva secreta.",conexiones:{norte:9},monstruos:[{tipo:"goblin",nivel:2}],bioma:"desierto"},
+  11: {nombre:"Cactus Field",descripcion:"Campo de cactus.",conexiones:{norte:6,sur:12},monstruos:[{tipo:"escorpion",nivel:2}],bioma:"desierto"},
+  12: {nombre:"Rocky Hills",descripcion:"Colinas rocosas.",conexiones:{norte:11},monstruos:[{ tipo:"esqueleto",nivel:3}],bioma:"desierto"},
+};
+
+const _IND_CLASSES = {
+  "guerrero": {vidaMax:90,danioBase:40,manaMax:30,manaTurno:10,danioEspecial:70,ataquesTurno:1,costoEspecial:30},
+  "mago": {vidaMax:50,danioBase:30,manaMax:70,manaTurno:20,danioEspecial:60,ataquesTurno:1,costoEspecial:60},
+  "arquero": {vidaMax:40,danioBase:10,manaMax:40,manaTurno:15,danioEspecial:10,ataquesTurno:[1,4],costoEspecial:40},
+  "curandero": {vidaMax:50,danioBase:20,manaMax:50,manaTurno:20,danioEspecial:20,ataquesTurno:1,costoEspecial:30,curacionEspecial:20},
+  "nigromante": {vidaMax:50,danioBase:10,manaMax:80,manaTurno:20,danioEspecial:60,ataquesTurno:[1,5],costoEspecial:60},
+  "hechicero": {vidaMax:50,danioBase:30,manaMax:70,manaTurno:30,danioEspecial:70,ataquesTurno:1,costoEspecial:70},
+  "caballero": {vidaMax:70,danioBase:50,manaMax:40,manaTurno:10,danioEspecial:60,ataquesTurno:1,costoEspecial:40},
+  "cazador": {vidaMax:60,danioBase:50,manaMax:30,manaTurno:10,danioEspecial:30,ataquesTurno:1,costoEspecial:30},
+  "asesino": {vidaMax:50,danioBase:20,manaMax:20,manaTurno:10,danioEspecial:60,ataquesTurno:[1,3],costoEspecial:20},
+  "barbaro": {vidaMax:60,danioBase:50,manaMax:30,manaTurno:5,danioEspecial:70,ataquesTurno:1,costoEspecial:30}
+};
+
+const _IND_CLASES_LIST = Object.keys(_IND_CLASSES);
+
+function startIndividual(){
+  const nombre = document.getElementById("iu").value.trim();
+  if(!nombre){alert("Escribe tu nombre");return;}
+  
+  try{
+    const saved = localStorage.getItem('ind_player');
+    if(saved){
+      _indData = JSON.parse(saved);
+      if(_indData.nombre !== nombre){
+        if(!confirm("Ya tienes una partida guardada con otro nombre. Sobrescribir?"))return;
+        _indData = null;
+      }
+    }
+  }catch(e){}
+  
+  if(!_indData){
+    let html = '<div style="text-align:center;padding:20px;"><h2 style="color:var(--gold)">Elige tu clase</h2>';
+    _IND_CLASES_LIST.forEach((c,i)=>{
+      const cl = _IND_CLASSES[c];
+      html += `<button onclick="selectIndClass('"+c+"')" style="display:block;width:100%;margin:5px 0;padding:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text);cursor:pointer;">"+c.toUpperCase()+" - HP:"+cl.vidaMax+" ATQ:"+cl.danioBase+" MANA:"+cl.manaMax+"</button>`;
+    });
+    html += '</div>';
+    document.getElementById("ind-p").innerHTML = html;
+    return;
+  }
+  
+  _indMode = true;
+  document.getElementById("lo").style.display="none";
+  enableUI();
+  updateIndStats();
+  appendLog("Modo Individual - Juegas sin conexion","gv");
+}
+
+function selectIndClass(clase){
+  const nombre = document.getElementById("iu").value.trim();
+  const base = _IND_CLASSES[clase];
+  _indData = {
+    nombre: nombre,
+    clase: clase,
+    nivel: 1,
+    xp: 0,
+    xpMax: 150,
+    monedas: 50,
+    vidaMax: base.vidaMax,
+    vidaActual: base.vidaMax,
+    manaMax: base.manaMax,
+    manaActual: base.manaMax,
+    danioBase: base.danioBase,
+    sala_id: 1,
+    inventario: {pocion_vida:2},
+  };
+  saveIndData();
+  _indMode = true;
+  document.getElementById("lo").style.display="none";
+  enableUI();
+  updateIndStats();
+  appendLog("Bienvenido "+nombre+"! Modo Individual activado.","gv");
+}
+
+function saveIndData(){
+  try{
+    localStorage.setItem('ind_player', JSON.stringify(_indData));
+  }catch(e){}
+}
+
+function updateIndStats(){
+  const s = _indData;
+  myStats = s;
+  set("s-nm",s.nombre||"");
+  set("s-cl",s.clase?s.clase.charAt(0).toUpperCase()+s.clase.slice(1):"");
+  const emojiEl=document.getElementById("s-emoji");
+  if(emojiEl)emojiEl.textContent=CLASE_EMOJI[(s.clase||"").toLowerCase()]||"⚔️";
+  set("s-nv","Nv."+s.nivel);
+  document.getElementById("tb-player").innerHTML="<span>"+esc(s.nombre)+"</span> ["+esc(s.clase)+"] Nv."+s.nivel;
+  
+  const xpPct=s.xpMax>0?Math.min(100,s.xp/s.xpMax*100):0;
+  document.getElementById("b-xp").style.width=xpPct+"%";
+  set("s-xp",s.xp+"/"+s.xpMax);
+  
+  const hpPct=s.vidaMax>0?Math.min(100,s.vidaActual/s.vidaMax*100):0;
+  const bh=document.getElementById("b-hp");
+  bh.style.width=hpPct+"%";
+  bh.style.background=hpPct<25?"var(--red2)":hpPct<50?"#e67e22":"var(--red)";
+  set("s-hp",s.vidaActual+"/"+s.vidaMax);
+  
+  const mpPct=s.manaMax>0?Math.min(100,s.manaActual/s.manaMax*100):0;
+  document.getElementById("b-mp").style.width=mpPct+"%";
+  set("s-mp",s.manaActual+"/"+s.manaMax);
+  
+  set("s-dmg",s.danioBase||"");
+  const base = _IND_CLASSES[s.clase]||{};
+  set("s-atq",Array.isArray(base.ataquesTurno)?base.ataquesTurno[0]+"-"+base.ataquesTurno[1]:String(base.ataquesTurno||1));
+  set("s-mc",(base.costoEspecial||0)+" mana");
+  
+  set("bag-coins",(s.monedas||0)+" 💰");
+  renderBag(s.inventario||{});
+  updateServices(s.sala_id);
+  if(s.sala_id)highlightRoom(s.sala_id);
+}
+
+function processIndCommand(cmd){
+  if(!_indMode)return;
+  cmd = cmd.toLowerCase().trim();
+  if(cmd === 'salir'){
+    _indMode = false;
+    document.getElementById("lo").style.display="flex";
+    showTab("individual");
+    disableUI();
+    return;
+  }
+  if(cmd === 'stats' || cmd === 'estado'){
+    appendLog("HP: "+_indData.vidaActual+"/"+_indData.vidaMax,"");
+    appendLog("Mana: "+_indData.manaActual+"/"+_indData.manaMax,"");
+    appendLog("XP: "+_indData.xp+"/"+_indData.xpMax,"");
+    appendLog("Monedas: "+_indData.monedas,"");
+  } else if(cmd === 'hospital'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(sala && sala.hospital){
+      _indData.vidaActual = _indData.vidaMax;
+      _indData.manaActual = _indData.manaMax;
+      saveIndData();
+      updateIndStats();
+      appendLog("Sanado completamente!","gv");
+    } else {
+      appendLog("No hay hospital aqui.","r");
+    }
+  } else if(cmd === 'tienda' || cmd === 'shop'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(sala && sala.tienda){
+      appendLog("Tienda: usa 'comprar pocion_vida' o 'comprar pocion_mana'","");
+      if(_indData.monedas>=25){appendLog("  pocion_vida (25g) - Recupera 30 HP","");}
+      if(_indData.monedas>=30){appendLog("  pocion_mana (30g) - Recupera 30 MP","");}
+    } else {
+      appendLog("No hay tienda aqui.","r");
+    }
+  } else if(cmd.startsWith('comprar ')){
+    const item = cmd.split(' ')[1];
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(!sala || !sala.tienda){appendLog("No hay tienda aqui.","r");return;}
+    if(item === 'pocion_vida'){
+      if(_indData.monedas>=25){_indData.monedas-=25;_indData.inventario.pocion_vida=(_indData.inventario.pocion_vida||0)+1;saveIndData();appendLog("Compraste pocion_vida!","gv");}else{appendLog("Necesitas 25 monedas.","r");}
+    }else if(item === 'pocion_mana'){
+      if(_indData.monedas>=30){_indData.monedas-=30;_indData.inventario.pocion_mana=(_indData.inventario.pocion_mana||0)+1;saveIndData();appendLog("Compraste pocion_mana!","gv");}else{appendLog("Necesitas 30 monedas.","r");}
+    }else{appendLog("Item desconocido.","r");}
+  } else if(cmd === 'mochila' || cmd === 'inv' || cmd === 'bolsa'){
+    const items = _indData.inventario||{};
+    let txt = "Mochila: ";
+    for(let [k,v] of Object.entries(items)){if(v>0)txt += k+"x"+v+" ";}
+    if(txt === "Mochila: "){txt = "Mochila: Vacia";}
+    appendLog(txt,"");
+  } else if(cmd.startsWith('usar ')){
+    const item = cmd.split(' ')[1];
+    const items = _indData.inventario||{};
+    if(items[item]>0){
+      if(item === 'pocion_vida'){
+        const cur = Math.min(_indData.vidaMax, _indData.vidaActual+30);
+        _indData.vidaActual = cur;
+        items[item]--;
+      }else if(item === 'pocion_mana'){
+        const cur = Math.min(_indData.manaMax, _indData.manaActual+30);
+        _indData.manaActual = cur;
+        items[item]--;
+      }else{appendLog("No puedes usar "+item,"r");return;}
+      saveIndData();
+      updateIndStats();
+      appendLog("Usaste "+item+"!","gv");
+    }else{appendLog("No tienes "+item,"r");}
+  } else if(cmd === 'mirar' || cmd === 'look'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(sala){
+      appendLog("== "+sala.nombre.toUpperCase()+" ==","gv");
+      appendLog(sala.descripcion,"");
+      let exits = Object.keys(sala.conexiones||{}).join(", ");
+      appendLog("Salidas: "+exits,"");
+      if(sala.monstruos && sala.monstruos.length){
+        appendLog("ENEMIGOS: "+sala.monstruos.map(m=>m.tipo+" (Nv."+m.nivel+")").join(", "),"r");
+      }
+      if(sala.hospital){appendLog("[Hospital] Escribe 'hospital'","");}
+      if(sala.tienda){appendLog("[Tienda] Escribe 'tienda'","");}
+    }
+  } else if(cmd === 'norte' || cmd === 'sur' || cmd === 'este' || cmd === 'oeste'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    const dest = sala && sala.conexiones && sala.conexiones[cmd];
+    if(dest){
+      _indData.sala_id = dest;
+      saveIndData();
+      processIndCommand('mirar');
+      updateIndStats();
+    }else{appendLog("No puedes ir "+cmd,"r");}
+  } else {
+    appendLog("Comando '"+cmd+"' en modo individual. Prueba en Multijugador!","gs");
+  }
+}
+  if(cmd === 'stats' || cmd === 'estado'){
+    appendLog("HP: "+_indData.vidaActual+"/"+_indData.vidaMax,"");
+    appendLog("Mana: "+_indData.manaActual+"/"+_indData.manaMax,"");
+    appendLog("XP: "+_indData.xp+"/"+_indData.xpMax,"");
+    appendLog("Monedas: "+_indData.monedas,"");
+  } else if(cmd === 'hospital'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(sala && sala.hospital){
+      _indData.vidaActual = _indData.vidaMax;
+      _indData.manaActual = _indData.manaMax;
+      saveIndData();
+      updateIndStats();
+      appendLog("Sanado completamente!","gv");
+    } else {
+      appendLog("No hay hospital aqui.","r");
+    }
+  } else if(cmd === 'tienda' || cmd === 'shop'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(sala && sala.tienda){
+      appendLog("Tienda: usa 'comprar pocion_vida' o 'comprar pocion_mana'","");
+      _indData.monet = _indData.monedas||0; if(_indData.monet>=25){appendLog("  pocion_vida (25g) - Recupera 30 HP","");}
+      if(_indData.monet>=30){appendLog("  pocion_mana (30g) - Recupera 30 MP","");}
+    } else {
+      appendLog("No hay tienda aqui.","r");
+    }
+  } else if(cmd.startsWith('comprar ')){
+    const item = cmd.split(' ')[1];
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(!sala || !sala.tienda){appendLog("No hay tienda aqui.","r");return;}
+    if(item === 'pocion_vida'){
+      if(_indData.monedas>=25){_indData.momonedas-=25;_indData.inventario.pocion_vida=(_indData.inventario.pocion_vida||0)+1;saveIndData();appendLog("Compraste pocion_vida!","gv");}else{appendLog("Necesitas 25 monedas.","r");}
+    }else if(item === 'pocion_mana'){
+      if(_indData.monedas>=30){_indData.m工委-=30;_indData.inventario.pocion_mana=(_indData.inventario.pocion_mana||0)+1;saveIndData();appendLog("Compraste pocion_mana!","gv");}else{appendLog("Necesitas 30 monedas.","r");}
+    }else{appendLog("Item desconocido.","r");}
+  } else if(cmd === 'mochila' || cmd === 'inv' || cmd === 'bolsa'){
+    const items = _indData.inventario||{};
+    let txt = "Mochila: ";
+    for(let [k,v] of Object.entries(items)){if(v>0)txt += k+"x"+v+" ";}
+    if(txt === "Mochila: "){txt = "Mochila: Vacia";}
+    appendLog(txt,"");
+  } else if(cmd.startsWith('usar ')){
+    const item = cmd.split(' ')[1];
+    const items = _indData.inventario||{};
+    if(items[item]>0){
+      if(item === 'pocion_vida'){
+        const cur = Math.min(_indData.vidaMax, _indData.vidaActual+30);
+        _indData.vidaActual = cur;
+        items[item]--;
+      }else if(item === 'pocion_mana'){
+        const cur = Math.min(_indData.manaMax, _indData.manaActual+30);
+        _indData.manaActual = cur;
+        items[item]--;
+      }else{appendLog("No puedes usar "+item,"r");return;}
+      saveIndData();
+      updateIndStats();
+      appendLog("Usaste "+item+"!","gv");
+    }else{appendLog("No tienes "+item,"r");}
+  } else if(cmd === 'mirar' || cmd === 'look'){
+    const sala = _IND_SALAS[_indData.sala_id];
+    if(sala){
+      appendLog("== "+sala.nombre.toUpperCase()+" ==","gv");
+      appendLog(sala.descripcion,"");
+      let exits = Object.keys(sala.conexiones||{}).join(", ");
+      appendLog("Salidas: "+exits,"");
+      if(sala.monstruos && sala.monstruos.length){
+        appendLog("ENEMIGOS: "+sala.monstruos.map(m=>m.tipo+" (Nv."+m.nivel+")").join(", "),"r");
+      }
+      if(sala.hospital){appendLog("[Hospital] Escribe 'hospital'","");}
+      if(sala.tienda){appendLog("[Tienda] Escribe 'tienda'","");}
+    }
+  } else if(cmd in {norte:1,sur:1,este:1,oeste:1}){
+    const sala = _IND_SALAS[_indData.sala_id];
+    const dest = sala && sala.conexiones && sala.conexiones[cmd];
+    if(dest){
+      _indData.sala_id = dest;
+      saveIndData();
+      processIndCommand('mirar');
+      updateIndStats();
+    }else{appendLog("No puedes ir "+cmd,"r");}
+  } else {
+    appendLog("Comando '"+cmd+"' en modo individual. Prueba en Multijugador!","gs");
+  }
+}
 
 function doLogin(){
   const u=document.getElementById("lu").value.trim();
