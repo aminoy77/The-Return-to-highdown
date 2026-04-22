@@ -2906,30 +2906,32 @@ async def iniciar_combate(sala_id: int):
 
 
 async def loop_combate(combate: Combate):
-    """Combat automàtic sense esperar input - instantani!"""
+    """Combat - cada jugador tria quanvolgui"""
     sala_id = combate.sala_id
     
     while combate.enemigos_vivos() and combate.jugadores_vivos():
         combate.turno += 1
-        combate.acciones = {}
         combate.estado = EstadoCombate.ESPERANDO_ACCIONES
         
-        # Regen mana automàtic
+        await broadcast_sala(sala_id, f"\n{'='*52}\n  COMBAT! Torn {combate.turno}\n{'='*52}")
+        
+        # Esperar que TOTS triin acció (amb timeout de 15s)
         for p in combate.jugadores_vivos():
-            p.personaje["manaActual"] = min(
-                p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
-                p.personaje["manaMax"]
-            )
+            if p.id not in combate.acciones:
+                await p.send("  Escull: 1-Atacar 2-Especial 3-Passar")
         
-        # TOTS els jugadors fan "1" (atacar) automàticament
+        # Esperar 15 segons max
+        await asyncio.sleep(15)
+        
+        # who no ha triat, pasar torn
         for p in combate.jugadores_vivos():
-            combate.acciones[p.id] = "1"
+            if p.id not in combate.acciones:
+                combate.acciones[p.id] = "3"
         
-        await broadcast_sala(sala_id, f"\n{'='*52}\n  TURNO {combate.turno} - ATAC AUTOMÀTIC\n{'='*52}")
-        
-        # Resoldre accions
+        # Resoldre
         for p in list(combate.jugadores_vivos()):
-            await resolver_accion(p, "1", combate)
+            accio = combate.acciones.get(p.id, "3")
+            await resolver_accion(p, accio, combate)
             if not combate.enemigos_vivos():
                 break
         
@@ -2938,28 +2940,26 @@ async def loop_combate(combate: Combate):
         
         # Enemics ataca
         for e in combate.enemigos_vivos():
-            jugs_vius = combate.jugadores_vivos()
-            if not jugs_vius:
-                break
-            obj = random.choice(jugs_vius)
+            jugs = combate.jugadores_vivos()
+            if not jugs: break
+            obj = random.choice(jugs)
             for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
-                if obj.personaje["vidaActual"] <= 0:
-                    break
+                if obj.personaje["vidaActual"] <= 0: break
                 d = calcular_danio(e["danioBase"])
                 obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
                 await broadcast_sala(sala_id, f"  {e['nombre']} → {obj.nombre} -{d} HP")
         
-        # Actualitzar stats
         for p in combate.jugadores:
             await p.send_status()
+        
+        # Limpiar accions pel proper torn
+        combate.acciones = {}
 
-    # FI DEL COMBAT
     combate.estado = EstadoCombate.FINALIZADO
     for p in combate.jugadores:
         try:
             await p.ws.send_json({"type": "combat_end"})
-        except:
-            pass
+        except: pass
         try:
             await p.ws.send_json({"type": "combat_end"})
         except Exception:
@@ -3605,11 +3605,18 @@ async def _periodic_cleanup():
 
 async def procesar_comando(player: Player, cmd: str):
     if player.combate:
-        # En combat? Redirigir a l'acció directament
-        if cmd.strip() in ("1", "2", "3", "atacar", "especial", "pasar", "objeto"):
-            player.combate.acciones[player.id] = cmd.strip()
-            await player.send("  Acció registrada!")
+        # En combat? Acceptar varies opcions
+        c = cmd.strip().lower()
+        if c in ("1", "2", "3", "atacar", "especial", "pasar", "pass"):
+            ac = {"atacar":"1", "especial":"2", "pasar":"3", "pass":"3"}.get(c, c)
+            player.combate.acciones[player.id] = ac
+            await player.send("  Acció enregistrada!")
             return
+        # Chat permitit
+        if c.startswith("decir ") or c.startswith("d ") or c.startswith("g ") or c.startswith("gc "):
+            pass
+        else:
+            await player.send("  En combat! Escriu 1, 2 o 3")
         # Però permetent chat durant combat
         if cmd.startswith("decir ") or cmd.startswith("d ") or cmd.startswith("g ") or cmd.startswith("gc "):
             pass  # Permetre chat
