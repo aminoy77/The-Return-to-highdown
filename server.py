@@ -2906,103 +2906,60 @@ async def iniciar_combate(sala_id: int):
 
 
 async def loop_combate(combate: Combate):
+    """Combat automàtic sense esperar input - instantani!"""
     sala_id = combate.sala_id
-
+    
     while combate.enemigos_vivos() and combate.jugadores_vivos():
-        combate.turno   += 1
+        combate.turno += 1
         combate.acciones = {}
-        combate.estado   = EstadoCombate.ESPERANDO_ACCIONES
-
-        # Regen mana
+        combate.estado = EstadoCombate.ESPERANDO_ACCIONES
+        
+        # Regen mana automàtic
         for p in combate.jugadores_vivos():
             p.personaje["manaActual"] = min(
                 p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
                 p.personaje["manaMax"]
             )
-
-        # Mostrar estado del turno
-        await broadcast_sala(sala_id, f"\n{'-'*52}\n  TURNO {combate.turno}\n{'-'*52}")
-        for e in combate.enemigos_vivos():
-            await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}")
+        
+        # TOTS els jugadors fan "1" (atacar) automàticament
         for p in combate.jugadores_vivos():
-            await p.send(
-                f"  TU [{p.personaje['nombreClase']}]  "
-                f"HP:{p.personaje['vidaActual']}/{p.personaje['vidaMax']}  "
-                f"Mana:{p.personaje['manaActual']}/{p.personaje['manaMax']}"
-            )
-
-        await broadcast_sala(sala_id, "  Esperando acciones de todos...")
-
-        # Acudir accions - simplificat: NO esperar, només verificar si ja hi ha acció
-        # Si no hi ha acció, assignar "3" (passar torn)
-        for p in combate.jugadores_vivos():
-            if p.id not in combate.acciones:
-                # Netejar queue i esperar resposta ràpida (no esperar 60s)
-                try:
-                    while not p.input_queue.empty():
-                        p.input_queue.get_nowait()
-                except:
-                    pass
-                # IntentLlegir del queue amb timeout curt (3s)
-                try:
-                    raw = await asyncio.wait_for(p.recv(), timeout=3)
-                    if raw and raw.strip() in ("1", "2", "3", "4"):
-                        combate.acciones[p.id] = raw.strip()
-                except:
-                    pass
-                # Si res, assignar "3" (passar torn)
-                if p.id not in combate.acciones:
-                    combate.acciones[p.id] = "3"
-
-        # Resolución
-        combate.estado = EstadoCombate.RESOLVIENDO
-        await broadcast_sala(sala_id, "\n  --- RESOLUCION ---")
+            combate.acciones[p.id] = "1"
+        
+        await broadcast_sala(sala_id, f"\n{'='*52}\n  TURNO {combate.turno} - ATAC AUTOMÀTIC\n{'='*52}")
+        
+        # Resoldre accions
         for p in list(combate.jugadores_vivos()):
-            await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
+            await resolver_accion(p, "1", combate)
             if not combate.enemigos_vivos():
                 break
         
-        # Si ya no hay enemigos, terminar el combate
         if not combate.enemigos_vivos():
             break
-
-        # Turno enemigos
-        if combate.enemigos_vivos() and combate.jugadores_vivos():
-            combate.estado = EstadoCombate.TURNO_ENEMIGO
-            await broadcast_sala(sala_id, "\n  --- TURNO ENEMIGOS ---")
-            for e in combate.enemigos_vivos():
-                vivos_jug = combate.jugadores_vivos()
-                if not vivos_jug:
+        
+        # Enemics ataca
+        for e in combate.enemigos_vivos():
+            jugs_vius = combate.jugadores_vivos()
+            if not jugs_vius:
+                break
+            obj = random.choice(jugs_vius)
+            for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
+                if obj.personaje["vidaActual"] <= 0:
                     break
-                obj = random.choice(vivos_jug)
-                for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
-                    if obj.personaje["vidaActual"] <= 0:
-                        break
-                    d = calcular_danio(e["danioBase"])
-                    obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
-                    await broadcast_sala(
-                        sala_id,
-                        f"  {e['nombre']} golpea a {obj.nombre} -{d}  "
-                        f"({obj.personaje['vidaActual']}/{obj.personaje['vidaMax']})"
-                    )
-
-        # Detectar muertes
-        for p in combate.jugadores:
-            if p.personaje["vidaActual"] <= 0 and not p.muerto:
-                await broadcast_sala(sala_id, f"  {p.nombre} ha caido!")
-                _t = asyncio.create_task(respawn(p))
-        _background_tasks.add(_t)
-        _t.add_done_callback(_background_tasks.discard)
-
-        # Actualizar stats en tiempo real (directo, sin create_task para evitar retrasos)
+                d = calcular_danio(e["danioBase"])
+                obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
+                await broadcast_sala(sala_id, f"  {e['nombre']} → {obj.nombre} -{d} HP")
+        
+        # Actualitzar stats
         for p in combate.jugadores:
             await p.send_status()
 
-    # ── FIN DEL COMBATE ──
+    # FI DEL COMBAT
     combate.estado = EstadoCombate.FINALIZADO
-
-    # Cerrar popup de combate en todos los jugadores
     for p in combate.jugadores:
+        try:
+            await p.ws.send_json({"type": "combat_end"})
+        except:
+            pass
         try:
             await p.ws.send_json({"type": "combat_end"})
         except Exception:
