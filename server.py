@@ -2384,11 +2384,6 @@ async def cargar_cuenta_async(player: "Player", usuario: str):
         "danioBase":   pg.get("danioBase",  base["danioBase"]),
         **base,
     }
-    player.personaje["vidaMax"]    = pg.get("vidaMax",    base["vidaMax"])
-    player.personaje["vidaActual"] = pg.get("vidaActual", base["vidaMax"])
-    player.personaje["manaMax"]    = pg.get("manaMax",    base["manaMax"])
-    player.personaje["manaActual"] = pg.get("manaActual", base["manaMax"])
-    player.personaje["danioBase"]  = pg.get("danioBase",  base["danioBase"])
 
 async def crear_cuenta_async(usuario: str, password: str):
     salt   = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
@@ -2745,6 +2740,7 @@ async def mover_jugador(player: Player, direccion: str):
         return
     sala_actual = SALAS.get(player.sala_id)
     if not sala_actual:
+        await player.send("  Error: sala no trovada.")
         return
 
     # ── Bloqueo por acertijos ────────────────────────────────
@@ -2946,139 +2942,29 @@ async def loop_combate(combate: Combate):
             if p.personaje["vidaActual"] > 0:
                 await dar_xp(p, xp)
                 p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
-                if p.ws:
-                    await p.send_status()
+                p.salas_limpias.add(sala_id)
+                await p.send_status()
 
-    for p in combate.jugadores:
-        p.combate = None
-        if p.ws:
-            try:
-                await p.ws.send_json({"type": "combat_end"})
-            except:
-                pass
-    
-    # Verificar resultado: si NO hay enemigos vivos = victoria
-    enemigos_derrotados = len(combate.enemigos) > 0 and not combate.enemigos_vivos()
-    jugadores_sobrevivieron = bool(combate.jugadores_vivos())
-    
-    if not enemigos_derrotados or not jugadores_sobrevivieron:
-        await broadcast_sala(sala_id, "\n  DERROTA.")
-    else:
-        await broadcast_sala(sala_id, "\n  VICTORIA!")
-        xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f"  {xp} XP para cada superviviente.")
-        for p in combate.jugadores_vivos():
-            await dar_xp(p, xp)
-            p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
-            p.salas_limpias.add(sala_id)
-            await p.send_status()   # actualizar HP tras +20
-        await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
-        await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
-        
-        # IMPORTANTE: Limpiar la战斗 del diccionario global
-        if sala_id in combats_activos:
-            del combats_activos[sala_id]
-
-        # ── LORE post-combat per salas de boss ──
-        for p in combate.jugadores_vivos():
-            await mostrar_lore_post_combate(p, sala_id)
-
-        # ── LOOT DROP per cada enemic derrotat ──
         for p in combate.jugadores_vivos():
             for e in combate.enemigos:
                 tier = e.get("tier", "Base")
                 await donar_loot(p, tier)
-            # Kills counter per quests
             if not hasattr(p, 'kills_total'):
                 p.kills_total = 0
             p.kills_total += len(combate.enemigos)
             await comprovar_quests(p, "kill")
 
-        # ── BOSS RESPAWN TIMER ──
         boss_defeated(sala_id)
+
+    # Limpiar combats_activos i buffs
+    if sala_id in combats_activos:
+        del combats_activos[sala_id]
 
     # Limpiar buffs
     for p in combate.jugadores:
         if p.buff_danio:
             p.buff_danio = False
             asyncio.create_task(p.send("  Pocion de Danio terminada."))
-
-    del combates_activos[sala_id]
-    for p in combate.jugadores:
-        p.combate = None
-
-
-async def pedir_accion(player: Player, combate: Combate):
-    """
-    Consume del input_queue EXCLUSIVAMENTE.
-    Timeout de 60s por turno — si no responde, pasa turno automáticamente.
-    """
-    if player.personaje["vidaActual"] <= 0:
-        combate.acciones[player.id] = "3"
-        return
-
-    await player.send(
-        "  1-Atacar  2-Especial  3-Pasar  4-Objeto\n"
-        "  decir <msg>  |  g <msg>  |  gc <msg>"
-    )
-
-    deadline = asyncio.get_event_loop().time() + 60  # 60s por turno
-
-    while True:
-        tiempo_restante = max(0.1, deadline - asyncio.get_event_loop().time())
-        try:
-            raw = await asyncio.wait_for(player.recv(), timeout=tiempo_restante)
-        except asyncio.TimeoutError:
-            # Expulsar del combate por inactividad
-            combate.acciones[player.id] = "3"
-            if player in combate.jugadores:
-                combate.jugadores.remove(player)
-            player.combate = None
-            await player.send(
-                "\n  ⚠️  Has sido expulsado del combate por inactividad (60 segundos sin acción)."
-                "\n  Has sido trasladado a la sala segura."
-            )
-            await broadcast_sala(combate.sala_id, f"  {player.nombre} fue expulsado del combate por inactividad.", excluir=player)
-            player.sala_id = SALA_RESPAWN
-            await player.send_status()
-            await describir_sala(player)
-            return
-
-        # Desconexión durante combate → pasar turno automáticamente
-        if raw is None:
-            combate.acciones[player.id] = "3"
-            return
-
-        accion = raw.strip()
-        if not accion:
-            continue
-
-        if accion.lower().startswith("decir "):
-            await cmd_chat(player, accion[6:], sala_solo=True)
-            continue
-        if accion.lower().startswith("g "):
-            await cmd_chat(player, accion[2:], sala_solo=False)
-            continue
-        if accion.lower().startswith("gc "):
-            await cmd_gchat(player, accion[3:].strip())
-            continue
-        if accion == "4":
-            await cmd_mochila(player)
-            await player.send("  Que objeto usar? (Enter=cancelar, o escribe vida/dano/gema):")
-            try:
-                n = await asyncio.wait_for(player.recv(), timeout=30)
-            except asyncio.TimeoutError:
-                n = None
-            if n and n.strip():
-                await usar_item(player, n.strip(), combate=combate)
-            await player.send("  1-Atacar  2-Especial  3-Pasar  4-Objeto")
-            continue
-        if accion in ("1", "2", "3"):
-            combate.acciones[player.id] = accion
-            await broadcast_sala(combate.sala_id, f"  {player.nombre} ha elegido.", excluir=player)
-            return
-
-        await player.send("  Elige 1, 2, 3 o 4.")
 
 
 async def resolver_accion(player: Player, accion: str, combate: Combate):
