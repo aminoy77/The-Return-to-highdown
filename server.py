@@ -5365,7 +5365,7 @@ function updateIndStats(){
   const base = _IND_CLASSES[s.clase]||{};
   set("s-atq",Array.isArray(base.ataquesTurno)?base.ataquesTurno[0]+"-"+base.ataquesTurno[1]:String(base.ataquesTurno||1));
   set("s-mc",(base.costoEspecial||0)+" mana");
-  set("bag-coins",(s.monedass||0)+" C");
+  set("bag-coins",(s.monedas||0)+" C");
   renderBag(s.inventario||{});
   updateServices(s.sala_id);
   if(s.sala_id)highlightRoom(s.sala_id);
@@ -5385,7 +5385,7 @@ function processIndCommand(cmd){
     appendLog("HP: "+_indData.vidaActual+"/"+_indData.vidaMax,"");
     appendLog("Mana: "+_indData.manaActual+"/"+_indData.manaMax,"");
     appendLog("XP: "+_indData.xp+"/"+_indData.xpMax,"");
-    appendLog("Monedas: "+_indData.monedass,"");
+    appendLog("Monedas: "+_indData.monedas,"");
   } else if(cmd === "hospital"){
     const sala = _IND_SALAS[_indData.sala_id];
     if(sala && sala.hospital){
@@ -5401,8 +5401,8 @@ function processIndCommand(cmd){
     const sala = _IND_SALAS[_indData.sala_id];
     if(sala && sala.tienda){
       appendLog("Tienda: usa 'comprar pocion_vida' o 'comprar pocion_mana'","");
-      if(_indData.monedass>=25)appendLog("  pocion_vida (25g) - Recupera 30 HP","");
-      if(_indData.monedass>=30)appendLog("  pocion_mana (30g) - Recupera 30 MP","");
+      if(_indData.monedas>=25)appendLog("  pocion_vida (25g) - Recupera 30 HP","");
+      if(_indData.monedas>=30)appendLog("  pocion_mana (30g) - Recupera 30 MP","");
     } else {
       appendLog("No hay tienda aqui.","r");
     }
@@ -5411,9 +5411,9 @@ function processIndCommand(cmd){
     const sala = _IND_SALAS[_indData.sala_id];
     if(!sala || !sala.tienda){appendLog("No hay tienda aqui.","r");return;}
     if(item === "pocion_vida"){
-      if(_indData.monedass>=25){_indData.monedass-=25;_indData.inventario.pocion_vida=(_indData.inventario.pocion_vida||0)+1;saveIndData();appendLog("Compraste pocion_vida!","gv");}else{appendLog("Necesitas 25 monedas.","r");}
+      if(_indData.monedas>=25){_indData.monedas-=25;_indData.inventario.pocion_vida=(_indData.inventario.pocion_vida||0)+1;saveIndData();appendLog("Compraste pocion_vida!","gv");}else{appendLog("Necesitas 25 monedas.","r");}
     }else if(item === "pocion_mana"){
-      if(_indData.monedass>=30){_indData.monedass-=30;_indData.inventario.pocion_mana=(_indData.inventario.pocion_mana||0)+1;saveIndData();appendLog("Compraste pocion_mana!","gv");}else{appendLog("Necesitas 30 monedas.","r");}
+      if(_indData.monedas>=30){_indData.monedas-=30;_indData.inventario.pocion_mana=(_indData.inventario.pocion_mana||0)+1;saveIndData();appendLog("Compraste pocion_mana!","gv");}else{appendLog("Necesitas 30 monedas.","r");}
     }else{appendLog("Item desconocido.","r");}
   } else if(cmd === "mochila" || cmd === "inv" || cmd === "bolsa"){
     const items = _indData.inventario||{};
