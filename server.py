@@ -1926,24 +1926,6 @@ async def broadcast_chat_ws(scope: str, nombre: str, mensaje: str):
     chat_ws_clients.difference_update(muertos)
 
 
-async def broadcast_grupo(grupo_id: str, nombre: str, mensaje: str):
-    """Enviar mensaje a todos los miembros del grupo."""
-    if grupo_id not in grupos:
-        return
-        
-    grupo = grupos[grupo_id]
-    payload = {"type": "chat", "scope": "grupo", "nombre": nombre, "text": mensaje}
-    
-    # Enviar a todos los miembros del grupo
-    for pid in grupo.miembros:
-        jugador = next((p for p in jugadores_conectados if p.id == pid), None)
-        if jugador and jugador.ws:
-            try:
-                await jugador.ws.send_json(payload)
-            except Exception:
-                pass
-
-
 async def notify_web_session(player: "Player"):
     """Empuja stats actualizadas al jugador (mismo WebSocket que usa para jugar)."""
     if not player.personaje:
@@ -2313,10 +2295,6 @@ async def _flush_save_queue():
 async def guardar_cuenta_async(player: "Player", immediate=False):
     if not player.usuario or not player.personaje:
         return
-    
-    # Los admins guardan siempre instantáneamente
-    if hasattr(player, 'is_admin') and player.is_admin:
-        immediate = True
     
     # Leer salt/hash previos
     if USAR_SUPABASE:
@@ -2843,12 +2821,12 @@ async def mover_jugador(player: Player, direccion: str):
 
 async def iniciar_combate(sala_id: int):
     # Si ya hay un combate activo, no iniciar uno nuevo
-    if sala_id in combates_activos:
+    if sala_id in combats_activos:
         # Pero verificar si el combate tiene enemigos - si no, limpiar y crear nuevo
-        combate_existente = combates_activos[sala_id]
+        combate_existente = combats_activos[sala_id]
         if not combate_existente.enemigos_vivos():
             # Limpiar combate finalizado
-            del combates_activos[sala_id]
+            del combats_activos[sala_id]
             for p in list(combate_existente.jugadores):
                 p.combate = None
         else:
@@ -2906,78 +2884,128 @@ async def iniciar_combate(sala_id: int):
 
 
 async def loop_combate(combate: Combate):
-    """Combat auto - cada turn 5 segons, auto-attack"""
     sala_id = combate.sala_id
-    torn = 0
-    
+
     while combate.enemigos_vivos() and combate.jugadores_vivos():
-        torn += 1
-        await broadcast_sala(sala_id, f"\n{'='*45}\n  COMBAT! Torn {torn}\n{'='*45}")
-        
-        # Auto-atacar pel tots (1)
+        combate.turno   += 1
+        combate.acciones = {}
+        combate.estado   = EstadoCombate.ESPERANDO_ACCIONES
+
+        # Regen mana
         for p in combate.jugadores_vivos():
-            if p.personaje["vidaActual"] > 0:
-                await resolver_accion(p, "1", combate)
-            if not combate.enemigos_vivos(): break
-        
-        if not combate.enemigos_vivos(): break
-        
-        # Enemics attack
+            p.personaje["manaActual"] = min(
+                p.personaje["manaActual"] + p.personaje.get("manaTurno", 0),
+                p.personaje["manaMax"]
+            )
+
+        # Mostrar estado del turno
+        await broadcast_sala(sala_id, f"\n{'-'*52}\n  TURNO {combate.turno}\n{'-'*52}")
         for e in combate.enemigos_vivos():
-            jugs = combate.jugadores_vivos()
-            if not jugs: break
-            obj = random.choice(jugs)
-            d = calcular_danio(e["danioBase"])
-            obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
-            await broadcast_sala(sala_id, f"  {e['nombre']} → {obj.nombre} -{d}")
-        
-        # Enviar stats
-        for p in combate.jugadores:
-            if p.ws:
-                await p.send_status()
-        
-        # Respawn if mort
+            await broadcast_sala(sala_id, f"  {e['nombre']}  HP:{e['vida_actual']}/{e['vidaMax']}")
+        for p in combate.jugadores_vivos():
+            await p.send(
+                f"  TU [{p.personaje['nombreClase']}]  "
+                f"HP:{p.personaje['vidaActual']}/{p.personaje['vidaMax']}  "
+                f"Mana:{p.personaje['manaActual']}/{p.personaje['manaMax']}"
+            )
+
+        await broadcast_sala(sala_id, "  Esperando acciones de todos...")
+
+        # Todos los jugadores vivos eligen en paralelo
+        await asyncio.gather(*[
+            asyncio.create_task(pedir_accion(p, combate))
+            for p in combate.jugadores_vivos()
+        ])
+
+        # Resolución
+        combate.estado = EstadoCombate.RESOLVIENDO
+        await broadcast_sala(sala_id, "\n  --- RESOLUCION ---")
+        for p in list(combate.jugadores_vivos()):
+            await resolver_accion(p, combate.acciones.get(p.id, "3"), combate)
+            if not combate.enemigos_vivos():
+                break
+
+        # Turno enemigos
+        if combate.enemigos_vivos() and combate.jugadores_vivos():
+            combate.estado = EstadoCombate.TURNO_ENEMIGO
+            await broadcast_sala(sala_id, "\n  --- TURNO ENEMIGOS ---")
+            for e in combate.enemigos_vivos():
+                vivos_jug = combate.jugadores_vivos()
+                if not vivos_jug:
+                    break
+                obj = random.choice(vivos_jug)
+                for _ in range(ataques_por_turno(e.get("ataquesTurno", 1))):
+                    if obj.personaje["vidaActual"] <= 0:
+                        break
+                    d = calcular_danio(e["danioBase"])
+                    obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - d)
+                    await broadcast_sala(
+                        sala_id,
+                        f"  {e['nombre']} golpea a {obj.nombre} -{d}  "
+                        f"({obj.personaje['vidaActual']}/{obj.personaje['vidaMax']})"
+                    )
+
+        # Detectar muertes
         for p in combate.jugadores:
             if p.personaje["vidaActual"] <= 0 and not p.muerto:
-                p.muerto = True
-                await broadcast_sala(sala_id, f"  💀 {p.nombre} mort!")
-                if p.ws:
-                    try: await p.ws.send_json({"type": "combat_end"})
-                    except: pass
-                asyncio.create_task(respawn(p))
-        
-        # Esperar 5 segons entre torns
-        await asyncio.sleep(5)
+                await broadcast_sala(sala_id, f"  {p.nombre} ha caido!")
+                _t = asyncio.create_task(respawn(p))
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
 
-    # FI - verificar victoria ANTES de tancar pantalla
-    enemigos_derrotados = len(combate.enemigos) > 0 and not combate.enemigos_vivos()
-    jugadores_viven = [p for p in combate.jugadores if p.personaje["vidaActual"] > 0]
+        # Actualizar stats en tiempo real (directo, sin create_task para evitar retrasos)
+        for p in combate.jugadores:
+            await p.send_status()
+
+    # ── FIN DEL COMBATE ──
+    combate.estado = EstadoCombate.FINALIZADO
+
+    # Cerrar popup de combate en todos los jugadores
+    for p in combate.jugadores:
+        try:
+            await p.ws.send_json({"type": "combat_end"})
+        except Exception:
+            pass
     
-    if enemigos_derrotados and jugadores_viven:
-        # VICTORIA
+    # Verificar resultado: si NO hay enemigos vivos = victoria
+    enemigos_derrotados = len(combate.enemigos) > 0 and not combate.enemigos_vivos()
+    jugadores_sobrevivieron = bool(combate.jugadores_vivos())
+    
+    if not enemigos_derrotados or not jugadores_sobrevivieron:
+        await broadcast_sala(sala_id, "\n  DERROTA.")
+    else:
+        await broadcast_sala(sala_id, "\n  VICTORIA!")
         xp = sum(xp_de_tier(e.get("tier", "Base")) for e in combate.enemigos)
-        for p in jugadores_viven:
-            await broadcast_sala(sala_id, f"\n  VICTORIA! {xp} XP!")
+        await broadcast_sala(sala_id, f"  {xp} XP para cada superviviente.")
+        for p in combate.jugadores_vivos():
             await dar_xp(p, xp)
             p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
             p.salas_limpias.add(sala_id)
-            if p.ws:
-                await p.send_status()
-            await donar_loot(p, combate.enemigos)
+            await p.send_status()   # actualizar HP tras +20
+        await broadcast_sala(sala_id, "  +20 HP a cada superviviente.")
+        await broadcast_sala(sala_id, "  El camino está despejado. Puedes avanzar.")
         
-        if sala_id in combates_activos:
-            del combates_activos[sala_id]
-    else:
-        # DERROTA
-        await broadcast_sala(sala_id, "\n  DERROTA.")
-    
-    # Enviar combat_end a TOTS
-    for p in combate.jugadores:
-        p.combate = None
-        if p.ws:
-            try: await p.ws.send_json({"type": "combat_end"})
-            except: pass
-    await broadcast_sala(sala_id, "  Combat acabat. pots moure't!" if enemigos_derrotados else "  Has perdut!")
+        # IMPORTANTE: Limpiar la战斗 del diccionario global
+        if sala_id in combats_activos:
+            del combats_activos[sala_id]
+
+        # ── LORE post-combat per salas de boss ──
+        for p in combate.jugadores_vivos():
+            await mostrar_lore_post_combate(p, sala_id)
+
+        # ── LOOT DROP per cada enemic derrotat ──
+        for p in combate.jugadores_vivos():
+            for e in combate.enemigos:
+                tier = e.get("tier", "Base")
+                await donar_loot(p, tier)
+            # Kills counter per quests
+            if not hasattr(p, 'kills_total'):
+                p.kills_total = 0
+            p.kills_total += len(combate.enemigos)
+            await comprovar_quests(p, "kill")
+
+        # ── BOSS RESPAWN TIMER ──
+        boss_defeated(sala_id)
 
     # Limpiar buffs
     for p in combate.jugadores:
@@ -3578,22 +3606,14 @@ async def _periodic_cleanup():
 
 
 async def procesar_comando(player: Player, cmd: str):
+    # Rate limit
     now = asyncio.get_event_loop().time()
     last = _last_cmd_time.get(id(player), 0)
     if now - last < 0.5:
+        # Silent rate limit — don't spam the user with messages
         return
     _last_cmd_time[id(player)] = now
-    
-    c = cmd.strip().lower()
-    
-    # En combat nomes pots parlar (chat automatic)
-    if player.combate:
-        if c.startswith("decir ") or c.startswith("d ") or c.startswith("g ") or c.startswith("gc "):
-            pass
-        else:
-            await player.send("  En combat! (atac automatic)")
-            return
-    
+
     partes = cmd.lower().strip().split()
     if not partes:
         return
@@ -3677,29 +3697,35 @@ async def procesar_comando(player: Player, cmd: str):
         tiene_combate = sala and ("bioma" in sala or bool(sala.get("encuentros")))
         if not tiene_combate:
             await player.send("  No hay enemigos en esta sala.")
-        elif player.sala_id in combates_activos:
-            await player.send("  Ya hay un combate en curso aqui.")
-        else:
-            await iniciar_combate(player.sala_id)
+            return
+        # Si ya hay combate activo, unirse o continuar
+        if player.sala_id in combats_activos:
+            combate_existente = combats_activos[player.sala_id]
+            # Si no estás en el combate, únete
+            if player not in combate_existente.jugadores and combate_existente.enemigos_vivos():
+                if not player.muerto:
+                    combate_existente.jugadores.append(player)
+                    player.combate = combate_existente
+                    await player.send("  Te has unido al combate en curso!")
+                    await broadcast_sala(player.sala_id, f"  {player.nombre} se une al combate!")
+                    # Mostrar enemigos
+                    for e in combate_existente.enemigos_vivos():
+                        await player.send(f"  {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
+                    return
+            # Si ya estás, mostrar estado
+            if player in combate_existente.jugadores:
+                await player.send(f"  Ya estas en combate!HP:{player.personaje['vidaActual']}/{player.personaje['vidaMax']}")
+                for e in combate_existente.enemigos_vivos():
+                    await player.send(f"  {e['nombre']} HP:{e['vida_actual']}/{e['vidaMax']}")
+                return
+        # Iniciar nuevo combate si no hay
+        await iniciar_combate(player.sala_id)
 
     elif ac in ("decir", "d"):
         await cmd_chat(player, cmd[len(ac):].strip(), sala_solo=True)
 
     elif ac == "g":
         await cmd_chat(player, cmd[2:].strip(), sala_solo=False)
-        
-    elif ac == "gc":
-        # Chat de grupo - solo si está en un grupo
-        if not player.grupo_id:
-            await player.send("  No estás en ningún grupo.")
-            return
-        mensaje = cmd[3:].strip()
-        if not mensaje:
-            await player.send("  Qué quieres decir al grupo?")
-            return
-        # Límite de seguridad
-        mensaje = mensaje[:300]
-        await broadcast_grupo(player.grupo_id, player.nombre, mensaje)
 
     elif ac in ("tienda", "shop"):
         if player.muerto:
@@ -4089,28 +4115,10 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "acertijos": es_acertijos,
                 "segura": not ("bioma" in s or bool(s.get("encuentros")) or es_acertijos),
             }
-        
-        # Enviar map data + ranking al conectar
         try:
-            lb = await get_leaderboard_async()
             await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
-            await ws.send_json({"type": "leaderboard", "ranking": lb})
         except Exception:
             pass
-        
-        # Enviar ranking cada 30 segundos a todos los jugadores
-        async def _periodic_lb():
-            while True:
-                await asyncio.sleep(30)
-                lb = await get_leaderboard_async()
-                for p in jugadores_conectados:
-                    try:
-                        await p.ws.send_json({"type": "leaderboard", "ranking": lb})
-                    except:
-                        pass
-        
-        _t = asyncio.create_task(_periodic_lb())
-        _background_tasks.add(_t)
         await broadcast_players_to_web()
 
         async for msg in ws:
@@ -4603,8 +4611,6 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
         <div class="sr"><span class="sr-l">Ataques</span><span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
         <div class="sr"><span class="sr-l">Especial</span><span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
       </div>
-      <div class="sh">📜 Quests</div>
-      <div id="quests-list" style="font-size:9px;color:var(--text)"></div>
     </div>
     <div id="bag-pane">
       <div class="bag-title">🎒 Mochila</div>
@@ -5042,7 +5048,11 @@ function handle(m){
   if(m.type==="auth_ok"){
     document.getElementById("lo").style.display="none";
     setConn(true);enableUI();
-    if(m.stats)updateStats(m.stats);
+    if(m.stats){
+      saveLocal(m.stats);  // Save locally first for optimistic UI
+    }
+    startSync();  // Start 5s sync interval
+    setupServerSync();  // Listen for server updates
     document.getElementById("cmd").focus();
   } else if(m.type==="auth_fail"){
     document.getElementById("lerr").textContent=m.msg||"Error";ws=null;
@@ -5062,8 +5072,6 @@ function handle(m){
     openBossConvPopup(m.boss||"",m.text||"");
   } else if(m.type==="leaderboard"){
     renderLeaderboard(m.ranking);
-  } else if(m.type==="quests"){
-    renderQuests(m.quests);
   } else if(m.type==="combat_start"){
     openCombatPopup(m.enemigos);
   } else if(m.type==="combat_end"){
@@ -5074,6 +5082,13 @@ function handle(m){
     openAcertijoPopup(m.pregunta,m.opciones,m.indice,m.total);
   } else if(m.type==="acertijo_end"){
     closeAcertijoPopup(m.exito);
+  } else if(m.type==="map"){
+    // Store map data for services (hospital/tienda)
+    window._mapData = m.salas;
+    // Also use it to update services immediately if already in game
+    if(myStats && myStats.sala_id){
+      updateServices(myStats.sala_id);
+    }
   }
 }
 
@@ -5097,6 +5112,85 @@ function appendLog(text,cls){
     const d=document.createElement("div");d.className="gm "+cls;d.textContent=line;log.appendChild(d);
   });
   log.scrollTop=log.scrollHeight;
+}
+
+/* LOCAL-FIRST SYNC SYSTEM */
+let _localData = {};  // Local copy of player data
+let _dirtyFields = new Set();  // Fields that changed locally
+let _syncInterval = null;
+
+// Save data locally instantly (optimistic UI)
+function saveLocal(data){
+  _localData = {..._localData, ...data};
+  // Mark all received fields as dirty
+  Object.keys(data).forEach(k => _dirtyFields.add(k));
+  // Save to localStorage
+  try{
+    localStorage.setItem('playerData', JSON.stringify(_localData));
+  }catch(e){}
+  // Update UI immediately
+  if(data.hp!==undefined || data.hpMax!==undefined || data.mana!==undefined || 
+     data.manaMax!==undefined || data.nivel!==undefined || data.xp!==undefined ||
+     data.monedas!==undefined){
+    updateStats(_localData);
+  }
+}
+
+// Load local data
+function loadLocal(){
+  try{
+    const saved = localStorage.getItem('playerData');
+    if(saved){
+      _localData = JSON.parse(saved);
+      // Apply to UI
+      if(_localData.hp)updateStats(_localData);
+    }
+  }catch(e){}
+}
+
+// Sync with server every 5 seconds
+async function startSync(){
+  if(_syncInterval)return;
+  
+  // Initial load
+  loadLocal();
+  
+  // Sync every 5 seconds
+  _syncInterval = setInterval(async ()=>{
+    if(!ws || ws.readyState!==WebSocket.OPEN || _dirtyFields.size===0)return;
+    
+    // Build diff with only changed fields
+    const diff = {};
+    _dirtyFields.forEach(k => {
+      if(_localData[k]!==undefined)diff[k] = _localData[k];
+    });
+    
+    if(Object.keys(diff).length===0)return;
+    
+    // Send diff to server
+    ws.send(JSON.stringify({type:'sync', data:diff}));
+    
+    // Clear dirty flag (server will confirm)
+    _dirtyFields.clear();
+  }, 5000);
+}
+
+// Listen for server updates (for leaderboard, etc.)
+function setupServerSync(){
+  // Override original handle to add server→local sync
+  const origHandle = handle;
+  handle = function(m){
+    origHandle(m);
+    // Update local data from server broadcasts
+    if(m.type==='status' || m.type==='stats'){
+      // Server has authoritative data, update local
+      _localData = {..._localData, ...m};
+      _dirtyFields.clear();
+      try{
+        localStorage.setItem('playerData', JSON.stringify(_localData));
+      }catch(e){}
+    }
+  };
 }
 
 /* STATS */
@@ -5147,22 +5241,8 @@ function renderBag(inv){
   div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
 }
 
-function renderQuests(qs){
-  const div=document.getElementById("quests-list");
-  if(!qs||!qs.length){div.innerHTML='<span style="color:var(--dim)">Sin quests</span>';return;}
-  div.innerHTML=qs.map(q=>{
-    const pct=q.objetivo>0?Math.min(100,q.progreso*100/q.objetivo):0;
-    return `<div style="margin:2px 0">
-      <span style="color:var(--gold)">${q.nom}</span>
-      <div style="background:var(--bg3);height:3px;border-radius:2px">
-        <div style="width:${pct}%;background:var(--green);height:100%;border-radius:2px"></div>
-      </div>
-      <span style="color:var(--dim);font-size:8px">${q.progreso}/${q.objetivo}</span>
-    </div>`;
-  }).join("");
-}
-
-/* Generate services dynamically from map data */
+// Generate services dynamically from map data
+let SALAS_SVC = {};
 function updateServices(sid) {
   // Get services from map data (sent by server)
   const mapData = window._mapData || {};
@@ -5382,6 +5462,30 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     msg_type = data.get("type", "")
     usuario  = data.get("usuario", "").strip().lower()
     password = data.get("password", "").strip()
+
+    # ── Local-first sync handler (batch updates) ────────────────
+    if msg_type == "sync":
+        # Client sends local diff, process in batch
+        sync_data = data.get("data", {})
+        # Find player
+        player = next((p for p in jugadores_conectados if p.usuario == usuario), None)
+        if player and sync_data:
+            # Apply changes locally (no DB write yet)
+            for key, value in sync_data.items():
+                if key == "xp":
+                    player.xp = value
+                elif key == "nivel":
+                    player.nivel = value
+                elif key == "monedas":
+                    player.monedas = value
+                elif key == "inventario":
+                    player.inventario = value
+            # DB save will happen on disconnect or periodic
+            try:
+                await player.ws.send_json({"type": "sync_ok"})
+            except Exception:
+                pass
+        return ws
 
     # ── Auth ──────────────────────────────────────────────────
     if msg_type == "game_register":
