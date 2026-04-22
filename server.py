@@ -2938,6 +2938,14 @@ async def loop_combate(combate: Combate):
             asyncio.create_task(pedir_accion(p, combate))
             for p in combate.jugadores_vivos()
         ])
+        
+        # Limpiar input_queue de todos los jugadores para evitar que mensajes antiguos interfieran en el siguiente turno
+        for p in combate.jugadores:
+            try:
+                while not p.input_queue.empty():
+                    p.input_queue.get_nowait()
+            except:
+                pass
 
         # Resolución
         combate.estado = EstadoCombate.RESOLVIENDO
@@ -4135,10 +4143,28 @@ async def handle_dashboard_ws(ws, usuario: str):
                 "acertijos": es_acertijos,
                 "segura": not ("bioma" in s or bool(s.get("encuentros")) or es_acertijos),
             }
+        
+        # Enviar map data + ranking al conectar
         try:
+            lb = await get_leaderboard_async()
             await ws.send_json({"type": "map", "salas": map_data, "player_sala": stats["sala_id"]})
+            await ws.send_json({"type": "leaderboard", "ranking": lb})
         except Exception:
             pass
+        
+        # Enviar ranking cada 30 segundos a todos los jugadores
+        async def _periodic_lb():
+            while True:
+                await asyncio.sleep(30)
+                lb = await get_leaderboard_async()
+                for p in jugadores_conectados:
+                    try:
+                        await p.ws.send_json({"type": "leaderboard", "ranking": lb})
+                    except:
+                        pass
+        
+        _t = asyncio.create_task(_periodic_lb())
+        _background_tasks.add(_t)
         await broadcast_players_to_web()
 
         async for msg in ws:
@@ -4631,6 +4657,8 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
         <div class="sr"><span class="sr-l">Ataques</span><span class="sr-v" id="s-atq" style="color:var(--green)">—</span></div>
         <div class="sr"><span class="sr-l">Especial</span><span class="sr-v" id="s-mc" style="color:var(--mana)">—</span></div>
       </div>
+      <div class="sh">📜 Quests</div>
+      <div id="quests-list" style="font-size:9px;color:var(--text)"></div>
     </div>
     <div id="bag-pane">
       <div class="bag-title">🎒 Mochila</div>
@@ -5088,6 +5116,8 @@ function handle(m){
     openBossConvPopup(m.boss||"",m.text||"");
   } else if(m.type==="leaderboard"){
     renderLeaderboard(m.ranking);
+  } else if(m.type==="quests"){
+    renderQuests(m.quests);
   } else if(m.type==="combat_start"){
     openCombatPopup(m.enemigos);
   } else if(m.type==="combat_end"){
@@ -5169,6 +5199,21 @@ function renderBag(inv){
   const items=Object.entries(inv||{}).filter(([k,v])=>v>0);
   if(!items.length){div.innerHTML='<div class="bag-empty">Vacía</div>';return;}
   div.innerHTML=items.map(([k,v])=>`<div class="bag-item">${N[k]||k} x${v}</div>`).join("");
+}
+
+function renderQuests(qs){
+  const div=document.getElementById("quests-list");
+  if(!qs||!qs.length){div.innerHTML='<span style="color:var(--dim)">Sin quests</span>';return;}
+  div.innerHTML=qs.map(q=>{
+    const pct=q.objetivo>0?Math.min(100,q.progreso*100/q.objetivo):0;
+    return `<div style="margin:2px 0">
+      <span style="color:var(--gold)">${q.nom}</span>
+      <div style="background:var(--bg3);height:3px;border-radius:2px">
+        <div style="width:${pct}%;background:var(--green);height:100%;border-radius:2px"></div>
+      </div>
+      <span style="color:var(--dim);font-size:8px">${q.progreso}/${q.objetivo}</span>
+    </div>`;
+  }).join("");
 }
 
 /* Generate services dynamically from map data */
