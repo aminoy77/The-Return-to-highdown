@@ -4193,6 +4193,7 @@ body{background:var(--bg);color:var(--text);font-family:"Courier New",monospace;
      font-family:monospace;font-size:10px;color:var(--dim);background:var(--bg3);}
 .tab.active{background:var(--gold);color:#000;border-color:var(--gold);}
 #reg-p{display:none;}
+#ind-p{display:none;}
 
 /* TOPBAR */
 #topbar{background:var(--bg2);border-bottom:1px solid var(--border);
@@ -5011,7 +5012,8 @@ let ws=null,hist=[],hidx=-1,chatTab="sala",myStats=null,acertijoActivo=false;
 function showTab(t){
   document.getElementById("login-p").style.display=t==="login"?"block":"none";
   document.getElementById("reg-p").style.display=t==="register"?"block":"none";
-  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")));
+  document.getElementById("ind-p").style.display=t==="individual"?"block":"none";
+  document.querySelectorAll(".tab").forEach((el,i)=>el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="register")||(i===2&&t==="individual")));
 }
 showTab("login");
 
