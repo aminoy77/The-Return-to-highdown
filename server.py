@@ -2933,13 +2933,24 @@ async def loop_combate(combate: Combate):
 
         await broadcast_sala(sala_id, "  Esperando acciones de todos...")
 
-        # Todos los jugadores vivos eligen en paralelo
-        await asyncio.gather(*[
-            asyncio.create_task(pedir_accion(p, combate))
-            for p in combate.jugadores_vivos()
-        ])
+        # Pedir acciones - pero primero limpar queue y skip si ya tiene acción guardada
+        tareas = []
+        for p in combate.jugadores_vivos():
+            # Si ya tiene acción guardada del turno anterior, skip
+            if p.id in combate.acciones:
+                continue
+            # Netejar input antic i crear tasca
+            try:
+                while not p.input_queue.empty():
+                    p.input_queue.get_nowait()
+            except:
+                pass
+            tareas.append(asyncio.create_task(pedir_accion(p, combate)))
         
-        # Limpiar input_queue de todos los jugadores para evitar que mensajes antiguos interfieran en el siguiente turno
+        if tareas:
+            await asyncio.gather(*tareas)
+        
+        # Limpiar input_queue después d'escollir
         for p in combate.jugadores:
             try:
                 while not p.input_queue.empty():
