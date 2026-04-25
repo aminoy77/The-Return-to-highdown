@@ -132,12 +132,15 @@ async def _sb_get(usuario):
     try:
         s = _get_sb_session()
         url = f"{SUPABASE_URL}/rest/v1/mud_saves?usuario=eq.{usuario}&select=*"
+        print(f"[SB] GET: {url}")
         async with s.get(url, headers=_sb_headers()) as r:
+            print(f"[SB] GET status: {r.status}")
             if r.status == 200:
                 rows = await r.json()
+                print(f"[SB] GET result: {rows}")
                 return rows[0] if rows else None
-    except:
-        pass
+    except Exception as e:
+        print(f"[SB] GET error: {e}")
     return None
 
 async def _sb_upsert(row):
@@ -145,13 +148,20 @@ async def _sb_upsert(row):
         s = _get_sb_session()
         url = f"{SUPABASE_URL}/rest/v1/mud_saves"
         headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
+        print(f"[SB] UPSERT: {row.get('usuario')}")
         async with s.post(url, headers=headers, json=row) as r:
-            pass
-    except:
-        pass
+            print(f"[SB] UPSERT status: {r.status}")
+            text = await r.text()
+            print(f"[SB] UPSERT response: {text[:200]}")
+    except Exception as e:
+        print(f"[SB] UPSERT error: {e}")
 
 # ==================== ACCOUNT SYSTEM ====================
 async def crear_cuenta(usuario, password, nombre, clase):
+    existing = await verificar_login(usuario, password)
+    if existing:
+        return None
+    
     salt = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
     hashed = _hash_password(password, salt)
     data = {
@@ -504,7 +514,10 @@ async def websocket_handler(request):
                         if clase not in CLASES:
                             clase = "guerrero"
                         
-                        await crear_cuenta(usuario, password, nombre, clase)
+                        result = await crear_cuenta(usuario, password, nombre, clase)
+                        if not result:
+                            await player.send({"type": "login_error", "text": "El usuario ya existe"})
+                            continue
                         player.usuario = usuario
                         player.nombre = nombre
                         player.clase = clase
@@ -786,4 +799,8 @@ app.router.add_get('/ws', websocket_handler)
 
 if __name__ == '__main__':
     print(f"🎮 Game Server starting on port {PORT}")
+    if USAR_SUPABASE:
+        print(f"✅ Using Supabase: {SUPABASE_URL}")
+    else:
+        print(f"💾 Using local saves: {SAVES_DIR}")
     web.run_app(app, host='0.0.0.0', port=PORT)

@@ -200,6 +200,8 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
           <button class="attack-btn" id="btn-atacar" onclick="attack()" style="display:none">⚔️ ATACAR</button>
           <button class="exit-btn secondary" id="btn-hospital" onclick="hospital()" style="display:none">🏥</button>
           <button class="exit-btn secondary" id="btn-tienda" onclick="openShop()" style="display:none">🏪</button>
+          <button class="exit-btn secondary" onclick="sendCmd('mochila')">🎒</button>
+          <button class="exit-btn secondary" onclick="sendCmd('ayuda')">❓</button>
         </div>
         <div id="exits"></div>
         <div id="players-in-room" style="font-size:11px;color:var(--text2);margin-top:8px"></div>
@@ -299,6 +301,7 @@ let GAME_URL = 'https://the-return-to-highdown.onrender.com';  // Set by server
 let currentChat = 'sala';
 let inCombat = false;
 let serverAwake = false;
+let chatCooldown = false;
 
 async function wakeServer(){
   try {
@@ -348,23 +351,36 @@ function register(){
   });
 }
 
+async function sleep(ms){
+  return new Promise(r => setTimeout(r, ms));
+}
+
 async function connectWs(onOpen){
+  document.getElementById('loading').querySelector('h2').textContent = 'Despertando servidor...';
+  
+  // Wake up server first
+  await wakeServer();
+  await sleep(2000);
+  
+  document.getElementById('loading').querySelector('h2').textContent = 'Conectando...';
+  
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = GAME_URL.replace(/^https?:\/\//, '');
   
   ws = new WebSocket(protocol + '//' + host + '/ws');
   
-  // Timeout para despertar el servidor
+  let connected = false;
   const timeout = setTimeout(() => {
-    if(ws.readyState !== WebSocket.OPEN){
+    if(!connected){
       document.getElementById('loading').querySelector('h2').textContent = 'Esperando servidor...';
-      // Reintentar
-      setTimeout(() => connectWs(onOpen), 3000);
+      connectWs(onOpen);
     }
-  }, 5000);
+  }, 8000);
   
   ws.onopen = () => {
     clearTimeout(timeout);
+    connected = true;
+    serverAwake = true;
     if(onOpen) onOpen();
   };
   
@@ -379,26 +395,11 @@ async function connectWs(onOpen){
   
   ws.onclose = () => {
     clearTimeout(timeout);
-    if(serverAwake) return;
-    document.getElementById('loading').querySelector('h2').textContent = 'Reconectando...';
-    setTimeout(() => connectWs(onOpen), 3000);
-  };
-}
-  
-  ws.onopen = () => {
-    if(onOpen) onOpen();
-  };
-  
-  ws.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-    handleMessage(data);
-  };
-  
-  ws.onclose = () => {
-    if(!serverAwake) return;
-    log('Conexion perdida. Reconectando...','error');
-    setTimeout(()=>location.reload(), 2000);
-  };
+    if(serverAwake){
+      log('Conexion perdida. Reconectando...','error');
+      setTimeout(()=>location.reload(), 2000);
+    }
+};
 }
 
 function handleMessage(data){
@@ -526,7 +527,8 @@ function move(dir){
 }
 
 function attack(){
-  ws.send(JSON.stringify({type:'command', cmd:'atacar'}));
+  document.getElementById('combat-overlay').classList.add('active');
+}
 }
 
 function hospital(){
@@ -548,11 +550,14 @@ function setChat(scope){
 }
 
 function sendChat(){
+  if(chatCooldown) return;
   const input = document.getElementById('chat-msg');
   const msg = input.value.trim();
   if(!msg) return;
+  chatCooldown = true;
   ws.send(JSON.stringify({type:'chat', scope:currentChat, message:msg}));
   input.value = '';
+  setTimeout(() => chatCooldown = false, 1000);
 }
 
 function addChatMessage(scope, from, text){
