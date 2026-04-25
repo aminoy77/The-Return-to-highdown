@@ -701,7 +701,7 @@ async def attack(player):
         await player.send({"type": "message", "text": "Estas muerto."})
         return
     
-if player.sala_id in player.salas_limpias:
+    if player.sala_id in player.salas_limpias:
         await player.send({"type": "message", "text": "No hay enemigos aqui."})
         return
     
