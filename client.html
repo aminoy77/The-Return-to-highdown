@@ -302,7 +302,7 @@ let serverAwake = false;
 
 async function wakeServer(){
   try {
-    const resp = await fetch('/wake');
+    const resp = await fetch(GAME_URL + '/wake');
     const data = await resp.json();
     serverAwake = true;
     return true;
@@ -350,7 +350,7 @@ function register(){
 
 async function connectWs(onOpen){
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
+  const host = GAME_URL.replace(/^https?:\/\//, '');
   
   ws = new WebSocket(protocol + '//' + host + '/ws');
   
