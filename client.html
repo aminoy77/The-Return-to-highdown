@@ -266,6 +266,20 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
       <span id="combat-title">⚔️ COMBATE</span>
       <span id="combat-turn">Turno 1</span>
     </div>
+    <div id="combat-player-stats" style="margin-bottom:15px;padding:10px;background:var(--bg);border-radius:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+        <span style="color:var(--hp)">❤️ <span id="combat-hp">0</span>/<span id="combat-hp-max">0</span></span>
+        <span style="color:var(--mana)">💧 <span id="combat-mana">0</span>/<span id="combat-mana-max">0</span></span>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1;height:10px;background:var(--bg3);border-radius:5px;overflow:hidden">
+          <div id="combat-hp-bar" style="width:100%;height:100%;background:var(--hp);transition:width 0.3s"></div>
+        </div>
+        <div style="flex:1;height:10px;background:var(--bg3);border-radius:5px;overflow:hidden">
+          <div id="combat-mana-bar" style="width:100%;height:100%;background:var(--mana);transition:width 0.3s"></div>
+        </div>
+      </div>
+    </div>
     <div id="enemies"></div>
     <div id="combat-actions">
       <button class="combat-btn" onclick="sendAction('1')">⚔️ ATACAR</button>
@@ -435,6 +449,15 @@ function handleMessage(data){
   else if(data.type === 'combat_update'){
     updateEnemies(data.enemigos);
     document.getElementById('combat-turn').textContent = 'Turno ' + data.turno;
+    if(data.player){
+      const p = data.player;
+      document.getElementById('combat-hp').textContent = p.hp;
+      document.getElementById('combat-hp-max').textContent = p.hpMax;
+      document.getElementById('combat-hp-bar').style.width = (p.hp / p.hpMax * 100) + '%';
+      document.getElementById('combat-mana').textContent = p.mana;
+      document.getElementById('combat-mana-max').textContent = p.manaMax;
+      document.getElementById('combat-mana-bar').style.width = (p.mana / p.manaMax * 100) + '%';
+    }
   }
   else if(data.type === 'chat'){
     addChatMessage(data.scope, data.from, data.text);

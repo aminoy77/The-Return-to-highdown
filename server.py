@@ -32,7 +32,7 @@ XP_POR_NIVEL = 150
 MONEDAS_SUBIDA = 20
 SALA_RESPAWN = 6
 TIEMPO_RESPAWN = 5
-COMBAT_TURN_TIME = 5
+COMBAT_TURN_TIME = 1
 
 # ==================== CLASES ====================
 CLASES = {
@@ -357,7 +357,10 @@ async def loop_combate(combate):
         
         for p in combate.jugadores:
             await broadcast_stats(p)
-            await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos_vivos()], "turno": combate.turno})
+            pdata = {}
+            if p.personaje:
+                pdata = {"hp": p.personaje["vidaActual"], "hpMax": p.personaje["vidaMax"], "mana": p.personaje["manaActual"], "manaMax": p.personaje["manaMax"]}
+            await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos_vivos()], "turno": combate.turno, "player": pdata})
         
         for p in combate.jugadores:
             if p.personaje and p.personaje["vidaActual"] <= 0 and not p.muerto:
