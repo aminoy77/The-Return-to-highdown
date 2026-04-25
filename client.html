@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Return to Highdown</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#13131a;--bg3:#1a1a24;--bg4:#222230;
+  --text:#e8e8f0;--text2:#a0a0b0;--accent:#d4af37;--accent2:#c084fc;
+  --danger:#ef4444;--success:#10b981;--info:#3b82f6;
+  --hp:#ef4444;--mana:#3b82f6;
+}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow:hidden}
+::selection{background:var(--accent);color:#000}
+
+/* Fixed Layout - NO SCROLL */
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+/* Header */
+header{height:60px;background:var(--bg2);display:flex;justify-content:space-between;align-items:center;padding:0 20px;border-bottom:2px solid var(--bg4);flex-shrink:0;z-index:10}
+header h1{color:var(--accent);font-size:18px;font-weight:bold}
+#player-info{display:flex;gap:8px;align-items:center}
+.stat{background:var(--bg);padding:6px 12px;border-radius:6px;font-size:12px;min-width:80px;text-align:center}
+.stat.hp{color:var(--hp);border:1px solid var(--hp)}
+.stat.mana{color:var(--mana);border:1px solid var(--mana)}
+.stat.gold{color:var(--accent);border:1px solid var(--accent)}
+
+/* Main Container */
+#main{flex:1;display:flex;overflow:hidden}
+
+/* Room Info */
+#room{height:160px;background:var(--bg2);padding:15px;border-bottom:2px solid var(--bg4);flex-shrink:0;overflow-y:auto}
+#room-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+#room-name{color:var(--accent);font-size:16px;font-weight:bold}
+#room-desc{color:var(--text2);font-size:13px;line-height:1.5;margin:8px 0}
+#room-features{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.feature{background:var(--bg);padding:4px 10px;border-radius:4px;font-size:11px}
+.feature.hospital{border-left:2px solid var(--success);color:var(--success)}
+.feature.enemy{border-left:2px solid var(--danger);color:var(--danger)}
+.feature.store{border-left:2px solid var(--accent);color:var(--accent)}
+#exits{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.exit-btn{background:var(--bg);border:1px solid var(--accent);padding:8px 16px;border-radius:6px;color:var(--text);cursor:pointer;font-size:11px;transition:all 0.2s}
+.exit-btn:hover{background:var(--accent);color:#000}
+#room-actions{display:flex;gap:6px;margin:8px 0}
+.attack-btn{background:var(--danger);padding:10px 20px;border-radius:8px;color:#fff;font-weight:bold;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.7)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+
+/* Console - BIGGEST */
+#console{flex:1;background:var(--bg2);display:flex;flex-direction:column;overflow:hidden}
+#console-entries{flex:1;overflow-y:auto;padding:15px;font-size:14px;line-height:1.7}
+.log-entry{margin:6px 0;padding:8px 12px;background:var(--bg);border-left:3px solid var(--text2);border-radius:4px}
+.log-entry.error{border-color:var(--danger);color:var(--danger)}
+.log-entry.success{border-color:var(--success);color:var(--success)}
+.log-entry.combat{border-color:var(--danger);color:var(--danger);font-weight:bold}
+.log-entry.loot{border-color:var(--accent);color:var(--accent);font-weight:bold}
+.log-entry.chat{border-color:var(--info);color:var(--info)}
+#console-input{display:flex;gap:6px;padding:10px;background:var(--bg3);flex-shrink:0}
+#console-input input{flex:1;padding:10px;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:6px;font-size:13px}
+#console-input button{padding:10px 16px;background:var(--accent);border:none;border-radius:6px;color:#000;cursor:pointer;font-weight:bold}
+#console-input button.secondary{background:var(--bg4);color:var(--text)}
+
+/* Combat Overlay */
+#combat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.9);display:none;align-items:center;justify-content:center;z-index:100}
+#combat-overlay.active{display:flex}
+#combat-box{background:var(--bg2);padding:25px;border-radius:15px;border:2px solid var(--danger);box-shadow:0 0 40px rgba(239,68,68,0.4);max-width:500px;width:90%}
+#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+#combat-title{color:var(--danger);font-size:22px;font-weight:bold}
+#enemies{background:var(--bg3);padding:12px;border-radius:8px;margin-bottom:15px}
+.enemy-row{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg);margin:6px 0;border-radius:6px}
+.enemy-name{color:var(--danger);font-weight:bold}
+.enemy-hp-bar{width:120px;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+.enemy-hp-fill{height:100%;background:linear-gradient(90deg, var(--danger), #dc2626);transition:width 0.3s}
+#combat-actions{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
+.combat-btn{background:var(--bg);border:2px solid var(--danger);padding:15px 8px;border-radius:10px;color:var(--text);cursor:pointer;font-weight:bold;font-size:13px;transition:all 0.2s}
+.combat-btn:hover{background:var(--danger);color:#fff}
+
+/* Sidebar */
+#sidebar{width:240px;background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;border-left:2px solid var(--bg4);flex-shrink:0}
+#sidebar-scroll{flex:1;overflow-y:auto;padding:15px}
+
+/* Stats */
+#stats-panel{margin-bottom:15px}
+#stats-panel h3{color:var(--accent);font-size:13px;margin-bottom:10px;text-transform:uppercase}
+.stats-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bg4);font-size:12px}
+.stat-label{color:var(--text2)}
+.stat-value{font-weight:bold}
+
+/* Chat */
+#chat{margin-bottom:15px}
+#chat h3{color:var(--accent);font-size:13px;margin-bottom:10px;text-transform:uppercase}
+#chat-tabs{display:flex;gap:4px;margin-bottom:8px}
+.chat-tab{background:var(--bg);border:1px solid var(--accent);padding:6px 12px;border-radius:4px;color:var(--text2);cursor:pointer;font-size:11px;flex:1;text-align:center}
+.chat-tab.active{background:var(--accent);color:#000}
+#chat-messages{background:var(--bg);padding:8px;border-radius:6px;max-height:120px;overflow-y:auto;margin-bottom:8px;font-size:11px}
+.chat-msg{margin:4px 0;padding:4px 8px;background:var(--bg3);border-radius:4px}
+.chat-msg .from{color:var(--accent);font-weight:bold}
+#chat-input{display:flex;gap:4px}
+#chat-input input{flex:1;padding:8px;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:4px;font-size:11px}
+#chat-input button{background:var(--accent);border:none;padding:8px 12px;border-radius:4px;color:#000;cursor:pointer;font-weight:bold}
+
+/* Ranking */
+#ranking{margin-bottom:15px}
+#ranking h3{color:var(--accent);font-size:13px;margin-bottom:10px;text-transform:uppercase}
+.ranking-row{display:flex;justify-content:space-between;padding:8px 6px;background:var(--bg);margin:4px 0;border-radius:4px;font-size:11px}
+.ranking-row:nth-child(1){background:var(--accent);color:#000;font-weight:bold}
+.ranking-pos{color:var(--text2);margin-right:6px}
+
+/* Players Online */
+#online-info{margin-bottom:15px;font-size:11px;color:var(--text2);padding:8px;background:var(--bg);border-radius:4px;text-align:center}
+
+/* Login */
+#login-screen{position:fixed;inset:0;background:radial-gradient(circle, var(--bg2) 0%, var(--bg) 100%);display:flex;align-items:center;justify-content:center;z-index:200}
+.login-box{background:var(--bg2);padding:35px;border-radius:15px;border:2px solid var(--accent);box-shadow:0 0 40px rgba(212,175,55,0.2);width:380px;text-align:center}
+.login-box h1{color:var(--accent);margin-bottom:25px;font-size:24px;font-weight:bold}
+.login-box input{width:100%;padding:14px;margin:10px 0;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:8px;font-size:14px}
+.login-box input:focus{outline:none;box-shadow:0 0 15px rgba(212,175,55,0.4)}
+.login-box select{width:100%;padding:14px;margin:10px 0;background:var(--bg);border:1px solid var(--accent);color:var(--text);border-radius:8px;font-size:14px}
+.login-box button{width:100%;padding:14px;margin:10px 0;background:var(--accent);color:#000;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-size:15px;transition:all 0.3s}
+.login-box button:hover{transform:translateY(-2px);box-shadow:0 5px 20px rgba(212,175,55,0.6)}
+.login-box button.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--accent)}
+#login-error{color:var(--danger);font-size:13px;margin-top:10px;display:none}
+
+/* Modals */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:150}
+.modal.active{display:flex}
+.modal-content{background:var(--bg2);padding:25px;border-radius:15px;border:2px solid var(--accent);max-width:500px;width:90%;max-height:80vh;overflow-y:auto}
+.modal-title{color:var(--accent);font-size:20px;margin-bottom:15px;text-align:center}
+.modal-close{width:100%;padding:12px;background:var(--accent);border:none;border-radius:8px;color:#000;cursor:pointer;font-weight:bold;margin-top:15px}
+
+.shop-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
+.shop-item{background:var(--bg);padding:15px;border-radius:8px;text-align:center;cursor:pointer;transition:all 0.2s}
+.shop-item:hover{transform:translateY(-3px);background:var(--bg4)}
+.shop-emoji{font-size:30px}
+.shop-name{font-size:12px;font-weight:bold;margin-top:5px}
+.shop-price{color:var(--accent);font-size:11px;margin-top:5px}
+
+/* Loading */
+#loading{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:300}
+#loading h2{color:var(--accent);font-size:20px}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading"><h2>⏳ Despertando servidor...</h2></div>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
+    <input type="text" id="username" placeholder="Usuario">
+    <input type="password" id="password" placeholder="Contrasena">
+    <input type="text" id="char-name" placeholder="Nombre de personaje">
+    <select id="char-class">
+      <option value="guerrero">⚔️ Guerrero - Alta vida</option>
+      <option value="mago">🔮 Mago - Magia poderosa</option>
+      <option value="arquero">🏹 Arquero - Ataques rapidos</option>
+      <option value="curandero">💚 Curandero - Pode curarse</option>
+      <option value="nigromante">💀 Nigromante - Ataques multiples</option>
+      <option value="hechicero">✨ Hechicero - Magia avanzada</option>
+      <option value="caballero">🛡️ Caballero - Equilibrado</option>
+      <option value="cazador">🎯 Cazador - Alto dano</option>
+      <option value="asesino">🗡️ Asesino - Criticos letales</option>
+      <option value="barbaro">🔥 Barbaro - Dano brutal</option>
+    </select>
+    <button onclick="login()">🎮 JUGAR</button>
+    <button class="secondary" onclick="register()">➕ Crear cuenta</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" style="display:none">
+  <!-- Header -->
+  <header>
+    <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
+    <div id="player-info">
+      <span class="stat" id="stat-level">⭐ Nv1</span>
+      <span class="stat hp" id="stat-hp">❤️ 0/0</span>
+      <span class="stat mana" id="stat-mana">💧 0/0</span>
+      <span class="stat gold" id="stat-gold">💰 0</span>
+    </div>
+  </header>
+  
+  <!-- Main -->
+  <div id="main">
+    <!-- Left Content -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <!-- Room -->
+      <div id="room">
+        <div id="room-header">
+          <span id="room-name">Cargando...</span>
+          <button class="exit-btn" onclick="refreshRoom()">🔄 Ver</button>
+        </div>
+        <div id="room-desc"></div>
+        <div id="room-features"></div>
+        <div id="room-actions">
+          <button class="attack-btn" id="btn-atacar" onclick="attack()" style="display:none">⚔️ ATACAR</button>
+          <button class="exit-btn secondary" id="btn-hospital" onclick="hospital()" style="display:none">🏥</button>
+          <button class="exit-btn secondary" id="btn-tienda" onclick="openShop()" style="display:none">🏪</button>
+        </div>
+        <div id="exits"></div>
+        <div id="players-in-room" style="font-size:11px;color:var(--text2);margin-top:8px"></div>
+      </div>
+      
+      <!-- Console -->
+      <div id="console">
+        <div id="console-entries"></div>
+        <div id="console-input">
+          <input type="text" id="cmd-input" placeholder="Comando o mensaje..." onkeypress="if(event.key==='Enter')sendCmd()">
+          <button onclick="sendCmd()">➤</button>
+          <button class="secondary" onclick="sendCmd('stats')">Stats</button>
+          <button class="secondary" onclick="sendCmd('ranking')">🏆</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div id="sidebar-scroll">
+        <!-- Stats -->
+        <div id="stats-panel">
+          <h3>📊 ESTADISTICAS</h3>
+          <div class="stats-row"><span class="stat-label">Nombre:</span><span class="stat-value" id="sp-nombre">-</span></div>
+          <div class="stats-row"><span class="stat-label">Clase:</span><span class="stat-value" id="sp-clase">-</span></div>
+          <div class="stats-row"><span class="stat-label">Nivel:</span><span class="stat-value" id="sp-nivel">1</span></div>
+          <div class="stats-row"><span class="stat-label">XP:</span><span class="stat-value" id="sp-xp">0/150</span></div>
+          <div class="stats-row"><span class="stat-label">Danio:</span><span class="stat-value" id="sp-dano">0</span></div>
+        </div>
+        
+        <!-- Chat -->
+        <div id="chat">
+          <h3>💬 CHAT</h3>
+          <div id="chat-tabs">
+            <button class="chat-tab active" onclick="setChat('sala')">Sala</button>
+            <button class="chat-tab" onclick="setChat('global')">Global</button>
+          </div>
+          <div id="chat-messages"></div>
+          <div id="chat-input">
+            <input type="text" id="chat-msg" placeholder="Msg..." onkeypress="if(event.key==='Enter')sendChat()">
+            <button onclick="sendChat()">➤</button>
+          </div>
+        </div>
+        
+        <!-- Ranking -->
+        <div id="ranking">
+          <h3>🏆 RANKING</h3>
+          <div id="ranking-list"></div>
+        </div>
+        
+        <!-- Online -->
+        <div id="online-info">🌐 <span id="online-count">0</span> jugadores online</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Combat Overlay -->
+<div id="combat-overlay">
+  <div id="combat-box">
+    <div id="combat-header">
+      <span id="combat-title">⚔️ COMBATE</span>
+      <span id="combat-turn">Turno 1</span>
+    </div>
+    <div id="enemies"></div>
+    <div id="combat-actions">
+      <button class="combat-btn" onclick="sendAction('1')">⚔️ ATACAR</button>
+      <button class="combat-btn" onclick="sendAction('2')">✨ ESPECIAL</button>
+      <button class="combat-btn" onclick="sendAction('3')">💤 PASAR</button>
+      <button class="combat-btn" onclick="sendAction('4')">🎒 OBJETO</button>
+    </div>
+  </div>
+</div>
+
+<!-- Shop Modal -->
+<div id="shop-modal" class="modal">
+  <div class="modal-content">
+    <h2 class="modal-title">🏪 TIENDA</h2>
+    <p id="shop-money" style="text-align:center;color:var(--accent);margin-bottom:10px">💰 0 monedas</p>
+    <div class="shop-grid" id="shop-grid"></div>
+    <button class="modal-close" onclick="closeModal('shop-modal')">cerrar</button>
+  </div>
+</div>
+
+<!-- Lore Modal -->
+<div id="lore-modal" class="modal">
+  <div class="modal-content">
+    <h2 class="modal-title" id="lore-title"></h2>
+    <p id="lore-text" style="line-height:1.8;white-space:pre-wrap;color:var(--text2)"></p>
+    <button class="modal-close" onclick="closeModal('lore-modal')">CONTINUAR</button>
+  </div>
+</div>
+
+<script>
+let ws = null;
+let GAME_URL = '';  // Set by server
+let currentChat = 'sala';
+let inCombat = false;
+let serverAwake = false;
+
+async function wakeServer(){
+  try {
+    const resp = await fetch('/wake');
+    const data = await resp.json();
+    serverAwake = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function log(msg, type='info'){
+  const el = document.getElementById('console-entries');
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + type;
+  div.textContent = msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function login(){
+  const usuario = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const nombre = document.getElementById('char-name').value.trim() || usuario;
+  const clase = document.getElementById('char-class').value;
+  
+  if(!usuario){showLoginError('Introduce tu usuario');return;}
+  if(!password){showLoginError('Introduce tu contrasena');return;}
+  
+  connectWs(() => {
+    ws.send(JSON.stringify({type:'login', usuario, password, nombre, clase}));
+  });
+}
+
+function register(){
+  const usuario = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const nombre = document.getElementById('char-name').value.trim() || usuario;
+  const clase = document.getElementById('char-class').value;
+  
+  if(!usuario){showLoginError('Introduce tu usuario');return;}
+  if(!password || password.length < 4){showLoginError('Minimo 4 caracteres');return;}
+  
+  connectWs(() => {
+    ws.send(JSON.stringify({type:'register', usuario, password, nombre, clase}));
+  });
+}
+
+async function connectWs(onOpen){
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  
+  try {
+    ws = new WebSocket(protocol + '//' + host + '/ws');
+  }
+  
+  ws.onopen = () => {
+    if(onOpen) onOpen();
+  };
+  
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handleMessage(data);
+  };
+  
+  ws.onclose = () => {
+    if(!serverAwake) return;
+    log('Conexion perdida. Reconectando...','error');
+    setTimeout(()=>location.reload(), 2000);
+  };
+}
+
+function handleMessage(data){
+  if(data.type === 'login_ok' || data.type === 'register_ok'){
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('loading').style.display = 'none';
+    log('Bienvenido a The Return to Highdown!','success');
+  }
+  else if(data.type === 'login_error'){
+    showLoginError(data.text || 'Error de login');
+  }
+  else if(data.type === 'message'){
+    log(data.text, data.text.includes('!') ? 'success' : 'info');
+  }
+  else if(data.type === 'status'){
+    updateStats(data);
+  }
+  else if(data.type === 'sala'){
+    updateRoom(data);
+  }
+  else if(data.type === 'combat_start'){
+    showCombat(data.enemigos);
+  }
+  else if(data.type === 'combat_end'){
+    hideCombat();
+    if(data.victory){
+      log('🎉 VICTORIA! +' + data.xp + ' XP','loot');
+    }else{
+      log('💀 DERROTA...','error');
+    }
+  }
+  else if(data.type === 'combat_update'){
+    updateEnemies(data.enemigos);
+    document.getElementById('combat-turn').textContent = 'Turno ' + data.turno;
+  }
+  else if(data.type === 'chat'){
+    addChatMessage(data.scope, data.from, data.text);
+  }
+  else if(data.type === 'ranking'){
+    updateRanking(data.ranking);
+    document.getElementById('online-count').textContent = data.ranking.length;
+  }
+  else if(data.type === 'shop'){
+    showShop(data.items, data.monedas);
+  }
+  else if(data.type === 'level_up'){
+    log('🎉 SUBISTE AL NIVEL ' + data.nivel + '!','success');
+  }
+  else if(data.type === 'respawn'){
+    refreshRoom();
+  }
+}
+
+function updateStats(data){
+  document.getElementById('stat-level').textContent = '⭐ Nv' + (data.nivel || 1);
+  document.getElementById('stat-hp').textContent = '❤️ ' + (data.hp || 0) + '/' + (data.hpMax || 1);
+  document.getElementById('stat-gold').textContent = '💰 ' + (data.monedas || 0);
+  document.getElementById('stat-mana').textContent = '💧 ' + (data.mana || 0) + '/' + (data.manaMax || 1);
+  document.getElementById('sp-nombre').textContent = data.nombre || '-';
+  document.getElementById('sp-clase').textContent = data.clase || '-';
+  document.getElementById('sp-nivel').textContent = data.nivel || 1;
+  document.getElementById('sp-xp').textContent = (data.xp || 0) + '/' + (data.xpMax || 150);
+  document.getElementById('sp-dano').textContent = data.danio || 0;
+}
+
+function updateRoom(data){
+  document.getElementById('room-name').textContent = data.nombre;
+  document.getElementById('room-desc').textContent = data.descripcion;
+  
+  let exits = '';
+  for(let dir in data.conexiones){
+    exits += `<button class="exit-btn" onclick="move('${dir}')">${dir.toUpperCase()}</button>`;
+  }
+  document.getElementById('exits').innerHTML = exits;
+  
+  let features = '';
+  if(data.hospital) features += '<span class="feature hospital">🏥 Hospital</span>';
+  if(data.tienda) features += '<span class="feature store">🏪 Tienda</span>';
+  if(data.enemigos) features += '<span class="feature enemy">⚠️ ENEMIGOS</span>';
+  document.getElementById('room-features').innerHTML = features;
+  
+  document.getElementById('btn-atacar').style.display = data.enemigos ? 'inline-block' : 'none';
+  document.getElementById('btn-hospital').style.display = data.hospital ? 'inline-block' : 'none';
+  document.getElementById('btn-tienda').style.display = data.tienda ? 'inline-block' : 'none';
+  
+  if(data.others) document.getElementById('players-in-room').innerHTML = data.others;
+  else document.getElementById('players-in-room').innerHTML = '';
+}
+
+function showCombat(enemies){
+  inCombat = true;
+  document.getElementById('combat-overlay').classList.add('active');
+  updateEnemies(enemies);
+  log('⚔️ COMBATE!','combat');
+}
+
+function hideCombat(){
+  inCombat = false;
+  document.getElementById('combat-overlay').classList.remove('active');
+}
+
+function updateEnemies(enemies){
+  const el = document.getElementById('enemies');
+  let html = '';
+  enemies.forEach(e => {
+    const pct = (e.hp / e.hpMax) * 100;
+    html += `<div class="enemy-row">
+      <span class="enemy-name">${e.nombre}</span>
+      <div>
+        <span style="font-size:11px;color:var(--text2)">${e.hp}/${e.hpMax}</span>
+        <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${pct}%"></div></div>
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function sendAction(action){
+  ws.send(JSON.stringify({type:'action', action}));
+}
+
+function move(dir){
+  ws.send(JSON.stringify({type:'command', cmd:dir}));
+}
+
+function attack(){
+  ws.send(JSON.stringify({type:'command', cmd:'atacar'}));
+}
+
+function hospital(){
+  ws.send(JSON.stringify({type:'command', cmd:'hospital'}));
+}
+
+function openShop(){
+  ws.send(JSON.stringify({type:'command', cmd:'tienda'}));
+}
+
+function refreshRoom(){
+  ws.send(JSON.stringify({type:'command', cmd:'mirar'}));
+}
+
+function setChat(scope){
+  currentChat = scope;
+  document.querySelectorAll('.chat-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function sendChat(){
+  const input = document.getElementById('chat-msg');
+  const msg = input.value.trim();
+  if(!msg) return;
+  ws.send(JSON.stringify({type:'chat', scope:currentChat, message:msg}));
+  input.value = '';
+}
+
+function addChatMessage(scope, from, text){
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + scope;
+  div.innerHTML = `<span class="from">[${from}]</span> ${text}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateRanking(ranking){
+  const el = document.getElementById('ranking-list');
+  let html = '';
+  ranking.forEach((r,i) => {
+    html += `<div class="ranking-row">
+      <span><span class="ranking-pos">${i+1}.</span>${r[0]}</span>
+      <span>Nv.${r[1]}</span>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function showShop(items, money){
+  document.getElementById('shop-money').textContent = '💰 ' + money + ' monedas';
+  const grid = document.getElementById('shop-grid');
+  grid.innerHTML = '';
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'shop-item';
+    div.innerHTML = `
+      <div class="shop-emoji">${item.emoji}</div>
+      <div class="shop-name">${item.nombre}</div>
+      <div class="shop-price">${item.precio}💰</div>
+    `;
+    div.onclick = () => buyItem(item.id);
+    grid.appendChild(div);
+  });
+  openModal('shop-modal');
+}
+
+function buyItem(id){
+  ws.send(JSON.stringify({type:'command', cmd:'comprar ' + id}));
+}
+
+function closeModal(id){
+  document.getElementById(id).classList.remove('active');
+}
+
+function sendCmd(cmd){
+  if(!cmd){
+    const input = document.getElementById('cmd-input');
+    cmd = input.value.trim();
+    if(!cmd) return;
+    input.value = '';
+  }
+  ws.send(JSON.stringify({type:'command', cmd}));
+}
+
+function showLoginError(msg){
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(()=>el.style.display = 'none', 3000);
+}
+
+// Init
+async function init(){
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  
+  // Try to wake server
+  const awake = await wakeServer();
+  if(awake){
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+  } else {
+    // Server might be sleeping, try WS anyway
+    document.getElementById('loading').querySelector('h2').textContent = 'Conectando...';
+    connectWs(() => {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'flex';
+    });
+  }
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if(inCombat){
+    if(e.key === '1') sendAction('1');
+    if(e.key === '2') sendAction('2');
+    if(e.key === '3') sendAction('3');
+    if(e.key === '4') sendAction('4');
+  }
+  if(e.key === 'n') move('norte');
+  if(e.key === 's') move('sur');
+  if(e.key === 'e') move('este');
+  if(e.key === 'o') move('oeste');
+});
+
+init();
+</script>
+</body>
+</html>
