@@ -352,9 +352,38 @@ async function connectWs(onOpen){
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
   
-  try {
-    ws = new WebSocket(protocol + '//' + host + '/ws');
-  }
+  ws = new WebSocket(protocol + '//' + host + '/ws');
+  
+  // Timeout para despertar el servidor
+  const timeout = setTimeout(() => {
+    if(ws.readyState !== WebSocket.OPEN){
+      document.getElementById('loading').querySelector('h2').textContent = 'Esperando servidor...';
+      // Reintentar
+      setTimeout(() => connectWs(onOpen), 3000);
+    }
+  }, 5000);
+  
+  ws.onopen = () => {
+    clearTimeout(timeout);
+    if(onOpen) onOpen();
+  };
+  
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handleMessage(data);
+  };
+  
+  ws.onerror = () => {
+    clearTimeout(timeout);
+  };
+  
+  ws.onclose = () => {
+    clearTimeout(timeout);
+    if(serverAwake) return;
+    document.getElementById('loading').querySelector('h2').textContent = 'Reconectando...';
+    setTimeout(() => connectWs(onOpen), 3000);
+  };
+}
   
   ws.onopen = () => {
     if(onOpen) onOpen();
@@ -592,23 +621,13 @@ function showLoginError(msg){
 
 // Init
 async function init(){
-  document.getElementById('loading').style.display = 'flex';
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'none';
+  document.getElementById('loading').querySelector('h2').textContent = 'Conectando...';
   
-  // Try to wake server
-  const awake = await wakeServer();
-  if(awake){
+  // Always try to connect via WebSocket
+  connectWs(() => {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
-  } else {
-    // Server might be sleeping, try WS anyway
-    document.getElementById('loading').querySelector('h2').textContent = 'Conectando...';
-    connectWs(() => {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('login-screen').style.display = 'flex';
-    });
-  }
+  });
 }
 
 // Keyboard shortcuts
