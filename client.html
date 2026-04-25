@@ -529,7 +529,6 @@ function move(dir){
 function attack(){
   document.getElementById('combat-overlay').classList.add('active');
 }
-}
 
 function hospital(){
   ws.send(JSON.stringify({type:'command', cmd:'hospital'}));
