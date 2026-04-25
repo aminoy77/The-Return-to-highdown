@@ -132,15 +132,12 @@ async def _sb_get(usuario):
     try:
         s = _get_sb_session()
         url = f"{SUPABASE_URL}/rest/v1/mud_saves?usuario=eq.{usuario}&select=*"
-        print(f"[SB] GET: {url}")
         async with s.get(url, headers=_sb_headers()) as r:
-            print(f"[SB] GET status: {r.status}")
             if r.status == 200:
                 rows = await r.json()
-                print(f"[SB] GET result: {rows}")
                 return rows[0] if rows else None
-    except Exception as e:
-        print(f"[SB] GET error: {e}")
+    except:
+        pass
     return None
 
 async def _sb_upsert(row):
@@ -148,13 +145,10 @@ async def _sb_upsert(row):
         s = _get_sb_session()
         url = f"{SUPABASE_URL}/rest/v1/mud_saves"
         headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
-        print(f"[SB] UPSERT: {row.get('usuario')}")
         async with s.post(url, headers=headers, json=row) as r:
-            print(f"[SB] UPSERT status: {r.status}")
-            text = await r.text()
-            print(f"[SB] UPSERT response: {text[:200]}")
-    except Exception as e:
-        print(f"[SB] UPSERT error: {e}")
+            pass
+    except:
+        pass
 
 # ==================== ACCOUNT SYSTEM ====================
 async def crear_cuenta(usuario, password, nombre, clase):
