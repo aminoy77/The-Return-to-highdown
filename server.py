@@ -360,7 +360,11 @@ async def loop_combate(combate):
             pdata = {}
             if p.personaje:
                 pdata = {"hp": p.personaje["vidaActual"], "hpMax": p.personaje["vidaMax"], "mana": p.personaje["manaActual"], "manaMax": p.personaje["manaMax"]}
-            await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos_vivos()], "turno": combate.turno, "player": pdata})
+            otros = []
+            for o in combate.jugadores:
+                if o != p and o.personaje:
+                    otros.append({"nombre": o.nombre, "hp": o.personaje["vidaActual"], "hpMax": o.personaje["vidaMax"]})
+            await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos_vivos()], "turno": combate.turno, "player": pdata, "otros": otros})
         
         for p in combate.jugadores:
             if p.personaje and p.personaje["vidaActual"] <= 0 and not p.muerto:
@@ -697,7 +701,7 @@ async def attack(player):
         await player.send({"type": "message", "text": "Estas muerto."})
         return
     
-    if player.sala_id in player.salas_limpias:
+if player.sala_id in player.salas_limpias:
         await player.send({"type": "message", "text": "No hay enemigos aqui."})
         return
     
@@ -711,12 +715,17 @@ async def attack(player):
         if player not in c.jugadores:
             c.jugadores.append(player)
             player.combate = c
+            await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in c.enemigos], "joined": True})
     else:
         combate = Combate(player.sala_id, [player])
         combate.cargar_enemigos()
         player.combate = combate
         combates_activos[player.sala_id] = combate
         asyncio.create_task(loop_combate(combate))
+        
+        for p in jugadores_conectados:
+            if p.sala_id == player.sala_id and p != player and p.personaje and p.personaje["vidaActual"] > 0:
+                await p.send({"type": "combat_join_request", "from": player.nombre})
     
     await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos]})
     await broadcast_sala(player.sala_id, f"⚔️ COMBATE! {player.nombre} ataca!")

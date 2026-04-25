@@ -280,6 +280,7 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
         </div>
       </div>
     </div>
+    <div id="combat-otros" style="margin-bottom:15px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px"></div>
     <div id="enemies"></div>
     <div id="combat-actions">
       <button class="combat-btn" onclick="sendAction('1')">⚔️ ATACAR</button>
@@ -306,6 +307,18 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
     <h2 class="modal-title" id="lore-title"></h2>
     <p id="lore-text" style="line-height:1.8;white-space:pre-wrap;color:var(--text2)"></p>
     <button class="modal-close" onclick="closeModal('lore-modal')">CONTINUAR</button>
+  </div>
+</div>
+
+<!-- Combat Join Modal -->
+<div id="combat-join-modal" class="modal">
+  <div class="modal-content" style="text-align:center">
+    <h2 class="modal-title" style="color:var(--danger)">⚔️ COMBATE MULTIJUGADOR</h2>
+    <p id="combat-join-text" style="margin:20px 0;color:var(--text)">Otro jugador necesita ayuda!</p>
+    <div style="display:flex;gap:10px">
+      <button class="modal-close" style="flex:1;background:var(--danger)" onclick="joinCombat()">UNIRSE</button>
+      <button class="modal-close" style="flex:1" onclick="closeModal('combat-join-modal')">ESPERAR</button>
+    </div>
   </div>
 </div>
 
@@ -437,6 +450,13 @@ function handleMessage(data){
   }
   else if(data.type === 'combat_start'){
     showCombat(data.enemigos);
+    if(data.joined){
+      log('Te has unido al combate!','combat');
+    }
+  }
+  else if(data.type === 'combat_join_request'){
+    document.getElementById('combat-join-text').textContent = data.from + ' necesita ayuda en combate!';
+    openModal('combat-join-modal');
   }
   else if(data.type === 'combat_end'){
     hideCombat();
@@ -457,6 +477,17 @@ function handleMessage(data){
       document.getElementById('combat-mana').textContent = p.mana;
       document.getElementById('combat-mana-max').textContent = p.manaMax;
       document.getElementById('combat-mana-bar').style.width = (p.mana / p.manaMax * 100) + '%';
+    }
+    if(data.otros && data.otros.length > 0){
+      let html = '<div style="color:var(--accent);margin-bottom:5px">ALIADOS:</div>';
+      data.otros.forEach(o => {
+        const pct = (o.hp / o.hpMax * 100);
+        html += '<div style="display:flex;align-items:center;gap:5px;margin:3px 0"><span style="color:var(--success)">' + o.nombre + '</span><div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:' + pct + '%;height:100%;background:var(--success)"></div></div><span style="font-size:10px;color:var(--text2)">' + o.hp + '</span></div>';
+      });
+      document.getElementById('combat-otros').innerHTML = html;
+      document.getElementById('combat-otros').style.display = 'block';
+    }else{
+      document.getElementById('combat-otros').style.display = 'none';
     }
   }
   else if(data.type === 'chat'){
@@ -551,6 +582,11 @@ function move(dir){
 
 function attack(){
   document.getElementById('combat-overlay').classList.add('active');
+}
+
+function joinCombat(){
+  closeModal('combat-join-modal');
+  ws.send(JSON.stringify({type:'command', cmd:'atacar'}));
 }
 
 function hospital(){
