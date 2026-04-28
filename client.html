@@ -150,23 +150,36 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 <div id="login-screen">
   <div class="login-box">
     <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
-    <input type="text" id="username" placeholder="Usuario">
-    <input type="password" id="password" placeholder="Contrasena">
-    <input type="text" id="char-name" placeholder="Nombre de personaje">
-    <select id="char-class">
-      <option value="guerrero">⚔️ Guerrero - Alta vida</option>
-      <option value="mago">🔮 Mago - Magia poderosa</option>
-      <option value="arquero">🏹 Arquero - Ataques rapidos</option>
-      <option value="curandero">💚 Curandero - Pode curarse</option>
-      <option value="nigromante">💀 Nigromante - Ataques multiples</option>
-      <option value="hechicero">✨ Hechicero - Magia avanzada</option>
-      <option value="caballero">🛡️ Caballero - Equilibrado</option>
-      <option value="cazador">🎯 Cazador - Alto dano</option>
-      <option value="asesino">🗡️ Asesino - Criticos letales</option>
-      <option value="barbaro">🔥 Barbaro - Dano brutal</option>
-    </select>
-    <button onclick="login()">🎮 JUGAR</button>
-    <button class="secondary" onclick="register()">➕ Crear cuenta</button>
+    
+    <!-- Login Section -->
+    <div id="login-form">
+      <input type="text" id="username" placeholder="Usuario">
+      <input type="password" id="password" placeholder="Contrasena">
+      <button onclick="login()">🎮 INICIAR SESION</button>
+      <button class="secondary" onclick="showRegister()">➕ CREAR CUENTA</button>
+    </div>
+    
+    <!-- Register Section (hidden by default) -->
+    <div id="register-form" style="display:none">
+      <input type="text" id="reg-username" placeholder="Usuario">
+      <input type="password" id="reg-password" placeholder="Contrasena">
+      <input type="text" id="char-name" placeholder="Nombre de personaje">
+      <select id="char-class">
+        <option value="guerrero">⚔️ Guerrero - Alta vida</option>
+        <option value="mago">🔮 Mago - Magia poderosa</option>
+        <option value="arquero">🏹 Arquero - Ataques rapidos</option>
+        <option value="curandero">💚 Curandero - Pode curarse</option>
+        <option value="nigromante">💀 Nigromante - Ataques multiples</option>
+        <option value="hechicero">✨ Hechicero - Magia avanzada</option>
+        <option value="caballero">🛡️ Caballero - Equilibrado</option>
+        <option value="cazador">🎯 Cazador - Alto dano</option>
+        <option value="asesino">🗡️ Asesino - Criticos letales</option>
+        <option value="barbaro">🔥 Barbaro - Dano brutal</option>
+      </select>
+      <button onclick="doRegister()">➕ CREAR CUENTA</button>
+      <button class="secondary" onclick="showLogin()">YA Tengo cuenta</button>
+    </div>
+    
     <div id="login-error"></div>
   </div>
 </div>
@@ -350,28 +363,37 @@ function log(msg, type='info'){
   el.scrollTop = el.scrollHeight;
 }
 
+function showLogin(){
+  document.getElementById('login-form').style.display = 'block';
+  document.getElementById('register-form').style.display = 'none';
+}
+
+function showRegister(){
+  document.getElementById('login-form').style.display = 'none';
+  document.getElementById('register-form').style.display = 'block';
+}
+
 function login(){
   const usuario = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value;
-  const nombre = document.getElementById('char-name').value.trim() || usuario;
-  const clase = document.getElementById('char-class').value;
   
   if(!usuario){showLoginError('Introduce tu usuario');return;}
   if(!password){showLoginError('Introduce tu contrasena');return;}
   
   connectWs(() => {
-    ws.send(JSON.stringify({type:'login', usuario, password, nombre, clase}));
+    ws.send(JSON.stringify({type:'login', usuario, password}));
   });
 }
 
-function register(){
-  const usuario = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value;
+function doRegister(){
+  const usuario = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
   const nombre = document.getElementById('char-name').value.trim() || usuario;
   const clase = document.getElementById('char-class').value;
   
   if(!usuario){showLoginError('Introduce tu usuario');return;}
   if(!password || password.length < 4){showLoginError('Minimo 4 caracteres');return;}
+  if(!nombre){showLoginError('Introduce nombre de personaje');return;}
   
   connectWs(() => {
     ws.send(JSON.stringify({type:'register', usuario, password, nombre, clase}));
@@ -450,7 +472,6 @@ function handleMessage(data){
   }
   else if(data.type === 'combat_start'){
     showCombat(data.enemigos);
-    console.log('combat_start received:', data);
     if(data.joined){
       log('Te has unido al combate!','combat');
     }
@@ -460,11 +481,12 @@ function handleMessage(data){
     openModal('combat-join-modal');
   }
   else if(data.type === 'combat_end'){
-    hideCombat();
     if(data.victory){
-      log('🎉 VICTORIA! +' + data.xp + ' XP','loot');
+      log('🎉 VICTORIA! +' + data.xp + ' XP' + (data.oro ? ', +' + data.oro + ' monedas' : ''),'loot');
+      setTimeout(() => hideCombat(), 2000);
     }else{
       log('💀 DERROTA...','error');
+      setTimeout(() => hideCombat(), 2000);
     }
   }
   else if(data.type === 'combat_update'){

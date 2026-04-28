@@ -62,10 +62,10 @@ ENEMIGOS = {
     "gigante": {"vidaMax": 110, "danioBase": 45, "ataquesTurno": 1, "tier": "Especial"},
     "vampiro": {"vidaMax": 125, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Superior"},
     "elfoOscuro": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
-    "demonioSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
+    "demonedasnioSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
     "leviatan": {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
     "reyEsqueleto": {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
-    "reyDemonio": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
+    "reyDemonedasnio": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "kraken": {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "alpha": {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1, "tier": "Boss"},
 }
@@ -73,15 +73,15 @@ ENEMIGOS = {
 XP_POR_TIER = {"Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250}
 
 CATALOGO = {
-    "pocion_vida": {"nombre": "Pocion de Vida", "emoji": "🧪", "precio": 30},
-    "pocion_danio": {"nombre": "Pocion de Danio", "emoji": "⚗️", "precio": 40},
-    "gema_teleporte": {"nombre": "Gema de Teletransporte", "emoji": "💎", "precio": 50},
+    "pocion_vida": {"nombre": "Pocion de Vida", "emonedasji": "🧪", "precio": 30},
+    "pocion_danio": {"nombre": "Pocion de Danio", "emonedasji": "⚗️", "precio": 40},
+    "gema_teleporte": {"nombre": "Gema de Teletransporte", "emonedasji": "💎", "precio": 50},
 }
 
 BIOMAS = {
-    "desierto": {"emoji": "🏜", "enemigos": ["bandido", "duende", "esqueleto", "zombie", "lobo"]},
-    "mar": {"emoji": "🌊", "enemigos": ["slime", "troll", "vampiro"]},
-    "nieve": {"emoji": "❄️", "enemigos": ["gigante", "elfoOscuro", "demonioSuperior"]},
+    "desierto": {"emonedasji": "🏜", "enemigos": ["bandido", "duende", "esqueleto", "zombie", "lobo"]},
+    "mar": {"emonedasji": "🌊", "enemigos": ["slime", "troll", "vampiro"]},
+    "nieve": {"emonedasji": "❄️", "enemigos": ["gigante", "elfoOscuro", "demonedasnioSuperior"]},
 }
 
 # ==================== SALAS ====================
@@ -92,7 +92,7 @@ SALAS = {
     6: {"nombre": "Oasis tranquilo", "descripcion": "Un pequeno oasis.", "conexiones": {"sur": 10, "oeste": 7, "norte": 1}, "hospital": True, "tienda": True},
     13: {"nombre": "Templo Olvidado", "descripcion": "Un templo en el desierto.", "conexiones": {"sur": 12, "norte": 14}, "encuentros": [("reyEsqueleto", 1)], "tienda": True},
     16: {"nombre": "Vestigios Enterrados", "descripcion": "Ruinas antiguas.", "conexiones": {"norte": 17, "sur": 15}, "bioma": "desierto", "cantidad": 1},
-    32: {"nombre": "Falla de los Antiguos", "descripcion": "Grieta con reliquias.", "conexiones": {"sur": 31}, "bioma": "desierto", "cantidad": 2, "hospital": True, "encuentros": [("reyDemonio", 1)]},
+    32: {"nombre": "Falla de los Antiguos", "descripcion": "Grieta con reliquias.", "conexiones": {"sur": 31}, "bioma": "desierto", "cantidad": 2, "hospital": True, "encuentros": [("reyDemonedasnio", 1)]},
     72: {"nombre": "Cumbre del Kraken", "descripcion": "Una sombra colosal.", "conexiones": {"este": 73}, "bioma": "mar", "cantidad": 1, "encuentros": [("kraken", 1)]},
     73: {"nombre": "Ventisca Eterna", "descripcion": "El viento ruge.", "conexiones": {"este": 74}, "bioma": "nieve", "cantidad": 1},
     148: {"nombre": "Trono del Invierno", "descripcion": "Alpha te espera.", "conexiones": {"sur": 146}, "encuentros": [("alpha", 1)]},
@@ -167,7 +167,7 @@ async def crear_cuenta(usuario, password, nombre, clase):
             "clase": clase,
             "nivel": 1,
             "xp": 0,
-            "monedas": 50,
+            "monedasnedas": 50,
             "sala_id": 1,
             "salas_limpias": [],
         }
@@ -188,7 +188,7 @@ async def verificar_login(usuario, password):
         hashed = row.get("password_hash", "")
         salt = row.get("salt", "")
         if _hash_password(password, salt) == hashed:
-            return {"nombre": data.get("nombre", usuario), "clase": data.get("clase", "guerrero"), "nivel": data.get("nivel", 1), "xp": data.get("xp", 0), "monedas": data.get("monedas", 0), "sala_id": data.get("sala_id", 1), "salas_limpias": data.get("salas_limpias", [])}
+            return {"nombre": data.get("nombre", usuario), "clase": data.get("clase", "guerrero"), "nivel": data.get("nivel", 1), "xp": data.get("xp", 0), "monedasnedas": data.get("monedasnedas", 0), "sala_id": data.get("sala_id", 1), "salas_limpias": data.get("salas_limpias", [])}
         return None
     else:
         try:
@@ -238,13 +238,13 @@ class Player:
         self.combate = None
         self.nivel = 1
         self.xp = 0
-        self.monedas = 0
+        self.monedasnedas = 0
         self.muerto = False
         self.buff_danio = False
         self.inventario = {}
         self.grupo = None
         self.salas_limpias = set()
-        self.lore_mostrado = False
+        self.lore_monedasstrado = False
         self.kills = 0
     
     async def send(self, data):
@@ -289,7 +289,7 @@ async def broadcast_stats(player):
             "hpMax": player.personaje.get("vidaMax", 1),
             "mana": player.personaje.get("manaActual", 0),
             "manaMax": player.personaje.get("manaMax", 1),
-            "monedas": player.monedas,
+            "monedasnedas": player.monedasnedas,
             "danio": player.personaje.get("danioBase", 0),
             "sala_id": player.sala_id,
         })
@@ -378,10 +378,16 @@ async def loop_combate(combate):
     
     if not combate.enemigos_vivos():
         xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
-        await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP")
+        oro = xp // 2
+        await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP, +{oro} monedasnedas")
         for p in combate.jugadores_vivos():
             if p.personaje and p.personaje["vidaActual"] > 0:
                 p.xp += xp
+                p.misiones = getattr(p, 'misiones', {})
+                for e in combate.enemigos:
+                    tipo = e.get("tipo", "")
+                    if tipo:
+                        p.misiones[tipo] = p.misiones.get(tipo, 0) + 1
                 p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
                 p.salas_limpias.add(sala_id)
                 p.kills += len(combate.enemigos)
@@ -389,9 +395,15 @@ async def loop_combate(combate):
                     p.xp -= xp_para_subir(p.nivel)
                     p.nivel += 1
                     await p.send({"type": "level_up", "nivel": p.nivel})
-                await p.send({"type": "combat_end", "victory": True, "xp": xp})
+                await p.send({"type": "combat_end", "victory": True, "xp": xp, "oro": oro})
                 await broadcast_stats(p)
-                await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": p.personaje.get("nombreClase", "guerrero"), "nivel": p.nivel, "xp": p.xp, "monedas": p.monedas, "sala_id": p.sala_id, "salas_limpias": list(p.salas_limpias)})
+                await guardar_cuenta(p.usuario, {
+                    "nombre": p.nombre,
+                    "clase": p.personaje.get("nombreClase", "guerrero"),
+                    "nivel": p.nivel,
+                    "xp": p.xp,
+                    "monedasnedas": p.monedas
+                })
         await broadcast_ranking()
     else:
         await broadcast_sala(sala_id, "\n💀 DERROTA. Intentalo de nuevo.")
@@ -462,7 +474,7 @@ async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
-    player = Player(ws, request.remote)
+    player = Player(ws, request.remonedaste)
     jugadores_conectados.append(player)
     
     try:
@@ -474,21 +486,18 @@ async def websocket_handler(request):
                     if data.get("type") == "login":
                         usuario = data.get("usuario", "")
                         password = data.get("password", "")
-                        nombre = data.get("nombre", usuario)
-                        clase = data.get("clase", "guerrero")
-                        
-                        if clase not in CLASES:
-                            clase = "guerrero"
                         
                         result = await verificar_login(usuario, password)
                         if result:
                             player.usuario = usuario
                             player.nombre = result.get("nombre", usuario)
+                            clase = result.get("clase", "guerrero")
                             player.nivel = result.get("nivel", 1)
                             player.xp = result.get("xp", 0)
-                            player.monedas = result.get("monedas", 0)
+                            player.monedasnedas = result.get("monedasnedas", 0)
                             player.sala_id = result.get("sala_id", 1)
                             player.salas_limpias = set(result.get("salas_limpias", []))
+                            player.inventario = result.get("inventario", {})
                         else:
                             await player.send({"type": "login_error", "text": "Usuario o contrasena incorrectos"})
                             continue
@@ -527,6 +536,7 @@ async def websocket_handler(request):
                             continue
                         player.usuario = usuario
                         player.nombre = nombre
+                        player.clase = clase
                         player.clase = clase
                         
                         base = CLASES[clase]
@@ -576,16 +586,18 @@ async def websocket_handler(request):
     
     finally:
         if player in jugadores_conectados:
-            jugadores_conectados.remove(player)
-        if player.usuario:
+            jugadores_conectados.remonedasve(player)
+        if player.usuario and player.personaje:
             await guardar_cuenta(player.usuario, {
                 "nombre": player.nombre,
                 "clase": player.personaje.get("nombreClase", "guerrero"),
                 "nivel": player.nivel,
                 "xp": player.xp,
-                "monedas": player.monedas,
+                "monedasnedas": player.monedas,
                 "sala_id": player.sala_id,
                 "salas_limpias": list(player.salas_limpias),
+                "inventario": getattr(player, 'inventario', {}),
+                "misiones": getattr(player, 'misiones', {}),
             })
     
     return ws
@@ -602,13 +614,13 @@ async def process_command(player, cmd):
             return
     
     if cmd in ["n", "norte"]:
-        await move(player, "norte")
+        await monedasve(player, "norte")
     elif cmd in ["s", "sur"]:
-        await move(player, "sur")
+        await monedasve(player, "sur")
     elif cmd in ["e", "este"]:
-        await move(player, "este")
+        await monedasve(player, "este")
     elif cmd in ["o", "oeste"]:
-        await move(player, "oeste")
+        await monedasve(player, "oeste")
     elif cmd == "atacar":
         await attack(player)
     elif cmd == "mirar":
@@ -631,18 +643,18 @@ async def process_command(player, cmd):
     elif cmd.startswith("usar "):
         item = cmd[5:].strip()
         await usar(player, item)
-    elif cmd == "mochila":
-        await mochila(player)
+    elif cmd == "monedaschila":
+        await monedaschila(player)
     elif cmd == "ranking":
         await broadcast_ranking()
     elif cmd == "ayuda":
-        await player.send({"type": "message", "text": "Comandos: n/s/e/o (mover), atacar, stats, hospital, tienda, comprar <item>, usar <item>, mochila, ranking"})
+        await player.send({"type": "message", "text": "Comandos: n/s/e/o (monedasver), atacar, stats, hospital, tienda, comprar <item>, usar <item>, monedaschila, ranking"})
     else:
         await player.send({"type": "message", "text": f"Comando '{cmd}' desconocido. Escribe 'ayuda'"})
 
-async def move(player, direction):
+async def monedasve(player, direction):
     if player.combate:
-        await player.send({"type": "message", "text": "No puedes moverte en combate!"})
+        await player.send({"type": "message", "text": "No puedes monedasverte en combate!"})
         return
     if player.muerto:
         await player.send({"type": "message", "text": "Estas muerto."})
@@ -666,7 +678,7 @@ async def move(player, direction):
     player.sala_id = nueva
     await broadcast_sala(player.sala_id, f"🚪 {player.nombre} ha llegado.", exclude=player)
     await describe_sala(player)
-    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedas": player.monedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
+    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedasnedas": player.monedasnedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
 
 async def describe_sala(player):
     sala = SALAS.get(player.sala_id, {})
@@ -674,7 +686,7 @@ async def describe_sala(player):
     bioma_info = ""
     if "bioma" in sala:
         bioma = BIOMAS.get(sala["bioma"], {})
-        bioma_info = f" [{bioma.get('emoji', '')} {sala['bioma']}]"
+        bioma_info = f" [{bioma.get('emonedasji', '')} {sala['bioma']}]"
     
     tiene_enemigos = player.sala_id not in player.salas_limpias and ("bioma" in sala or sala.get("encuentros"))
     
@@ -743,17 +755,17 @@ async def hospital(player):
 
 async def tienda(player):
     items = [{"id": k, **v} for k, v in CATALOGO.items()]
-    await player.send({"type": "shop", "items": items, "monedas": player.monedas})
+    await player.send({"type": "shop", "items": items, "monedasnedas": player.monedasnedas})
 
 async def comprar(player, item_id):
     if item_id in CATALOGO:
         precio = CATALOGO[item_id]["precio"]
-        if player.monedas >= precio:
-            player.monedas -= precio
+        if player.monedasnedas >= precio:
+            player.monedasnedas -= precio
             player.inventario[item_id] = player.inventario.get(item_id, 0) + 1
             await player.send({"type": "message", "text": f"Comprado: {CATALOGO[item_id]['nombre']}!"})
         else:
-            await player.send({"type": "message", "text": "No tienes suficientes monedas."})
+            await player.send({"type": "message", "text": "No tienes suficientes monedasnedas."})
     else:
         await player.send({"type": "message", "text": "Item no encontrado."})
 
@@ -778,12 +790,12 @@ async def usar(player, item_id):
     else:
         await player.send({"type": "message", "text": "No tienes ese objeto."})
 
-async def mochila(player):
+async def monedaschila(player):
     items = []
     for iid, qty in player.inventario.items():
         if qty > 0:
-            item = CATALOGO.get(iid, {"nombre": iid, "emoji": "📦"})
-            items.append(f"{item.get('emoji', '📦')} {item['nombre']} x{qty}")
+            item = CATALOGO.get(iid, {"nombre": iid, "emonedasji": "📦"})
+            items.append(f"{item.get('emonedasji', '📦')} {item['nombre']} x{qty}")
     if items:
         await player.send({"type": "message", "text": "🎒 Inventario:\n" + "\n".join(items)})
     else:
