@@ -167,7 +167,7 @@ async def crear_cuenta(usuario, password, nombre, clase):
             "clase": clase,
             "nivel": 1,
             "xp": 0,
-            "monedasnedas": 50,
+            "monedas": 50,
             "sala_id": 1,
             "salas_limpias": [],
         }
