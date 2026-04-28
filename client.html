@@ -144,7 +144,7 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 <body>
 
 <!-- Loading -->
-<div id="loading"><h2>⏳ Despertando servidor...</h2></div>
+<div id="loading"><h2>⏳ Conectando...</h2></div>
 
 <!-- Login -->
 <div id="login-screen">
@@ -343,17 +343,6 @@ let inCombat = false;
 let serverAwake = false;
 let chatCooldown = false;
 
-async function wakeServer(){
-  try {
-    const resp = await fetch(GAME_URL + '/wake');
-    const data = await resp.json();
-    serverAwake = true;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function log(msg, type='info'){
   const el = document.getElementById('console-entries');
   const div = document.createElement('div');
@@ -405,12 +394,6 @@ async function sleep(ms){
 }
 
 async function connectWs(onOpen){
-  document.getElementById('loading').querySelector('h2').textContent = 'Despertando servidor...';
-  
-  // Wake up server first
-  await wakeServer();
-  await sleep(2000);
-  
   document.getElementById('loading').querySelector('h2').textContent = 'Conectando...';
   
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -421,10 +404,10 @@ async function connectWs(onOpen){
   let connected = false;
   const timeout = setTimeout(() => {
     if(!connected){
-      document.getElementById('loading').querySelector('h2').textContent = 'Esperando servidor...';
+      document.getElementById('loading').querySelector('h2').textContent = 'Reintentando...';
       connectWs(onOpen);
     }
-  }, 8000);
+  }, 5000);
   
   ws.onopen = () => {
     clearTimeout(timeout);
@@ -448,7 +431,7 @@ async function connectWs(onOpen){
       log('Conexion perdida. Reconectando...','error');
       setTimeout(()=>location.reload(), 2000);
     }
-};
+  };
 }
 
 function handleMessage(data){
