@@ -265,7 +265,13 @@ async def broadcast_global(msg, exclude=None):
             await p.send({"type": "chat", "scope": "global", "text": msg})
 
 async def broadcast_ranking():
-    ranking = [[p.nombre, p.nivel, p.personaje.get("nombreClase", "?") if p.personaje else "?"] for p in jugadores_conectados if p.nombre]
+    ranking = []
+    seen = set()
+    for p in jugadores_conectados:
+        if p.nombre and p.nombre not in seen:
+            seen.add(p.nombre)
+            clase = p.personaje.get("nombreClase", "?") if p.personaje else "?"
+            ranking.append([p.nombre, p.nivel, clase])
     ranking.sort(key=lambda x: x[1], reverse=True)
     for p in jugadores_conectados:
         await p.send({"type": "ranking", "ranking": ranking})

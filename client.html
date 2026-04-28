@@ -450,6 +450,7 @@ function handleMessage(data){
   }
   else if(data.type === 'combat_start'){
     showCombat(data.enemigos);
+    console.log('combat_start received:', data);
     if(data.joined){
       log('Te has unido al combate!','combat');
     }
@@ -548,6 +549,13 @@ function showCombat(enemies){
   inCombat = true;
   document.getElementById('combat-overlay').classList.add('active');
   updateEnemies(enemies);
+  document.getElementById('combat-hp').textContent = '?';
+  document.getElementById('combat-hp-max').textContent = '?';
+  document.getElementById('combat-hp-bar').style.width = '50%';
+  document.getElementById('combat-mana').textContent = '?';
+  document.getElementById('combat-mana-max').textContent = '?';
+  document.getElementById('combat-mana-bar').style.width = '50%';
+  document.getElementById('combat-otros').style.display = 'none';
   log('⚔️ COMBATE!','combat');
 }
 
