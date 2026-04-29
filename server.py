@@ -494,7 +494,7 @@ async def websocket_handler(request):
                         if not result:
                             await player.send({"type": "login_error", "text": "El usuario ya existe"})
                             continue
-                        print(f"[ACCOUNT] Created for {usuario}, using Supabase: {USAR_SUPABASE}")
+                        print(f"[ACCOUNT] Created: {usuario}")
                         player.usuario = usuario
                         player.nombre = nombre
                         player.clase = clase
@@ -784,11 +784,5 @@ app.router.add_get('/ws', websocket_handler)
 
 if __name__ == '__main__':
     print(f"🎮 Game Server starting on port {PORT}")
-    if USAR_SUPABASE:
-        print(f"✅ Using Supabase: {SUPABASE_URL}")
-        print(f"   Key loaded: {bool(SUPABASE_KEY)}")
-    else:
-        print(f"💾 Using local saves: {SAVES_DIR}")
-        print(f"   SUPABASE_URL: '{SUPABASE_URL}'")
-        print(f"   SUPABASE_KEY: '{SUPABASE_KEY[:10]}...'" if SUPABASE_KEY else "   SUPABASE_KEY: None")
+    print(f"💾 Using local saves: {SAVES_DIR}")
     web.run_app(app, host='0.0.0.0', port=PORT)
