@@ -156,8 +156,10 @@ async def _sb_upsert(row):
 
 # ==================== ACCOUNT SYSTEM ====================
 async def crear_cuenta(usuario, password, nombre, clase):
+    print(f"[CREAR] Intentando crear cuenta para: {usuario}")
     existing = await verificar_login(usuario, password)
     if existing:
+        print(f"[CREAR] Usuario ya existe: {usuario}")
         return None
     
     salt = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
@@ -174,13 +176,20 @@ async def crear_cuenta(usuario, password, nombre, clase):
             "monedas": 50,
             "sala_id": 1,
             "salas_limpias": [],
+            "inventario": {},
+            "misiones": {}
         }
     }
+    
+    print(f"[CREAR] Guardando usuario: {usuario}, USAR_SUPABASE={USAR_SUPABASE}")
+    
     if USAR_SUPABASE:
         await _sb_upsert(data)
     else:
         with open(os.path.join(SAVES_DIR, f"{usuario}.json"), "w") as f:
             json.dump(data, f)
+        print(f"[CREAR] Guardado localment: {usuario}")
+    
     return data["data"]
 
 async def verificar_login(usuario, password):
@@ -192,7 +201,7 @@ async def verificar_login(usuario, password):
         hashed = row.get("password_hash", "")
         salt = row.get("salt", "")
         if _hash_password(password, salt) == hashed:
-            return {"nombre": data.get("nombre", usuario), "clase": data.get("clase", "guerrero"), "nivel": data.get("nivel", 1), "xp": data.get("xp", 0), "monedasnedas": data.get("monedasnedas", 0), "sala_id": data.get("sala_id", 1), "salas_limpias": data.get("salas_limpias", [])}
+            return {"nombre": data.get("nombre", usuario), "clase": data.get("clase", "guerrero"), "nivel": data.get("nivel", 1), "xp": data.get("xp", 0), "monedas": data.get("monedas", 0), "sala_id": data.get("sala_id", 1), "salas_limpias": data.get("salas_limpias", [])}
         return None
     else:
         try:
