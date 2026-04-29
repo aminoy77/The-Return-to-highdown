@@ -198,7 +198,7 @@ class Player:
         self.combate = None
         self.nivel = 1
         self.xp = 0
-        self.monedasnedas = 0
+        self.monedas = 0
         self.muerto = False
         self.buff_danio = False
         self.inventario = {}
@@ -249,7 +249,7 @@ async def broadcast_stats(player):
             "hpMax": player.personaje.get("vidaMax", 1),
             "mana": player.personaje.get("manaActual", 0),
             "manaMax": player.personaje.get("manaMax", 1),
-            "monedasnedas": player.monedasnedas,
+            "monedas": player.monedas,
             "danio": player.personaje.get("danioBase", 0),
             "sala_id": player.sala_id,
         })
@@ -339,7 +339,7 @@ async def loop_combate(combate):
     if not combate.enemigos_vivos():
         xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
         oro = xp // 2
-        await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP, +{oro} monedasnedas")
+        await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP, +{oro} monedas")
         for p in combate.jugadores_vivos():
             if p.personaje and p.personaje["vidaActual"] > 0:
                 p.xp += xp
@@ -362,7 +362,7 @@ async def loop_combate(combate):
                     "clase": p.personaje.get("nombreClase", "guerrero"),
                     "nivel": p.nivel,
                     "xp": p.xp,
-                    "monedasnedas": p.monedas
+                    "monedas": p.monedas
                 })
         await broadcast_ranking()
     else:
@@ -434,7 +434,7 @@ async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
-    player = Player(ws, request.remonedaste)
+    player = Player(ws, request.remote)
     jugadores_conectados.append(player)
     
     try:
@@ -454,7 +454,7 @@ async def websocket_handler(request):
                             clase = result.get("clase", "guerrero")
                             player.nivel = result.get("nivel", 1)
                             player.xp = result.get("xp", 0)
-                            player.monedasnedas = result.get("monedasnedas", 0)
+                            player.monedas = result.get("monedas", 0)
                             player.sala_id = result.get("sala_id", 1)
                             player.salas_limpias = set(result.get("salas_limpias", []))
                             player.inventario = result.get("inventario", {})
@@ -494,7 +494,7 @@ async def websocket_handler(request):
                         if not result:
                             await player.send({"type": "login_error", "text": "El usuario ya existe"})
                             continue
-                        print(f"[ACCOUNT] Created: {usuario}")
+                        print(f"[ACCOUNT] Created: {usuario}, users in memory: {len(USUARIOS)}")
                         player.usuario = usuario
                         player.nombre = nombre
                         player.clase = clase
@@ -554,7 +554,7 @@ async def websocket_handler(request):
                 "clase": player.personaje.get("nombreClase", "guerrero"),
                 "nivel": player.nivel,
                 "xp": player.xp,
-                "monedasnedas": player.monedas,
+                "monedas": player.monedas,
                 "sala_id": player.sala_id,
                 "salas_limpias": list(player.salas_limpias),
                 "inventario": getattr(player, 'inventario', {}),
@@ -639,7 +639,7 @@ async def monedasve(player, direction):
     player.sala_id = nueva
     await broadcast_sala(player.sala_id, f"🚪 {player.nombre} ha llegado.", exclude=player)
     await describe_sala(player)
-    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedasnedas": player.monedasnedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
+    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedas": player.monedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
 
 async def describe_sala(player):
     sala = SALAS.get(player.sala_id, {})
@@ -716,17 +716,17 @@ async def hospital(player):
 
 async def tienda(player):
     items = [{"id": k, **v} for k, v in CATALOGO.items()]
-    await player.send({"type": "shop", "items": items, "monedasnedas": player.monedasnedas})
+    await player.send({"type": "shop", "items": items, "monedas": player.monedas})
 
 async def comprar(player, item_id):
     if item_id in CATALOGO:
         precio = CATALOGO[item_id]["precio"]
-        if player.monedasnedas >= precio:
-            player.monedasnedas -= precio
+        if player.monedas >= precio:
+            player.monedas -= precio
             player.inventario[item_id] = player.inventario.get(item_id, 0) + 1
             await player.send({"type": "message", "text": f"Comprado: {CATALOGO[item_id]['nombre']}!"})
         else:
-            await player.send({"type": "message", "text": "No tienes suficientes monedasnedas."})
+            await player.send({"type": "message", "text": "No tienes suficientes monedas."})
     else:
         await player.send({"type": "message", "text": "Item no encontrado."})
 
