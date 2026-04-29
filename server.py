@@ -146,9 +146,13 @@ async def _sb_upsert(row):
         url = f"{SUPABASE_URL}/rest/v1/mud_saves"
         headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
         async with s.post(url, headers=headers, json=row) as r:
-            pass
-    except:
-        pass
+            if r.status >= 400:
+                text = await r.text()
+                print(f"[SB] UPSERT error {r.status}: {text[:200]}")
+            else:
+                print(f"[SB] UPSERT OK: {row.get('usuario')}")
+    except Exception as e:
+        print(f"[SB] UPSERT exception: {e}")
 
 # ==================== ACCOUNT SYSTEM ====================
 async def crear_cuenta(usuario, password, nombre, clase):
@@ -825,6 +829,9 @@ if __name__ == '__main__':
     print(f"🎮 Game Server starting on port {PORT}")
     if USAR_SUPABASE:
         print(f"✅ Using Supabase: {SUPABASE_URL}")
+        print(f"   Key loaded: {bool(SUPABASE_KEY)}")
     else:
         print(f"💾 Using local saves: {SAVES_DIR}")
+        print(f"   SUPABASE_URL: '{SUPABASE_URL}'")
+        print(f"   SUPABASE_KEY: '{SUPABASE_KEY[:10]}...'" if SUPABASE_KEY else "   SUPABASE_KEY: None")
     web.run_app(app, host='0.0.0.0', port=PORT)
