@@ -538,6 +538,7 @@ async def websocket_handler(request):
                         if not result:
                             await player.send({"type": "login_error", "text": "El usuario ya existe"})
                             continue
+                        print(f"[ACCOUNT] Created for {usuario}, using Supabase: {USAR_SUPABASE}")
                         player.usuario = usuario
                         player.nombre = nombre
                         player.clase = clase
