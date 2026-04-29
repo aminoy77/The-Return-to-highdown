@@ -23,6 +23,48 @@ PORT = int(os.environ.get("PORT", 8080))
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
 
+# Supabase config
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+USAR_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
+
+if USAR_SUPABASE:
+    import aiohttp
+    _sb_session = None
+    def _get_sb_session():
+        global _sb_session
+        if _sb_session is None or _sb_session.closed:
+            _sb_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+        return _sb_session
+    
+    async def _sb_get(usuario):
+        try:
+            s = _get_sb_session()
+            url = f"{SUPABASE_URL}/rest/v1/mud_saves?usuario=eq.{usuario}&select=*"
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+            async with s.get(url, headers=headers) as r:
+                if r.status == 200:
+                    rows = await r.json()
+                    return rows[0] if rows else None
+        except Exception as e:
+            print(f"[SB] GET error: {e}")
+        return None
+    
+    async def _sb_upsert(row):
+        try:
+            s = _get_sb_session()
+            url = f"{SUPABASE_URL}/rest/v1/mud_saves"
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}
+            async with s.post(url, headers=headers, json=row) as r:
+                status = r.status
+                if status >= 400:
+                    text = await r.text()
+                    print(f"[SB] UPSERT error {status}: {text[:100]}")
+                else:
+                    print(f"[SB] UPSERT OK: {row.get('usuario')}")
+        except Exception as e:
+            print(f"[SB] UPSERT error: {e}")
+
 # ==================== CONSTANTS ====================
 XP_POR_NIVEL = 150
 MONEDAS_SUBIDA = 20
@@ -144,6 +186,7 @@ async def crear_cuenta(usuario, password, nombre, clase):
     hashed = _hash_password(password, salt)
     
     data = {
+        "usuario": usuario,
         "password_hash": hashed,
         "salt": salt,
         "nombre": nombre,
@@ -157,12 +200,19 @@ async def crear_cuenta(usuario, password, nombre, clase):
         "misiones": {}
     }
     
+    # Save locally first
     USUARIOS[usuario] = data
     ruta = os.path.join(SAVES_DIR, f"{usuario}.json")
     with open(ruta, "w") as f:
         json.dump(data, f)
     
-    print(f"[CREAR] Cuenta creada: {usuario}")
+    print(f"[CREAR] Cuenta creada local: {usuario}")
+    
+    # Also save to Supabase
+    if USAR_SUPABASE:
+        print(f"[CREAR] Guardando a Supabase: {usuario}")
+        await _sb_upsert(data)
+    
     return data
 
 async def verificar_login(usuario, password):
@@ -181,6 +231,18 @@ async def cargar_cuenta(usuario):
     if usuario in USUARIOS:
         return USUARIOS[usuario]
     return None
+
+async def guardar_cuenta(usuario, data):
+    if usuario not in USUARIOS:
+        return
+    
+    USUARIOS[usuario].update(data)
+    ruta = os.path.join(SAVES_DIR, f"{usuario}.json")
+    with open(ruta, "w") as f:
+        json.dump(USUARIOS[usuario], f)
+    
+    if USAR_SUPABASE:
+        await _sb_upsert(USUARIOS[usuario])
 
 # ==================== PLAYER CLASS =================###
 class Player:
