@@ -20,10 +20,6 @@ import time
 
 # ==================== CONFIG ====================
 PORT = int(os.environ.get("PORT", 8080))
-SERVER_URL = os.environ.get("SERVER_URL", "")  # URL del client per despertar
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-USAR_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
 
@@ -117,125 +113,76 @@ def calcular_danio(base):
 def _hash_password(password, salt):
     return hashlib.sha256((password + salt).encode()).hexdigest()
 
-def _sb_headers():
-    return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
+# ==================== ACCOUNT SYSTEM (local files) ====================
+USUARIOS = {}
 
-_sb_session = None
+def load_usuarios():
+    global USUARIOS
+    USUARIOS = {}
+    if not os.path.exists(SAVES_DIR):
+        os.makedirs(SAVES_DIR, exist_ok=True)
+    for f in os.listdir(SAVES_DIR):
+        if f.endswith('.json'):
+            usuario = f[:-5]
+            try:
+                with open(os.path.join(SAVES_DIR, f)) as fp:
+                    USUARIOS[usuario] = json.load(fp)
+            except:
+                pass
+    print(f"[USERS] Cargados {len(USUARIOS)} usuarios")
 
-def _get_sb_session():
-    global _sb_session
-    if _sb_session is None or _sb_session.closed:
-        _sb_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
-    return _sb_session
+load_usuarios()
 
-async def _sb_get(usuario):
-    try:
-        s = _get_sb_session()
-        url = f"{SUPABASE_URL}/rest/v1/mud_saves?usuario=eq.{usuario}&select=*"
-        async with s.get(url, headers=_sb_headers()) as r:
-            if r.status == 200:
-                rows = await r.json()
-                return rows[0] if rows else None
-    except:
-        pass
-    return None
-
-async def _sb_upsert(row):
-    try:
-        s = _get_sb_session()
-        url = f"{SUPABASE_URL}/rest/v1/mud_saves"
-        headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
-        async with s.post(url, headers=headers, json=row) as r:
-            if r.status >= 400:
-                text = await r.text()
-                print(f"[SB] UPSERT error {r.status}: {text[:200]}")
-            else:
-                print(f"[SB] UPSERT OK: {row.get('usuario')}")
-    except Exception as e:
-        print(f"[SB] UPSERT exception: {e}")
-
-# ==================== ACCOUNT SYSTEM ====================
 async def crear_cuenta(usuario, password, nombre, clase):
-    print(f"[CREAR] Intentando crear cuenta para: {usuario}")
-    existing = await verificar_login(usuario, password)
-    if existing:
+    print(f"[CREAR] Creando cuenta: {usuario}")
+    
+    if usuario in USUARIOS:
         print(f"[CREAR] Usuario ya existe: {usuario}")
         return None
     
     salt = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
     hashed = _hash_password(password, salt)
+    
     data = {
-        "usuario": usuario,
         "password_hash": hashed,
         "salt": salt,
-        "data": {
-            "nombre": nombre,
-            "clase": clase,
-            "nivel": 1,
-            "xp": 0,
-            "monedas": 50,
-            "sala_id": 1,
-            "salas_limpias": [],
-            "inventario": {},
-            "misiones": {}
-        }
+        "nombre": nombre,
+        "clase": clase,
+        "nivel": 1,
+        "xp": 0,
+        "monedas": 50,
+        "sala_id": 1,
+        "salas_limpias": [],
+        "inventario": {},
+        "misiones": {}
     }
     
-    print(f"[CREAR] Guardando usuario: {usuario}, USAR_SUPABASE={USAR_SUPABASE}")
+    USUARIOS[usuario] = data
+    ruta = os.path.join(SAVES_DIR, f"{usuario}.json")
+    with open(ruta, "w") as f:
+        json.dump(data, f)
     
-    if USAR_SUPABASE:
-        await _sb_upsert(data)
-    else:
-        with open(os.path.join(SAVES_DIR, f"{usuario}.json"), "w") as f:
-            json.dump(data, f)
-        print(f"[CREAR] Guardado localment: {usuario}")
-    
-    return data["data"]
+    print(f"[CREAR] Cuenta creada: {usuario}")
+    return data
 
 async def verificar_login(usuario, password):
-    if USAR_SUPABASE:
-        row = await _sb_get(usuario)
-        if not row:
-            return None
-        data = row.get("data", {})
-        hashed = row.get("password_hash", "")
-        salt = row.get("salt", "")
-        if _hash_password(password, salt) == hashed:
-            return {"nombre": data.get("nombre", usuario), "clase": data.get("clase", "guerrero"), "nivel": data.get("nivel", 1), "xp": data.get("xp", 0), "monedas": data.get("monedas", 0), "sala_id": data.get("sala_id", 1), "salas_limpias": data.get("salas_limpias", [])}
+    if usuario not in USUARIOS:
         return None
-    else:
-        try:
-            with open(os.path.join(SAVES_DIR, f"{usuario}.json")) as f:
-                data = json.load(f)
-            if _hash_password(password, data.get("salt", "")) == data.get("password_hash", ""):
-                return data.get("data", {})
-        except:
-            pass
+    
+    u = USUARIOS[usuario]
+    hashed = u.get("password_hash", "")
+    salt = u.get("salt", "")
+    
+    if _hash_password(password, salt) == hashed:
+        return u
     return None
 
 async def cargar_cuenta(usuario):
-    if USAR_SUPABASE:
-        row = await _sb_get(usuario)
-        if row:
-            return row.get("data", {})
-    else:
-        try:
-            with open(os.path.join(SAVES_DIR, f"{usuario}.json")) as f:
-                data = json.load(f)
-            return data.get("data", {})
-        except:
-            pass
+    if usuario in USUARIOS:
+        return USUARIOS[usuario]
     return None
 
-async def guardar_cuenta(usuario, data):
-    if USAR_SUPABASE:
-        row = {"usuario": usuario, "data": data}
-        await _sb_upsert(row)
-    else:
-        with open(os.path.join(SAVES_DIR, f"{usuario}.json")) as f:
-            json.dump({"usuario": usuario, "data": data}, f)
-
-# ==================== PLAYER CLASS ====================
+# ==================== PLAYER CLASS =================###
 class Player:
     _id_counter = 0
     
