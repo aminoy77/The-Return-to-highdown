@@ -1313,6 +1313,19 @@ async def attack(player):
     
     await broadcast_sala(player.sala_id, f"⚔️ COMBATE! {player.nombre} ataca!")
 
+async def respawn(player):
+    await asyncio.sleep(2)
+    player.sala_id = SALA_RESPAWN
+    player.muerto = False
+    if player.personaje:
+        player.personaje["vidaActual"] = player.personaje["vidaMax"]
+        player.personaje["manaActual"] = player.personaje["manaMax"]
+    await player.send({"type": "message", "text": "💀 Has muerto! Respawning en el hospital..."})
+    await player.send({"type": "respawn"})
+    await describe_sala(player)
+    await broadcast_stats(player)
+    await guardar_cuenta(player.usuario, {"sala_id": player.sala_id, "nombre": player.nombre})
+
 async def hospital(player):
     sala = SALAS.get(player.sala_id)
     if sala and sala.get("hospital"):
