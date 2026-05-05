@@ -470,7 +470,7 @@ function handleMessage(data){
     updateRoom(data);
   }
   else if(data.type === 'combat_start'){
-    console.log('combat_start received:', data);
+    console.log('⚔️ COMBAT_START:', {enemigos: data.enemigos, joined: data.joined});
     showCombat(data.enemigos, null);
     if(data.joined){
       log('Te has unido al combate!','combat');
@@ -490,10 +490,11 @@ function handleMessage(data){
     }
   }
   else if(data.type === 'combat_update'){
-    console.log('combat_update received:', data);
+    console.log('⚔️ COMBAT_UPDATE:', {turno: data.turno, player: data.player, enemigos: data.enemigos});
     renderEnemies(data.enemigos);
     updateTurn(data.turno);
     if(data.player){
+      console.log('⚔️ Player stats updated:', data.player);
       playerStats = data.player;
       updatePlayerStats();
     }
@@ -555,12 +556,16 @@ function updateRoom(data){
 let playerStats = { hp: 0, hpMax: 100, mana: 0, manaMax: 50 };
 
 function showCombat(enemies, player){
+  console.log('⚔️ showCombat called with:', {enemies: enemies, player: player});
   inCombat = true;
   document.getElementById('combat-overlay').classList.add('active');
   
   // Use player data if provided, otherwise use last known stats
   if(player){
     playerStats = player;
+    console.log('⚔️ Player stats from param:', player);
+  } else {
+    console.log('⚔️ Using default playerStats:', playerStats);
   }
   updatePlayerStats();
   updateTurn(1);
@@ -569,12 +574,18 @@ function showCombat(enemies, player){
 }
 
 function updatePlayerStats(){
-  document.getElementById('combat-hp').textContent = playerStats.hp;
-  document.getElementById('combat-hp-max').textContent = playerStats.hpMax;
-  document.getElementById('combat-hp-bar').style.width = (playerStats.hp / playerStats.hpMax * 100) + '%';
-  document.getElementById('combat-mana').textContent = playerStats.mana;
-  document.getElementById('combat-mana-max').textContent = playerStats.manaMax;
-  document.getElementById('combat-mana-bar').style.width = (playerStats.mana / playerStats.manaMax * 100) + '%';
+  console.log('⚔️ updatePlayerStats called:', playerStats);
+  try {
+    document.getElementById('combat-hp').textContent = playerStats.hp;
+    document.getElementById('combat-hp-max').textContent = playerStats.hpMax;
+    document.getElementById('combat-hp-bar').style.width = (playerStats.hp / playerStats.hpMax * 100) + '%';
+    document.getElementById('combat-mana').textContent = playerStats.mana;
+    document.getElementById('combat-mana-max').textContent = playerStats.manaMax;
+    document.getElementById('combat-mana-bar').style.width = (playerStats.mana / playerStats.manaMax * 100) + '%';
+    console.log('⚔️ Player stats DOM updated successfully');
+  } catch(e) {
+    console.error('⚔️ Error updating player stats:', e);
+  }
 }
 
 function updateTurn(turn){
@@ -583,16 +594,19 @@ function updateTurn(turn){
 
 function renderEnemies(enemies){
   const container = document.getElementById('combat-enemies');
-  if(!enemies || enemies.length === 0){
+  if(!enemies || !Array.isArray(enemies) || enemies.length === 0){
     container.innerHTML = '<div style="text-align:center;padding:20px;color:#10b981;font-size:16px">🎉 VICTORIA!</div>';
     return;
   }
   let html = '';
   enemies.forEach(e => {
-    const pct = (e.hp / e.hpMax) * 100;
+    if(!e) return;
+    const hp = e.hp || 0;
+    const hpMax = e.hpMax || 1;
+    const pct = (hp / hpMax) * 100;
     html += '<div class="combat-enemy">';
-    html += '<div class="combat-enemy-name">' + e.nombre + '</div>';
-    html += '<div class="combat-enemy-hp">' + e.hp + ' / ' + e.hpMax + ' HP</div>';
+    html += '<div class="combat-enemy-name">' + (e.nombre || 'Enemigo') + '</div>';
+    html += '<div class="combat-enemy-hp">' + hp + ' / ' + hpMax + ' HP</div>';
     html += '<div class="combat-enemy-bar"><div class="combat-enemy-bar-fill" style="width:' + pct + '%"></div></div>';
     html += '</div>';
   });
