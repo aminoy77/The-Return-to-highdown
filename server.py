@@ -980,10 +980,15 @@ async def crear_cuenta(usuario, password, nombre, clase):
     
     print(f"[CREAR] Cuenta creada local: {usuario}")
     
-    # Also save to Supabase
+    # Also save to Supabase if enabled
     if USAR_SUPABASE:
         print(f"[CREAR] Guardando a Supabase: {usuario}")
-        await _sb_upsert(data)
+        try:
+            await _sb_upsert(data)
+        except Exception as e:
+            print(f"[CREAR] Error guardando a Supabase: {e}")
+    else:
+        print(f"[CREAR] Supabase no enabled - URL: '{SUPABASE_URL}', KEY: {'yes' if SUPABASE_KEY else 'no'}")
     
     return data
 
@@ -1611,4 +1616,8 @@ app.router.add_get('/ws', websocket_handler)
 if __name__ == '__main__':
     print(f"🎮 Game Server starting on port {PORT}")
     print(f"💾 Using local saves: {SAVES_DIR}")
+    if USAR_SUPABASE:
+        print(f"✅ SUPABASE ENABLED: {SUPABASE_URL}")
+    else:
+        print(f"❌ SUPABASE DISABLED - URL: '{SUPABASE_URL}', KEY: {'set' if SUPABASE_KEY else 'empty'}")
     web.run_app(app, host='0.0.0.0', port=PORT)
