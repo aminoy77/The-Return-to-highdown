@@ -92,18 +92,18 @@ ENEMIGOS = {
     "duende": {"vidaMax": 50, "danioBase": 15, "ataquesTurno": 2, "tier": "Base"},
     "esqueleto": {"vidaMax": 70, "danioBase": 25, "ataquesTurno": 1, "tier": "Base"},
     "zombie": {"vidaMax": 80, "danioBase": 10, "ataquesTurno": 1, "tier": "Base"},
-    "lobo": {"vidaMax": 60, "danioBase": 15, "ataquesTurno": [1, 2], "tier": "Base"},
+    "lobo": {"vidaMax": 60, "danioBase": 15, "ataquesTurno": 2, "tier": "Base"},
     "oso": {"vidaMax": 75, "danioBase": 35, "ataquesTurno": 1, "tier": "Base"},
     "orco": {"vidaMax": 70, "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
     "ogro": {"vidaMax": 90, "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
     "troll": {"vidaMax": 100, "danioBase": 35, "ataquesTurno": 1, "tier": "Especial"},
     "gigante": {"vidaMax": 110, "danioBase": 45, "ataquesTurno": 1, "tier": "Especial"},
-    "vampiro": {"vidaMax": 125, "danioBase": 20, "ataquesTurno": [1, 2], "tier": "Superior"},
+    "vampiro": {"vidaMax": 125, "danioBase": 20, "ataquesTurno": 2, "tier": "Superior"},
     "elfoOscuro": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
-    "demonedasnioSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
+    "demonSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
     "leviatan": {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
     "reyEsqueleto": {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
-    "reyDemonedasnio": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
+    "reyDemon": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "kraken": {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "alpha": {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1, "tier": "Boss"},
 }
@@ -111,15 +111,15 @@ ENEMIGOS = {
 XP_POR_TIER = {"Base": 10, "Especial": 30, "Superior": 50, "Elite": 100, "Boss": 250}
 
 CATALOGO = {
-    "pocion_vida": {"nombre": "Pocion de Vida", "emonedasji": "🧪", "precio": 30},
-    "pocion_danio": {"nombre": "Pocion de Danio", "emonedasji": "⚗️", "precio": 40},
-    "gema_teleporte": {"nombre": "Gema de Teletransporte", "emonedasji": "💎", "precio": 50},
+    "pocion_vida": {"nombre": "Pocion de Vida", "emoji": "🧪", "precio": 30},
+    "pocion_danio": {"nombre": "Pocion de Danio", "emoji": "⚗️", "precio": 40},
+    "gema_teleporte": {"nombre": "Gema de Teletransporte", "emoji": "💎", "precio": 50},
 }
 
 BIOMAS = {
-    "desierto": {"emonedasji": "🏜", "enemigos": ["bandido", "duende", "esqueleto", "zombie", "lobo"]},
-    "mar": {"emonedasji": "🌊", "enemigos": ["slime", "troll", "vampiro"]},
-    "nieve": {"emonedasji": "❄️", "enemigos": ["gigante", "elfoOscuro", "demonedasnioSuperior"]},
+    "desierto": {"emoji": "🏜", "enemigos": ["bandido", "duende", "esqueleto", "zombie", "lobo"]},
+    "mar": {"emoji": "🌊", "enemigos": ["slime", "troll", "vampiro"]},
+    "nieve": {"emoji": "❄️", "enemigos": ["gigante", "elfoOscuro", "demonSuperior"]},
 }
 
 # ==================== SALAS ====================
