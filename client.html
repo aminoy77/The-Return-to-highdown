@@ -163,15 +163,15 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
     <h1>⚔️ THE RETURN TO HIGHDOWN</h1>
     
     <!-- Login Section -->
-    <div id="login-form">
+    <form id="login-form" onsubmit="return false">
       <input type="text" id="username" placeholder="Usuario">
       <input type="password" id="password" placeholder="Contrasena">
       <button onclick="login()">🎮 INICIAR SESION</button>
       <button class="secondary" onclick="showRegister()">➕ CREAR CUENTA</button>
-    </div>
+    </form>
     
     <!-- Register Section (hidden by default) -->
-    <div id="register-form" style="display:none">
+    <form id="register-form" style="display:none" onsubmit="return false">
       <input type="text" id="reg-username" placeholder="Usuario">
       <input type="password" id="reg-password" placeholder="Contrasena">
       <input type="text" id="char-name" placeholder="Nombre de personaje">
@@ -189,7 +189,7 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
       </select>
       <button onclick="doRegister()">➕ CREAR CUENTA</button>
       <button class="secondary" onclick="showLogin()">YA Tengo cuenta</button>
-    </div>
+    </form>
     
     <div id="login-error"></div>
   </div>
