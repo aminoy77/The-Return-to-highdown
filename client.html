@@ -608,12 +608,20 @@ function hideCombat(){
   document.getElementById('combat-overlay').classList.remove('active');
 }
 
+function sendWs(data){
+  if(ws && ws.readyState === WebSocket.OPEN){
+    ws.send(JSON.stringify(data));
+    return true;
+  }
+  return false;
+}
+
 function sendAction(action){
-  ws.send(JSON.stringify({type:'action', action}));
+  sendWs({type:'action', action});
 }
 
 function move(dir){
-  ws.send(JSON.stringify({type:'command', cmd:dir}));
+  sendWs({type:'command', cmd:dir});
 }
 
 function attack(){
@@ -622,19 +630,19 @@ function attack(){
 
 function joinCombat(){
   closeModal('combat-join-modal');
-  ws.send(JSON.stringify({type:'command', cmd:'atacar'}));
+  sendWs({type:'command', cmd:'atacar'});
 }
 
 function hospital(){
-  ws.send(JSON.stringify({type:'command', cmd:'hospital'}));
+  sendWs({type:'command', cmd:'hospital'});
 }
 
 function openShop(){
-  ws.send(JSON.stringify({type:'command', cmd:'tienda'}));
+  sendWs({type:'command', cmd:'tienda'});
 }
 
 function refreshRoom(){
-  ws.send(JSON.stringify({type:'command', cmd:'mirar'}));
+  sendWs({type:'command', cmd:'mirar'});
 }
 
 function setChat(scope){
@@ -649,7 +657,7 @@ function sendChat(){
   const msg = input.value.trim();
   if(!msg) return;
   chatCooldown = true;
-  ws.send(JSON.stringify({type:'chat', scope:currentChat, message:msg}));
+  sendWs({type:'chat', scope:currentChat, message:msg});
   input.value = '';
   setTimeout(() => chatCooldown = false, 1000);
 }
@@ -694,7 +702,7 @@ function showShop(items, money){
 }
 
 function buyItem(id){
-  ws.send(JSON.stringify({type:'command', cmd:'comprar ' + id}));
+  sendWs({type:'command', cmd:'comprar ' + id});
 }
 
 function closeModal(id){
@@ -708,7 +716,7 @@ function sendCmd(cmd){
     if(!cmd) return;
     input.value = '';
   }
-  ws.send(JSON.stringify({type:'command', cmd}));
+  sendWs({type:'command', cmd});
 }
 
 function showLoginError(msg){
