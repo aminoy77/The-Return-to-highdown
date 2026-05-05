@@ -1284,24 +1284,26 @@ async def attack(player):
         await player.send({"type": "message", "text": "No hay enemigos aqui."})
         return
     
-    if player.sala_id in combates_activos:
-        c = combates_activos[player.sala_id]
-        if player not in c.jugadores:
+if player.sala_id in fights_activos:
+        c = fights_activos[player.sala_id]
+        is_new = player not in c.jugadores
+        if is_new:
             c.jugadores.append(player)
             player.combate = c
-            await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in c.enemigos], "joined": True})
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in c.enemigos], "joined": is_new})
     else:
         combate = Combate(player.sala_id, [player])
         combate.cargar_enemigos()
         player.combate = combate
-        combates_activos[player.sala_id] = combate
+        fights_activos[player.sala_id] = combate
         asyncio.create_task(loop_combate(combate))
         
         for p in jugadores_conectados:
             if p.sala_id == player.sala_id and p != player and p.personaje and p.personaje["vidaActual"] > 0:
                 await p.send({"type": "combat_join_request", "from": player.nombre})
     
-    await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos]})
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos]})
+    
     await broadcast_sala(player.sala_id, f"⚔️ COMBATE! {player.nombre} ataca!")
 
 async def hospital(player):

@@ -62,23 +62,30 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 #console-input button.secondary{background:var(--bg4);color:var(--text)}
 
 /* Combat Overlay */
-#combat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.9);display:none;align-items:center;justify-content:center;z-index:100}
+#combat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:1000}
 #combat-overlay.active{display:flex}
-#combat-box{background:var(--bg2);padding:20px;border-radius:15px;border:3px solid var(--danger);box-shadow:0 0 40px rgba(239,68,68,0.4);max-width:500px;width:95%;font-family:'Segoe UI',sans-serif}
-#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid var(--bg4)}
-#combat-title{color:var(--danger);font-size:24px;font-weight:bold}
-#combat-turn{background:var(--bg);padding:5px 15px;border-radius:20px;font-size:14px;color:var(--text2)}
-#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-#combat-title{color:var(--danger);font-size:22px;font-weight:bold}
-#enemies{background:var(--bg3);padding:12px;border-radius:8px;margin-bottom:15px}
-.enemy-row{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg);margin:6px 0;border-radius:6px}
-.enemy-name{color:var(--danger);font-weight:bold}
-.enemy-hp-bar{width:120px;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
-.enemy-hp-fill{height:100%;background:linear-gradient(90deg, var(--danger), #dc2626);transition:width 0.3s}
-#combat-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
-.combat-btn{background:var(--bg);border:2px solid var(--danger);padding:15px;border-radius:10px;color:var(--text);cursor:pointer;font-weight:bold;font-size:16px;transition:all 0.2s;text-align:center}
-.combat-btn:hover{background:var(--danger);color:#fff;transform:scale(1.02)}
-.combat-btn:hover{background:var(--danger);color:#fff}
+.combat-container{background:linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);border:3px solid #ef4444;border-radius:20px;padding:30px;max-width:450px;width:90%;box-shadow:0 0 60px rgba(239,68,68,0.5)}
+.combat-title{text-align:center;font-size:32px;font-weight:bold;color:#ef4444;margin-bottom:10px;text-shadow:0 0 20px rgba(239,68,68,0.8)}
+.combat-turn{text-align:center;font-size:14px;color:#9ca3af;margin-bottom:25px;background:#2a2a40;padding:8px 20px;border-radius:20px;display:inline-block;width:100%;box-sizing:border-box}
+.combat-player{background:#0f0f1a;padding:20px;border-radius:12px;margin-bottom:20px;border:1px solid #374151}
+.combat-player-name{color:#fbbf24;font-size:12px;font-weight:bold;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+.combat-bars{display:flex;flex-direction:column;gap:10px}
+.combat-bar-row{display:flex;align-items:center;gap:10px}
+.combat-bar-label{color:#9ca3af;font-size:12px;width:50px}
+.combat-bar-bg{flex:1;height:16px;background:#374151;border-radius:8px;overflow:hidden}
+.combat-bar-fill{height:100%;transition:width 0.3s ease}
+.combat-hp-fill{background:linear-gradient(90deg,#ef4444,#f87171)}
+.combat-mana-fill{background:linear-gradient(90deg,#3b82f6,#60a5fa)}
+.combat-bar-value{color:#fff;font-size:12px;min-width:60px;text-align:right}
+.combat-enemies{min-height:100px;margin-bottom:20px}
+.combat-enemy{background:#0f0f1a;padding:15px;border-radius:10px;margin-bottom:10px;border-left:4px solid #ef4444}
+.combat-enemy-name{color:#ef4444;font-weight:bold;font-size:16px;margin-bottom:8px}
+.combat-enemy-hp{color:#9ca3af;font-size:13px;margin-bottom:8px}
+.combat-enemy-bar{height:10px;background:#374151;border-radius:5px;overflow:hidden}
+.combat-enemy-bar-fill{height:100%;background:linear-gradient(90deg,#ef4444,#dc2626);transition:width 0.3s}
+.combat-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.combat-btn{background:linear-gradient(180deg,#1f2937 0%,#111827 100%);border:2px solid #ef4444;padding:18px;border-radius:12px;color:#fff;cursor:pointer;font-weight:bold;font-size:15px;transition:all 0.2s}
+.combat-btn:hover{background:#ef4444;transform:translateY(-2px);box-shadow:0 5px 20px rgba(239,68,68,0.5)}
 
 /* Sidebar */
 #sidebar{width:240px;background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;border-left:2px solid var(--bg4);flex-shrink:0}
@@ -278,32 +285,37 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 
 <!-- Combat Overlay -->
 <div id="combat-overlay">
-  <div id="combat-box">
-    <div id="combat-header">
-      <span id="combat-title">⚔️ COMBATE</span>
-      <span id="combat-turn">Turno 1</span>
-    </div>
-    <div id="combat-player-stats" style="margin-bottom:15px;padding:10px;background:var(--bg);border-radius:8px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:5px">
-        <span style="color:var(--hp)">❤️ <span id="combat-hp">0</span>/<span id="combat-hp-max">0</span></span>
-        <span style="color:var(--mana)">💧 <span id="combat-mana">0</span>/<span id="combat-mana-max">0</span></span>
-      </div>
-      <div style="display:flex;gap:10px">
-        <div style="flex:1;height:10px;background:var(--bg3);border-radius:5px;overflow:hidden">
-          <div id="combat-hp-bar" style="width:100%;height:100%;background:var(--hp);transition:width 0.3s"></div>
+  <div class="combat-container">
+    <div class="combat-title">⚔️ COMBATE</div>
+    <div class="combat-turn" id="combat-turn">Turno 1</div>
+    
+    <div class="combat-player">
+      <div class="combat-player-name">TU PERSONAJE</div>
+      <div class="combat-bars">
+        <div class="combat-bar-row">
+          <span class="combat-bar-label">❤️ HP</span>
+          <div class="combat-bar-bg">
+            <div class="combat-bar-fill combat-hp-fill" id="combat-hp-bar"></div>
+          </div>
+          <span class="combat-bar-value"><span id="combat-hp">0</span>/<span id="combat-hp-max">0</span></span>
         </div>
-        <div style="flex:1;height:10px;background:var(--bg3);border-radius:5px;overflow:hidden">
-          <div id="combat-mana-bar" style="width:100%;height:100%;background:var(--mana);transition:width 0.3s"></div>
+        <div class="combat-bar-row">
+          <span class="combat-bar-label">💧 MANA</span>
+          <div class="combat-bar-bg">
+            <div class="combat-bar-fill combat-mana-fill" id="combat-mana-bar"></div>
+          </div>
+          <span class="combat-bar-value"><span id="combat-mana">0</span>/<span id="combat-mana-max">0</span></span>
         </div>
       </div>
     </div>
-    <div id="combat-otros" style="margin-bottom:15px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px"></div>
-    <div id="enemies"></div>
-    <div id="combat-actions">
+    
+    <div class="combat-enemies" id="combat-enemies"></div>
+    
+    <div class="combat-buttons">
       <button class="combat-btn" onclick="sendAction('1')">⚔️ ATACAR</button>
       <button class="combat-btn" onclick="sendAction('2')">✨ ESPECIAL</button>
       <button class="combat-btn" onclick="sendAction('3')">💤 PASAR</button>
-      <button class="combat-btn" onclick="sendAction('4')">🎒 OBJETO</button>
+      <button class="combat-btn" onclick="sendAction('4')">🎒 ITEM</button>
     </div>
   </div>
 </div>
@@ -488,17 +500,7 @@ function handleMessage(data){
       document.getElementById('combat-mana-max').textContent = p.manaMax;
       document.getElementById('combat-mana-bar').style.width = (p.mana / p.manaMax * 100) + '%';
     }
-    if(data.otros && data.otros.length > 0){
-      let html = '<div style="color:var(--accent);margin-bottom:5px">ALIADOS:</div>';
-      data.otros.forEach(o => {
-        const pct = (o.hp / o.hpMax * 100);
-        html += '<div style="display:flex;align-items:center;gap:5px;margin:3px 0"><span style="color:var(--success)">' + o.nombre + '</span><div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:' + pct + '%;height:100%;background:var(--success)"></div></div><span style="font-size:10px;color:var(--text2)">' + o.hp + '</span></div>';
-      });
-      document.getElementById('combat-otros').innerHTML = html;
-      document.getElementById('combat-otros').style.display = 'block';
-    }else{
-      document.getElementById('combat-otros').style.display = 'none';
-    }
+    
   }
   else if(data.type === 'chat'){
     addChatMessage(data.scope, data.from, data.text);
@@ -557,42 +559,42 @@ function updateRoom(data){
 function showCombat(enemies){
   inCombat = true;
   document.getElementById('combat-overlay').classList.add('active');
-  updateEnemies(enemies);
-  document.getElementById('combat-hp').textContent = '?';
-  document.getElementById('combat-hp-max').textContent = '?';
+  document.getElementById('combat-hp').textContent = '--';
+  document.getElementById('combat-hp-max').textContent = '--';
   document.getElementById('combat-hp-bar').style.width = '50%';
-  document.getElementById('combat-mana').textContent = '?';
-  document.getElementById('combat-mana-max').textContent = '?';
+  document.getElementById('combat-mana').textContent = '--';
+  document.getElementById('combat-mana-max').textContent = '--';
   document.getElementById('combat-mana-bar').style.width = '50%';
-  document.getElementById('combat-otros').style.display = 'none';
+  document.getElementById('combat-turn').textContent = 'Turno 1';
+  renderEnemies(enemies);
   log('⚔️ COMBATE!','combat');
+}
+
+function renderEnemies(enemies){
+  const container = document.getElementById('combat-enemies');
+  if(!enemies || enemies.length === 0){
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:#10b981;font-size:16px">🎉 VICTORIA!</div>';
+    return;
+  }
+  let html = '';
+  enemies.forEach(e => {
+    const pct = (e.hp / e.hpMax) * 100;
+    html += '<div class="combat-enemy">';
+    html += '<div class="combat-enemy-name">' + e.nombre + '</div>';
+    html += '<div class="combat-enemy-hp">' + e.hp + ' / ' + e.hpMax + ' HP</div>';
+    html += '<div class="combat-enemy-bar"><div class="combat-enemy-bar-fill" style="width:' + pct + '%"></div></div>';
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function updateEnemies(enemies){
+  renderEnemies(enemies);
 }
 
 function hideCombat(){
   inCombat = false;
   document.getElementById('combat-overlay').classList.remove('active');
-}
-
-function updateEnemies(enemies){
-  const el = document.getElementById('enemies');
-  if(!enemies || enemies.length === 0){
-    el.innerHTML = '<div style="text-align:center;color:var(--success);padding:20px">🎉 Enemigos derrotados!</div>';
-    return;
-  }
-  let html = '<div style="color:var(--danger);margin-bottom:10px;font-weight:bold">ENEMIGOS:</div>';
-  enemies.forEach(e => {
-    const pct = (e.hp / e.hpMax) * 100;
-    html += `<div class="enemy-row" style="background:var(--bg);padding:10px;border-radius:8px;margin:5px 0;border-left:3px solid var(--danger)">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="color:var(--danger);font-weight:bold;font-size:14px">${e.nombre}</span>
-        <span style="color:var(--hp);font-size:12px">${e.hp}/${e.hpMax}</span>
-      </div>
-      <div style="height:8px;background:var(--bg3);border-radius:4px;margin-top:5px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--danger), #dc2626);transition:width 0.3s"></div>
-      </div>
-    </div>`;
-  });
-  el.innerHTML = html;
 }
 
 function sendAction(action){
