@@ -470,7 +470,8 @@ function handleMessage(data){
     updateRoom(data);
   }
   else if(data.type === 'combat_start'){
-    showCombat(data.enemigos);
+    console.log('combat_start received:', data);
+    showCombat(data.enemigos, null);
     if(data.joined){
       log('Te has unido al combate!','combat');
     }
@@ -489,18 +490,13 @@ function handleMessage(data){
     }
   }
   else if(data.type === 'combat_update'){
-    updateEnemies(data.enemigos);
-    document.getElementById('combat-turn').textContent = 'Turno ' + data.turno;
+    console.log('combat_update received:', data);
+    renderEnemies(data.enemigos);
+    updateTurn(data.turno);
     if(data.player){
-      const p = data.player;
-      document.getElementById('combat-hp').textContent = p.hp;
-      document.getElementById('combat-hp-max').textContent = p.hpMax;
-      document.getElementById('combat-hp-bar').style.width = (p.hp / p.hpMax * 100) + '%';
-      document.getElementById('combat-mana').textContent = p.mana;
-      document.getElementById('combat-mana-max').textContent = p.manaMax;
-      document.getElementById('combat-mana-bar').style.width = (p.mana / p.manaMax * 100) + '%';
+      playerStats = data.player;
+      updatePlayerStats();
     }
-    
   }
   else if(data.type === 'chat'){
     addChatMessage(data.scope, data.from, data.text);
@@ -556,18 +552,33 @@ function updateRoom(data){
   else document.getElementById('players-in-room').innerHTML = '';
 }
 
-function showCombat(enemies){
+let playerStats = { hp: 0, hpMax: 100, mana: 0, manaMax: 50 };
+
+function showCombat(enemies, player){
   inCombat = true;
   document.getElementById('combat-overlay').classList.add('active');
-  document.getElementById('combat-hp').textContent = '--';
-  document.getElementById('combat-hp-max').textContent = '--';
-  document.getElementById('combat-hp-bar').style.width = '50%';
-  document.getElementById('combat-mana').textContent = '--';
-  document.getElementById('combat-mana-max').textContent = '--';
-  document.getElementById('combat-mana-bar').style.width = '50%';
-  document.getElementById('combat-turn').textContent = 'Turno 1';
+  
+  // Use player data if provided, otherwise use last known stats
+  if(player){
+    playerStats = player;
+  }
+  updatePlayerStats();
+  updateTurn(1);
   renderEnemies(enemies);
   log('⚔️ COMBATE!','combat');
+}
+
+function updatePlayerStats(){
+  document.getElementById('combat-hp').textContent = playerStats.hp;
+  document.getElementById('combat-hp-max').textContent = playerStats.hpMax;
+  document.getElementById('combat-hp-bar').style.width = (playerStats.hp / playerStats.hpMax * 100) + '%';
+  document.getElementById('combat-mana').textContent = playerStats.mana;
+  document.getElementById('combat-mana-max').textContent = playerStats.manaMax;
+  document.getElementById('combat-mana-bar').style.width = (playerStats.mana / playerStats.manaMax * 100) + '%';
+}
+
+function updateTurn(turn){
+  document.getElementById('combat-turn').textContent = 'Turno ' + turn;
 }
 
 function renderEnemies(enemies){
