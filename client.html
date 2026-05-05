@@ -64,7 +64,10 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 /* Combat Overlay */
 #combat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.9);display:none;align-items:center;justify-content:center;z-index:100}
 #combat-overlay.active{display:flex}
-#combat-box{background:var(--bg2);padding:25px;border-radius:15px;border:2px solid var(--danger);box-shadow:0 0 40px rgba(239,68,68,0.4);max-width:500px;width:90%}
+#combat-box{background:var(--bg2);padding:20px;border-radius:15px;border:3px solid var(--danger);box-shadow:0 0 40px rgba(239,68,68,0.4);max-width:500px;width:95%;font-family:'Segoe UI',sans-serif}
+#combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid var(--bg4)}
+#combat-title{color:var(--danger);font-size:24px;font-weight:bold}
+#combat-turn{background:var(--bg);padding:5px 15px;border-radius:20px;font-size:14px;color:var(--text2)}
 #combat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
 #combat-title{color:var(--danger);font-size:22px;font-weight:bold}
 #enemies{background:var(--bg3);padding:12px;border-radius:8px;margin-bottom:15px}
@@ -72,8 +75,9 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 .enemy-name{color:var(--danger);font-weight:bold}
 .enemy-hp-bar{width:120px;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
 .enemy-hp-fill{height:100%;background:linear-gradient(90deg, var(--danger), #dc2626);transition:width 0.3s}
-#combat-actions{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
-.combat-btn{background:var(--bg);border:2px solid var(--danger);padding:15px 8px;border-radius:10px;color:var(--text);cursor:pointer;font-weight:bold;font-size:13px;transition:all 0.2s}
+#combat-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
+.combat-btn{background:var(--bg);border:2px solid var(--danger);padding:15px;border-radius:10px;color:var(--text);cursor:pointer;font-weight:bold;font-size:16px;transition:all 0.2s;text-align:center}
+.combat-btn:hover{background:var(--danger);color:#fff;transform:scale(1.02)}
 .combat-btn:hover{background:var(--danger);color:#fff}
 
 /* Sidebar */
@@ -571,14 +575,20 @@ function hideCombat(){
 
 function updateEnemies(enemies){
   const el = document.getElementById('enemies');
-  let html = '';
+  if(!enemies || enemies.length === 0){
+    el.innerHTML = '<div style="text-align:center;color:var(--success);padding:20px">🎉 Enemigos derrotados!</div>';
+    return;
+  }
+  let html = '<div style="color:var(--danger);margin-bottom:10px;font-weight:bold">ENEMIGOS:</div>';
   enemies.forEach(e => {
     const pct = (e.hp / e.hpMax) * 100;
-    html += `<div class="enemy-row">
-      <span class="enemy-name">${e.nombre}</span>
-      <div>
-        <span style="font-size:11px;color:var(--text2)">${e.hp}/${e.hpMax}</span>
-        <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${pct}%"></div></div>
+    html += `<div class="enemy-row" style="background:var(--bg);padding:10px;border-radius:8px;margin:5px 0;border-left:3px solid var(--danger)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--danger);font-weight:bold;font-size:14px">${e.nombre}</span>
+        <span style="color:var(--hp);font-size:12px">${e.hp}/${e.hpMax}</span>
+      </div>
+      <div style="height:8px;background:var(--bg3);border-radius:4px;margin-top:5px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--danger), #dc2626);transition:width 0.3s"></div>
       </div>
     </div>`;
   });
