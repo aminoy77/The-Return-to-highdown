@@ -639,7 +639,7 @@ function move(dir){
 }
 
 function attack(){
-  document.getElementById('combat-overlay').classList.add('active');
+  sendWs({type:'command', cmd:'atacar'});
 }
 
 function joinCombat(){
