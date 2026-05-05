@@ -1290,19 +1290,26 @@ async def attack(player):
         if is_new:
             c.jugadores.append(player)
             player.combate = c
-        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in c.enemigos], "joined": is_new})
+        enemigos = c.enemigos
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "joined": is_new})
     else:
         combate = Combate(player.sala_id, [player])
         combate.cargar_enemigos()
         player.combate = combate
         fights_activos[player.sala_id] = combate
         asyncio.create_task(loop_combate(combate))
+        enemigos = combate.enemigos
         
         for p in jugadores_conectados:
             if p.sala_id == player.sala_id and p != player and p.personaje and p.personaje["vidaActual"] > 0:
                 await p.send({"type": "combat_join_request", "from": player.nombre})
     
-        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos]})
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos]})
+    
+    # Send immediate combat_update with player stats
+    if player.personaje:
+        pdata = {"hp": player.personaje.get("vidaActual", 0), "hpMax": player.personaje.get("vidaMax", 100), "mana": player.personaje.get("manaActual", 0), "manaMax": player.personaje.get("manaMax", 50)}
+        await player.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "turno": 1, "player": pdata})
     
     await broadcast_sala(player.sala_id, f"⚔️ COMBATE! {player.nombre} ataca!")
 
