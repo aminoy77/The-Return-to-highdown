@@ -1371,6 +1371,236 @@ async def index(request):
         html = f.read()
     return web.Response(text=html, content_type="text/html")
 
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    player = Player(ws, request.remote)
+    jugadores_conectados.append(player)
+    
+    try:
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
+                    
+                    if data.get("type") == "login":
+                        usuario = data.get("usuario", "")
+                        password = data.get("password", "")
+                        
+                        result = await verificar_login(usuario, password)
+                        if result:
+                            player.usuario = usuario
+                            player.nombre = result.get("nombre", usuario)
+                            clase = result.get("clase", "guerrero")
+                            player.nivel = result.get("nivel", 1)
+                            player.xp = result.get("xp", 0)
+                            player.mo = result.get("monedas", 0)
+                            player.sala_id = result.get("sala_id", 1)
+                            player.salas_limpias = set(result.get("salas_limpias", []))
+                            player.inventario = result.get("inventario", {})
+                        else:
+                            await player.send({"type": "login_error", "text": "Usuario o contrasena incorrectos"})
+                            continue
+                        
+                        base = CLASES[clase]
+                        player.personaje = {
+                            "nombreClase": clase,
+                            "vidaMax": base["vidaMax"],
+                            "vidaActual": base["vidaMax"],
+                            "manaMax": base["manaMax"],
+                            "manaActual": base["manaMax"],
+                            "danioBase": base["danioBase"],
+                            "manaTurno": base.get("manaTurno", 0),
+                            "ataquesTurno": base.get("ataquesTurno", 1),
+                            "costoEspecial": base.get("costoEspecial", 0),
+                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
+                            "curacionEspecial": base.get("curacionEspecial", 0),
+                        }
+                        
+                        await player.send({"type": "login_ok"})
+                        await broadcast_stats(player)
+                        await broadcast_ranking()
+                    
+                    elif data.get("type") == "register":
+                        usuario = data.get("usuario", "")
+                        password = data.get("password", "")
+                        nombre = data.get("nombre", usuario)
+                        clase = data.get("clase", "guerrero")
+                        
+                        if clase not in CLASES:
+                            clase = "guerrero"
+                        
+                        result = await crear_cuenta(usuario, password, nombre, clase)
+                        if not result:
+                            await player.send({"type": "login_error", "text": "El usuario ya existe"})
+                            continue
+                        print(f"[ACCOUNT] Created: {usuario}, users in memory: {len(USUARIOS)}")
+                        player.usuario = usuario
+                        player.nombre = nombre
+                        player.clase = clase
+                        
+                        base = CLASES[clase]
+                        player.personaje = {
+                            "nombreClase": clase,
+                            "vidaMax": base["vidaMax"],
+                            "vidaActual": base["vidaMax"],
+                            "manaMax": base["manaMax"],
+                            "manaActual": base["manaMax"],
+                            "danioBase": base["danioBase"],
+                            "manaTurno": base.get("manaTurno", 0),
+                            "ataquesTurno": base.get("ataquesTurno", 1),
+                            "costoEspecial": base.get("costoEspecial", 0),
+                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
+                            "curacionEspecial": base.get("curacionEspecial", 0),
+                        }
+                        
+                        await player.send({"type": "register_ok"})
+                        await broadcast_stats(player)
+                        await broadcast_ranking()
+                    
+                    elif data.get("type") == "command":
+                        await process_command(player, data.get("cmd", ""))
+                    
+                    elif data.get("type") == "action":
+                        if player.combate:
+                            player.combate.acciones[player.id] = data.get("action", "1")
+                    
+                    elif data.get("type") == "chat":
+                        msg_text = data.get("message", "").strip()
+                        if msg_text and player.nombre:
+                            scope = data.get("scope", "sala")
+                            if scope == "sala":
+                                await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg_text}", exclude=player)
+                            elif scope == "global":
+                                await broadcast_global(f"[Global] {player.nombre}: {msg_text}", exclude=player)
+                
+                except:
+                    pass
+            
+            elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+                break
+    
+    finally:
+        if player in jugadores_conectados:
+            jugadores_conectados.remove(player)
+        if player.usuario and player.personaje:
+            await guardar_cuenta(player.usuario, {
+                "nombre": player.nombre,
+                "clase": player.personaje.get("nombreClase", "guerrero"),
+                "nivel": player.nivel,
+                "xp": player.xp,
+                "monedas": player.mo,
+                "sala_id": player.sala_id,
+                "salas_limpias": list(player.salas_limpias),
+                "inventario": getattr(player, 'inventario', {}),
+                "misiones": getattr(player, 'misiones', {}),
+            })
+    
+    return ws
+
+async def process_command(player, cmd):
+    cmd = cmd.strip().lower()
+    if not cmd:
+        return
+    
+    if player.combate:
+        if cmd in ["1", "2", "3"]:
+            player.combate.acciones[player.id] = cmd
+            return
+    
+    if cmd in ["n", "norte"]:
+        await move(player, "norte")
+    elif cmd in ["s", "sur"]:
+        await move(player, "sur")
+    elif cmd in ["e", "este"]:
+        await move(player, "este")
+    elif cmd in ["o", "oeste"]:
+        await move(player, "oeste")
+    elif cmd == "atacar":
+        await attack(player)
+    elif cmd == "mirar":
+        await describe_sala(player)
+    elif cmd == "stats":
+        await broadcast_stats(player)
+    elif cmd.startswith("decir "):
+        msg = cmd[6:]
+        await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg}", exclude=player)
+    elif cmd.startswith("g "):
+        msg = cmd[2:]
+        await broadcast_global(f"[Global] {player.nombre}: {msg}", exclude=player)
+    elif cmd == "hospital":
+        await hospital(player)
+    elif cmd == "tienda":
+        await tienda(player)
+    elif cmd.startswith("comprar "):
+        item = cmd[8:].strip()
+        await comprar(player, item)
+    elif cmd.startswith("usar "):
+        item = cmd[5:].strip()
+        await usar(player, item)
+    elif cmd == "mochila":
+        await mochila(player)
+    elif cmd == "ranking":
+        await broadcast_ranking()
+    elif cmd == "ayuda":
+        await player.send({"type": "message", "text": "Comandos: n/s/e/o (mover), atacar, stats, hospital, tienda, comprar <item>, usar <item>, mochila, ranking"})
+    else:
+        await player.send({"type": "message", "text": f"Comando '{cmd}' desconocido. Escribe 'ayuda'"})
+
+async def move(player, direction):
+    if player.combate:
+        await player.send({"type": "message", "text": "No puedes moverte en combate!"})
+        return
+    if player.muerto:
+        await player.send({"type": "message", "text": "Estas muerto."})
+        return
+    
+    sala = SALAS.get(player.sala_id)
+    if not sala:
+        return
+    
+    if player.sala_id not in player.salas_limpias:
+        if "bioma" in sala or sala.get("encuentros"):
+            await player.send({"type": "message", "text": "Hay enemigos! Derrotalos primero."})
+            return
+    
+    nueva = sala.get("conexiones", {}).get(direction)
+    if nueva is None:
+        await player.send({"type": "message", "text": f"No puedes ir al {direction}"})
+        return
+    
+    await broadcast_sala(player.sala_id, f"🚪 {player.nombre} se va al {direction}.", exclude=player)
+    player.sala_id = nueva
+    await broadcast_sala(player.sala_id, f"🚪 {player.nombre} ha llegado.", exclude=player)
+    await describe_sala(player)
+    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedas": player.mo, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
+
+async def describe_sala(player):
+    sala = SALAS.get(player.sala_id, {})
+    
+    bioma_info = ""
+    if "bioma" in sala:
+        bioma = BIOMAS.get(sala["bioma"], {})
+        bioma_info = f" [{bioma.get('emoji', '')} {sala['bioma']}]"
+    
+    tiene_enemigos = player.sala_id not in player.salas_limpias and ("bioma" in sala or sala.get("encuentros"))
+    
+    others = [p.nombre for p in jugadores_conectados if p.sala_id == player.sala_id and p != player and p.nombre]
+    others_str = f" 👥 Jugadores: {', '.join(others)}" if others else ""
+    
+    await player.send({
+        "type": "sala",
+        "sala_id": player.sala_id,
+        "nombre": sala.get("nombre", "?"),
+        "descripcion": sala.get("descripcion", "") + bioma_info,
+        "conexiones": sala.get("conexiones", {}),
+        "hospital": sala.get("hospital", False),
+        "tienda": sala.get("tienda", False),
+        "enemigos": tiene_enemigos,
+        "others": others_str,
+    })
+
 # ==================== APP ====================
 app = web.Application()
 app.router.add_get('/', index)
