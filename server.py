@@ -1409,7 +1409,7 @@ async def websocket_handler(request):
                             clase = result.get("clase", "guerrero")
                             player.nivel = result.get("nivel", 1)
                             player.xp = result.get("xp", 0)
-                            player.mo = result.get("monedas", 0)
+                            player.moned = result.get("monedas", 0)
                             player.sala_id = result.get("sala_id", 1)
                             player.salas_limpias = set(result.get("salas_limpias", []))
                             player.inventario = result.get("inventario", {})
