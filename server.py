@@ -910,7 +910,7 @@ SALAS = {
 }           
 # ==================== GLOBALS ====================
 jugadores_conectados = []
-combates_activos = {}
+fights_activos = {}
 _lb_cache = []
 _lb_cache_time = 0
 
@@ -1096,7 +1096,7 @@ async def broadcast_stats(player):
 # ==================== COMBAT ====================
 COMBAT_TIMEOUT = 120  # 2 minutes
 
-combates_activos = {}
+fights_activos = {}
 
 class Combate:
     def __init__(self, sala_id, jugadores):
@@ -1265,7 +1265,7 @@ async def loop_combate(combate):
 # End combat
     for p in combate.jugadores:
         p.combate = None
-    combate_activos.pop(sala_id, None)
+    fights_activos.pop(sala_id, None)
 
 async def attack(player):
     if player.combate:
@@ -1284,7 +1284,7 @@ async def attack(player):
         await player.send({"type": "message", "text": "No hay enemigos aqui."})
         return
     
-if player.sala_id in fights_activos:
+    if player.sala_id in fights_activos:
         c = fights_activos[player.sala_id]
         is_new = player not in c.jugadores
         if is_new:
