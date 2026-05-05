@@ -1100,7 +1100,6 @@ class Combate:
         self.enemigos = []
         self.acciones = {}
         self.turno = 0
-        self.timeout_task = None
     
     def cargar_enemigos(self):
         sala = SALAS.get(self.sala_id, {})
@@ -1116,113 +1115,24 @@ class Combate:
                 base = deepcopy(ENEMIGOS[tipo])
                 self.enemigos.append({"nombre": f"{tipo.capitalize()}", "tipo": tipo, "hp": base["vidaMax"], "vidaMax": base["vidaMax"], **base})
     
-    def enemigos_vivos(self):
+    def get_enemigos_vivos(self):
         return [e for e in self.enemigos if e["hp"] > 0]
     
-    def jugadores_vivos(self):
+    def get_jugadores_vivos(self):
         return [p for p in self.jugadores if p.personaje and p.personaje.get("vidaActual", 0) > 0]
     
-def todos_han_accionado(self):
-        for p in self.jugadores_vivos():
+    def todos_accionaron(self):
+        vivos = self.get_jugadores_vivos()
+        if not vivos:
+            return True
+        for p in vivos:
             if p.id not in self.acciones:
                 return False
-        return len(self.jugadores_vivos()) > 0
+        return True
 
-async def procesar_combate(combate):
+async def ejecutar_accion_player(player, accion, combate):
     sala_id = combate.sala_id
-    
-    while True:
-        # Check if combat should continue
-        if not combate.enemigos_vivos():
-            # VICTORY
-            xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
-            oro = xp // 2
-            await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP, +{oro} monedas")
-            for p in combate.jugadores_vivos():
-                if p.personaje and p.personaje["vidaActual"] > 0:
-                    p.xp += xp
-                    p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
-                    p.salas_limpias.add(sala_id)
-                    while p.xp >= xp_para_subir(p.nivel):
-                        p.xp -= xp_para_subir(p.nivel)
-                        p.nivel += 1
-                        await p.send({"type": "level_up", "nivel": p.nivel})
-                    await p.send({"type": "combat_end", "victory": True, "xp": xp, "oro": oro})
-                    await broadcast_stats(p)
-                    await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": p.personaje.get("nombreClase", "guerrero"), "nivel": p.nivel, "xp": p.xp, "monedas": p.monedas})
-            break
-            
-        if not combate.jugadores_vivos():
-            # DEFEAT
-            await broadcast_sala(sala_id, "\n💀 DERROTA. Todos los jugadores cayeron.")
-            for p in combate.jugadores:
-                await p.send({"type": "combat_end", "victory": False})
-            break
-        
-        # Check if all players have acted
-        if combate.todos_han_accionado():
-            combate.turno += 1
-            await broadcast_sala(sala_id, f"\n=== TURNO {combate.turno} ===")
-            
-            # Restore mana
-            for p in combate.jugadores_vivos():
-                if p.personaje:
-                    p.personaje["manaActual"] = min(p.personaje["manaActual"] + p.personaje.get("manaTurno", 0), p.personaje["manaMax"])
-            
-            # Player actions
-            for p in combate.jugadores_vivos():
-                if p.personaje and p.personaje["vidaActual"] > 0:
-                    accion = combate.acciones.get(p.id, "1")
-                    await ejecutar_accion(p, accion, combate)
-            
-            # Enemy attacks
-            for e in combate.enemigos_vivos():
-                objetivos = combate.jugadores_vivos()
-                if objetivos:
-                    obj = random.choice(objetivos)
-                    if obj.personaje:
-                        dmg = calcular_danio(e["danioBase"])
-                        obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - dmg)
-                        await broadcast_sala(sala_id, f"  {e['nombre']} ataca a {obj.nombre} por {dmg}")
-            
-            # Send updates
-            for p in combate.jugadores:
-                await broadcast_stats(p)
-                pdata = {}
-                if p.personaje:
-                    pdata = {"hp": p.personaje["vidaActual"], "hpMax": p.personaje["vidaMax"], "mana": p.personaje["manaActual"], "manaMax": p.personaje["manaMax"]}
-                otros = []
-                for o in combate.jugadores:
-                    if o != p and o.personaje:
-                        otros.append({"nombre": o.nombre, "hp": o.personaje["vidaActual"], "hpMax": o.personaje["vidaMax"]})
-                await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.enemigos_vivos()], "turno": combate.turno, "player": pdata, "otros": otros})
-            
-            # Check for deaths
-            for p in combate.jugadores:
-                if p.personaje and p.personaje["vidaActual"] <= 0 and not p.muerto:
-                    p.muerto = True
-                    await broadcast_sala(sala_id, f"💀 {p.nombre} ha caido!")
-                    await p.send({"type": "combat_end", "victory": False})
-                    asyncio.create_task(respawn(p))
-            
-            # Reset actions for next turn
-            combate.acciones = {}
-            
-            # Send "waiting for actions" to all
-            for p in combate.jugadores_vivos():
-                await p.send({"type": "combat_waiting"})
-        else:
-            # Wait a bit before checking again
-            await asyncio.sleep(0.5)
-    
-    # End combat
-    for p in combate.jugadores:
-        p.combate = None
-    combates_activos.pop(sala_id, None)
-
-async def ejecutar_accion(player, accion, combate):
-    sala_id = combate.sala_id
-    enemigos = combate.enemigos_vivos()
+    enemigos = combate.get_enemigos_vivos()
     if not enemigos:
         return
     obj = enemigos[0]
@@ -1234,42 +1144,10 @@ async def ejecutar_accion(player, accion, combate):
         num = ataques_por_turno(p.get("ataquesTurno", 1))
         for _ in range(num):
             if obj["hp"] <= 0:
-                obj = random.choice(combate.enemigos_vivos()) if combate.enemigos_vivos() else None
-                if not obj:
+                enemigos = combate.get_enemigos_vivos()
+                if not enemigos:
                     break
-            dmg = calcular_danio(p["danioBase"])
-            if player.buff_danio:
-                dmg = int(dmg * 1.3)
-                player.buff_danio = False
-            obj["hp"] = max(0, obj["hp"] - dmg)
-            await broadcast_sala(sala_id, f"⚔️ {player.nombre} ataca a {obj['nombre']} por {dmg}")
-    
-    elif accion == "2":
-        costo = p.get("costoEspecial", 0)
-        if p["manaActual"] < costo:
-            await player.send({"type": "message", "text": f"No tienes mana (necesitas {costo})"})
-            return
-        p["manaActual"] -= costo
-        if p.get("nombreClase") == "curandero":
-            cur = p.get("curacionEspecial", 20)
-            p["vidaActual"] = min(p["vidaActual"] + cur, p["vidaMax"])
-            await broadcast_sala(sala_id, f"💚 {player.nombre} se cura {cur} HP")
-        else:
-            dmg = calcular_danio(p.get("danioEspecial", p["danioBase"]))
-            if player.buff_danio:
-                dmg = int(dmg * 1.3)
-                player.buff_danio = False
-            obj["hp"] = max(0, obj["hp"] - dmg)
-            await broadcast_sala(sala_id, f"✨ {player.nombre} usa habilidad especial en {obj['nombre']} por {dmg}")
-    p = player.personaje
-    if not p:
-        return
-    
-    if accion == "1":
-        num = ataques_por_turno(p.get("ataquesTurno", 1))
-        for _ in range(num):
-            if obj["hp"] <= 0:
-                break
+                obj = random.choice(enemigos)
             dmg = calcular_danio(p["danioBase"])
             if player.buff_danio:
                 dmg = int(dmg * 1.3)
@@ -1298,254 +1176,91 @@ async def ejecutar_accion(player, accion, combate):
     elif accion == "3":
         await broadcast_sala(sala_id, f"💤 {player.nombre} pasa el turno")
 
-async def respawn(player):
-    player.muerto = True
-    await player.send({"type": "message", "text": f"Has muerto. Reapareces en {TIEMPO_RESPAWN}s..."})
-    await asyncio.sleep(TIEMPO_RESPAWN)
-    if player.personaje:
-        player.personaje["vidaActual"] = max(1, player.personaje["vidaMax"] // 2)
-        player.personaje["manaActual"] = player.personaje["manaMax"]
-    player.sala_id = SALA_RESPAWN
-    player.muerto = False
-    await player.send({"type": "respawn", "sala_id": SALA_RESPAWN})
-    await broadcast_stats(player)
-
-# ==================== WEB HANDLER ====================
-async def websocket_handler(request):
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
+async def loop_combate(combate):
+    sala_id = combate.sala_id
     
-    player = Player(ws, request.remote)
-    jugadores_conectados.append(player)
-    
-    try:
-        async for msg in ws:
-            if msg.type == aiohttp.WSMsgType.TEXT:
-                try:
-                    data = json.loads(msg.data)
-                    
-                    if data.get("type") == "login":
-                        usuario = data.get("usuario", "")
-                        password = data.get("password", "")
-                        
-                        result = await verificar_login(usuario, password)
-                        if result:
-                            player.usuario = usuario
-                            player.nombre = result.get("nombre", usuario)
-                            clase = result.get("clase", "guerrero")
-                            player.nivel = result.get("nivel", 1)
-                            player.xp = result.get("xp", 0)
-                            player.monedas = result.get("monedas", 0)
-                            player.sala_id = result.get("sala_id", 1)
-                            player.salas_limpias = set(result.get("salas_limpias", []))
-                            player.inventario = result.get("inventario", {})
-                        else:
-                            await player.send({"type": "login_error", "text": "Usuario o contrasena incorrectos"})
-                            continue
-                        
-                        base = CLASES[clase]
-                        player.personaje = {
-                            "nombreClase": clase,
-                            "vidaMax": base["vidaMax"],
-                            "vidaActual": base["vidaMax"],
-                            "manaMax": base["manaMax"],
-                            "manaActual": base["manaMax"],
-                            "danioBase": base["danioBase"],
-                            "manaTurno": base.get("manaTurno", 0),
-                            "ataquesTurno": base.get("ataquesTurno", 1),
-                            "costoEspecial": base.get("costoEspecial", 0),
-                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
-                            "curacionEspecial": base.get("curacionEspecial", 0),
-                        }
-                        
-                        await player.send({"type": "login_ok"})
-                        await broadcast_stats(player)
-                        await broadcast_ranking()
-                    
-                    elif data.get("type") == "register":
-                        usuario = data.get("usuario", "")
-                        password = data.get("password", "")
-                        nombre = data.get("nombre", usuario)
-                        clase = data.get("clase", "guerrero")
-                        
-                        if clase not in CLASES:
-                            clase = "guerrero"
-                        
-                        result = await crear_cuenta(usuario, password, nombre, clase)
-                        if not result:
-                            await player.send({"type": "login_error", "text": "El usuario ya existe"})
-                            continue
-                        print(f"[ACCOUNT] Created: {usuario}, users in memory: {len(USUARIOS)}")
-                        player.usuario = usuario
-                        player.nombre = nombre
-                        player.clase = clase
-                        player.clase = clase
-                        
-                        base = CLASES[clase]
-                        player.personaje = {
-                            "nombreClase": clase,
-                            "vidaMax": base["vidaMax"],
-                            "vidaActual": base["vidaMax"],
-                            "manaMax": base["manaMax"],
-                            "manaActual": base["manaMax"],
-                            "danioBase": base["danioBase"],
-                            "manaTurno": base.get("manaTurno", 0),
-                            "ataquesTurno": base.get("ataquesTurno", 1),
-                            "costoEspecial": base.get("costoEspecial", 0),
-                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
-                            "curacionEspecial": base.get("curacionEspecial", 0),
-                        }
-                        
-                        await player.send({"type": "register_ok"})
-                        await broadcast_stats(player)
-                        await broadcast_ranking()
-                    
-                    elif data.get("type") == "command":
-                        await process_command(player, data.get("cmd", ""))
-                    
-                    elif data.get("type") == "action":
-                        if player.combate:
-                            player.combate.acciones[player.id] = data.get("action", "1")
-                    
-                    elif data.get("type") == "chat":
-                        msg_text = data.get("message", "").strip()
-                        if msg_text and player.nombre:
-                            scope = data.get("scope", "sala")
-                            if scope == "sala":
-                                await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg_text}", exclude=player)
-                            elif scope == "global":
-                                await broadcast_global(f"[Global] {player.nombre}: {msg_text}", exclude=player)
-                            elif scope == "grupo" and player.grupo:
-                                for p in player.grupo["miembros"]:
-                                    if p != player:
-                                        await p.send({"type": "chat", "scope": "grupo", "from": player.nombre, "text": msg_text})
-                
-                except:
-                    pass
+    while True:
+        if not combate.get_enemigos_vivos():
+            xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
+            oro = xp // 2
+            await broadcast_sala(sala_id, f"\n🎉 VICTORIA! +{xp} XP, +{oro} monedas")
+            for p in combate.get_jugadores_vivos():
+                if p.personaje and p.personaje["vidaActual"] > 0:
+                    p.xp += xp
+                    p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
+                    p.salas_limpias.add(sala_id)
+                    while p.xp >= xp_para_subir(p.nivel):
+                        p.xp -= xp_para_subir(p.nivel)
+                        p.nivel += 1
+                        await p.send({"type": "level_up", "nivel": p.nivel})
+                    await p.send({"type": "combat_end", "victory": True, "xp": xp, "oro": oro})
+                    await broadcast_stats(p)
+                    await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": p.personaje.get("nombreClase", "guerrero"), "nivel": p.nivel, "xp": p.xp, "monedas": p.monedas})
+            break
             
-            elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
-                break
+        if not combate.get_jugadores_vivos():
+            # DEFEAT
+            await broadcast_sala(sala_id, "\n💀 DERROTA. Todos los jugadores cayeron.")
+            for p in combate.jugadores:
+                await p.send({"type": "combat_end", "victory": False})
+            break
+        
+        # Check if all players have acted
+        if combate.todos_accionaron():
+            combate.turno += 1
+            await broadcast_sala(sala_id, f"\n=== TURNO {combate.turno} ===")
+            
+            # Restore mana
+            for p in combate.get_jugadores_vivos():
+                if p.personaje:
+                    p.personaje["manaActual"] = min(p.personaje["manaActual"] + p.personaje.get("manaTurno", 0), p.personaje["manaMax"])
+            
+            # Player actions
+            for p in combate.get_jugadores_vivos():
+                if p.personaje and p.personaje["vidaActual"] > 0:
+                    accion = combate.acciones.get(p.id, "1")
+                    await ejecutar_accion_player(p, accion, combate)
+            
+            # Enemy attacks
+            for e in combate.get_enemigos_vivos():
+                objetivos = combate.get_jugadores_vivos()
+                if objetivos:
+                    obj = random.choice(objetivos)
+                    if obj.personaje:
+                        dmg = calcular_danio(e["danioBase"])
+                        obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - dmg)
+                        await broadcast_sala(sala_id, f"  {e['nombre']} ataca a {obj.nombre} por {dmg}")
+            
+            # Send updates
+            for p in combate.jugadores:
+                await broadcast_stats(p)
+                pdata = {}
+                if p.personaje:
+                    pdata = {"hp": p.personaje["vidaActual"], "hpMax": p.personaje["vidaMax"], "mana": p.personaje["manaActual"], "manaMax": p.personaje["manaMax"]}
+                otros = []
+                for o in combate.jugadores:
+                    if o != p and o.personaje:
+                        otros.append({"nombre": o.nombre, "hp": o.personaje["vidaActual"], "hpMax": o.personaje["vidaMax"]})
+                await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.get_enemigos_vivos()], "turno": combate.turno, "player": pdata, "otros": otros})
+            
+            # Check for deaths
+            for p in combate.jugadores:
+                if p.personaje and p.personaje["vidaActual"] <= 0 and not p.muerto:
+                    p.muerto = True
+                    await broadcast_sala(sala_id, f"💀 {p.nombre} ha caido!")
+                    await p.send({"type": "combat_end", "victory": False})
+                    asyncio.create_task(respawn(p))
+            
+            # Reset actions for next turn
+            combate.acciones = {}
+        
+        # Wait a bit before checking again (no sleep, instant)
+        await asyncio.sleep(0.1)
     
-    finally:
-        if player in jugadores_conectados:
-            jugadores_conectados.remonedasve(player)
-        if player.usuario and player.personaje:
-            await guardar_cuenta(player.usuario, {
-                "nombre": player.nombre,
-                "clase": player.personaje.get("nombreClase", "guerrero"),
-                "nivel": player.nivel,
-                "xp": player.xp,
-                "monedas": player.monedas,
-                "sala_id": player.sala_id,
-                "salas_limpias": list(player.salas_limpias),
-                "inventario": getattr(player, 'inventario', {}),
-                "misiones": getattr(player, 'misiones', {}),
-            })
-    
-    return ws
-
-# ==================== COMMANDS ====================
-async def process_command(player, cmd):
-    cmd = cmd.strip().lower()
-    if not cmd:
-        return
-    
-    if player.combate:
-        if cmd in ["1", "2", "3"]:
-            player.combate.acciones[player.id] = cmd
-            return
-    
-    if cmd in ["n", "norte"]:
-        await monedasve(player, "norte")
-    elif cmd in ["s", "sur"]:
-        await monedasve(player, "sur")
-    elif cmd in ["e", "este"]:
-        await monedasve(player, "este")
-    elif cmd in ["o", "oeste"]:
-        await monedasve(player, "oeste")
-    elif cmd == "atacar":
-        await attack(player)
-    elif cmd == "mirar":
-        await describe_sala(player)
-    elif cmd == "stats":
-        await broadcast_stats(player)
-    elif cmd.startswith("decir "):
-        msg = cmd[6:]
-        await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg}", exclude=player)
-    elif cmd.startswith("g "):
-        msg = cmd[2:]
-        await broadcast_global(f"[Global] {player.nombre}: {msg}", exclude=player)
-    elif cmd == "hospital":
-        await hospital(player)
-    elif cmd == "tienda":
-        await tienda(player)
-    elif cmd.startswith("comprar "):
-        item = cmd[8:].strip()
-        await comprar(player, item)
-    elif cmd.startswith("usar "):
-        item = cmd[5:].strip()
-        await usar(player, item)
-    elif cmd == "monedaschila":
-        await monedaschila(player)
-    elif cmd == "ranking":
-        await broadcast_ranking()
-    elif cmd == "ayuda":
-        await player.send({"type": "message", "text": "Comandos: n/s/e/o (monedasver), atacar, stats, hospital, tienda, comprar <item>, usar <item>, monedaschila, ranking"})
-    else:
-        await player.send({"type": "message", "text": f"Comando '{cmd}' desconocido. Escribe 'ayuda'"})
-
-async def monedasve(player, direction):
-    if player.combate:
-        await player.send({"type": "message", "text": "No puedes monedasverte en combate!"})
-        return
-    if player.muerto:
-        await player.send({"type": "message", "text": "Estas muerto."})
-        return
-    
-    sala = SALAS.get(player.sala_id)
-    if not sala:
-        return
-    
-    if player.sala_id not in player.salas_limpias:
-        if "bioma" in sala or sala.get("encuentros"):
-            await player.send({"type": "message", "text": "Hay enemigos! Derrotalos primero."})
-            return
-    
-    nueva = sala.get("conexiones", {}).get(direction)
-    if nueva is None:
-        await player.send({"type": "message", "text": f"No puedes ir al {direction}"})
-        return
-    
-    await broadcast_sala(player.sala_id, f"🚪 {player.nombre} se va al {direction}.", exclude=player)
-    player.sala_id = nueva
-    await broadcast_sala(player.sala_id, f"🚪 {player.nombre} ha llegado.", exclude=player)
-    await describe_sala(player)
-    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedas": player.monedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
-
-async def describe_sala(player):
-    sala = SALAS.get(player.sala_id, {})
-    
-    bioma_info = ""
-    if "bioma" in sala:
-        bioma = BIOMAS.get(sala["bioma"], {})
-        bioma_info = f" [{bioma.get('emonedasji', '')} {sala['bioma']}]"
-    
-    tiene_enemigos = player.sala_id not in player.salas_limpias and ("bioma" in sala or sala.get("encuentros"))
-    
-    others = [p.nombre for p in jugadores_conectados if p.sala_id == player.sala_id and p != player and p.nombre]
-    others_str = f" 👥 Jugadores: {', '.join(others)}" if others else ""
-    
-    await player.send({
-        "type": "sala",
-        "sala_id": player.sala_id,
-        "nombre": sala.get("nombre", "?"),
-        "descripcion": sala.get("descripcion", "") + bioma_info,
-        "conexiones": sala.get("conexiones", {}),
-        "hospital": sala.get("hospital", False),
-        "tienda": sala.get("tienda", False),
-        "enemigos": tiene_enemigos,
-        "others": others_str,
-    })
+# End combat
+    for p in combate.jugadores:
+        p.combate = None
+    combate_activos.pop(sala_id, None)
 
 async def attack(player):
     if player.combate:
@@ -1575,7 +1290,7 @@ async def attack(player):
         combate.cargar_enemigos()
         player.combate = combate
         combates_activos[player.sala_id] = combate
-        asyncio.create_task(procesar_combate(combate))
+        asyncio.create_task(loop_combate(combate))
         
         for p in jugadores_conectados:
             if p.sala_id == player.sala_id and p != player and p.personaje and p.personaje["vidaActual"] > 0:
