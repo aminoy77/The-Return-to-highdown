@@ -1431,7 +1431,7 @@ async def websocket_handler(request):
                             clase = result.get("clase", "guerrero")
                             player.nivel = result.get("nivel", 1)
                             player.xp = result.get("xp", 0)
-                            player.moned = result.get("monedas", 0)
+                            player.monedas = result.get("monedas", 0)
                             player.sala_id = result.get("sala_id", 1)
                             player.salas_limpias = set(result.get("salas_limpias", []))
                             player.inventario = result.get("inventario", {})
@@ -1507,9 +1507,11 @@ async def websocket_handler(request):
                         if msg_text and player.nombre:
                             scope = data.get("scope", "sala")
                             if scope == "sala":
-                                await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg_text}", exclude=player)
+                                await broadcast_sala(player.sala_id, msg_text, exclude=player)
+                                await player.send({"type": "chat", "scope": "sala", "from": player.nombre, "text": msg_text})
                             elif scope == "global":
-                                await broadcast_global(f"[Global] {player.nombre}: {msg_text}", exclude=player)
+                                await broadcast_global(msg_text, exclude=player)
+                                await player.send({"type": "chat", "scope": "global", "from": player.nombre, "text": msg_text})
                 
                 except:
                     pass
@@ -1526,7 +1528,7 @@ async def websocket_handler(request):
                 "clase": player.personaje.get("nombreClase", "guerrero"),
                 "nivel": player.nivel,
                 "xp": player.xp,
-                "monedas": player.mo,
+                "monedas": player.monedas,
                 "sala_id": player.sala_id,
                 "salas_limpias": list(player.salas_limpias),
                 "inventario": getattr(player, 'inventario', {}),
@@ -1576,7 +1578,7 @@ async def process_command(player, cmd):
         item = cmd[5:].strip()
         await usar(player, item)
     elif cmd == "mochila":
-        await mochila(player)
+        await monedaschila(player)
     elif cmd == "ranking":
         await broadcast_ranking()
     elif cmd == "ayuda":
