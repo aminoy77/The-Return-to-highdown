@@ -1,6 +1,4 @@
-Aquí tienes el README actualizado con la licencia personalizada:
 
-```markdown
 # 🗡️ The Return to Highdown
 ### Un MUD Multiplayer en Tiempo Real
 
@@ -171,4 +169,4 @@ LOS AUTORES NO SERÁN RESPONSABLES DE NINGÚN DAÑO O PROBLEMA DERIVADO DE SU US
 **🎮 [Jugar Ahora - The Return to Highdown](https://the-return-to-highdown.onrender.com)**
 
 *¡Que los dioses antiguos te acompañen en tu viaje!*
-```
+
