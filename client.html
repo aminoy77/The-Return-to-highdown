@@ -260,8 +260,8 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
         <div id="chat">
           <h3>💬 CHAT</h3>
           <div id="chat-tabs">
-            <button class="chat-tab active" onclick="setChat('sala')">Sala</button>
-            <button class="chat-tab" onclick="setChat('global')">Global</button>
+            <button class="chat-tab active" onclick="setChat('sala', this)">Sala</button>
+            <button class="chat-tab" onclick="setChat('global', this)">Global</button>
           </div>
           <div id="chat-messages"></div>
           <div id="chat-input">
@@ -353,7 +353,7 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 
 <script>
 let ws = null;
-let GAME_URL = 'https://the-return-to-highdown.onrender.com';  // Set by server
+let GAME_URL = window.location.origin;
 let currentChat = 'sala';
 let inCombat = false;
 let serverAwake = false;
@@ -470,8 +470,8 @@ function handleMessage(data){
     updateRoom(data);
   }
   else if(data.type === 'combat_start'){
-    console.log('⚔️ COMBAT_START:', {enemigos: data.enemigos, joined: data.joined});
-    showCombat(data.enemigos, null);
+    console.log('⚔️ COMBAT_START:', {enemigos: data.enemigos, player: data.player, joined: data.joined});
+    showCombat(data.enemigos, data.player || null);
     if(data.joined){
       log('Te has unido al combate!','combat');
     }
@@ -485,7 +485,7 @@ function handleMessage(data){
       log('🎉 VICTORIA! +' + data.xp + ' XP' + (data.oro ? ', +' + data.oro + ' monedas' : ''),'loot');
       setTimeout(() => hideCombat(), 2000);
     }else{
-      log('💀 DERROTA...','error');
+      log('💀 DERROTA. Todos los jugadores cayeron.','error');
       setTimeout(() => hideCombat(), 2000);
     }
   }
@@ -549,8 +549,8 @@ function updateRoom(data){
   document.getElementById('btn-hospital').style.display = data.hospital ? 'inline-block' : 'none';
   document.getElementById('btn-tienda').style.display = data.tienda ? 'inline-block' : 'none';
   
-  if(data.others) document.getElementById('players-in-room').innerHTML = data.others;
-  else document.getElementById('players-in-room').innerHTML = '';
+  if(data.others) document.getElementById('players-in-room').textContent = data.others;
+  else document.getElementById('players-in-room').textContent = '';
 }
 
 let playerStats = { hp: 0, hpMax: 100, mana: 0, manaMax: 50 };
@@ -659,10 +659,10 @@ function refreshRoom(){
   sendWs({type:'command', cmd:'mirar'});
 }
 
-function setChat(scope){
+function setChat(scope, el){
   currentChat = scope;
   document.querySelectorAll('.chat-tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
+  el.classList.add('active');
 }
 
 function sendChat(){
@@ -680,21 +680,32 @@ function addChatMessage(scope, from, text){
   const el = document.getElementById('chat-messages');
   const div = document.createElement('div');
   div.className = 'chat-msg ' + scope;
-  div.innerHTML = `<span class="from">[${from}]</span> ${text}`;
+  const fromSpan = document.createElement('span');
+  fromSpan.className = 'from';
+  fromSpan.textContent = from ? '[' + from + '] ' : '';
+  div.appendChild(fromSpan);
+  div.appendChild(document.createTextNode(text));
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
 }
 
 function updateRanking(ranking){
   const el = document.getElementById('ranking-list');
-  let html = '';
+  el.innerHTML = '';
   ranking.forEach((r,i) => {
-    html += `<div class="ranking-row">
-      <span><span class="ranking-pos">${i+1}.</span>${r[0]}</span>
-      <span>Nv.${r[1]}</span>
-    </div>`;
+    const div = document.createElement('div');
+    div.className = 'ranking-row';
+    const posSpan = document.createElement('span');
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = r[0];
+    const lvlSpan = document.createElement('span');
+    lvlSpan.textContent = 'Nv.' + r[1];
+    posSpan.appendChild(document.createTextNode((i+1) + '. '));
+    posSpan.appendChild(nameSpan);
+    div.appendChild(posSpan);
+    div.appendChild(lvlSpan);
+    el.appendChild(div);
   });
-  el.innerHTML = html;
 }
 
 function showShop(items, money){
@@ -721,6 +732,10 @@ function buyItem(id){
 
 function closeModal(id){
   document.getElementById(id).classList.remove('active');
+}
+
+function openModal(id){
+  document.getElementById(id).classList.add('active');
 }
 
 function sendCmd(cmd){
@@ -753,11 +768,15 @@ async function init(){
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+  // Ignore shortcuts when typing in input fields
+  if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  
   if(inCombat){
     if(e.key === '1') sendAction('1');
     if(e.key === '2') sendAction('2');
     if(e.key === '3') sendAction('3');
     if(e.key === '4') sendAction('4');
+    return;
   }
   if(e.key === 'n') move('norte');
   if(e.key === 's') move('sur');

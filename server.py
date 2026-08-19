@@ -100,10 +100,12 @@ ENEMIGOS = {
     "gigante": {"vidaMax": 110, "danioBase": 45, "ataquesTurno": 1, "tier": "Especial"},
     "vampiro": {"vidaMax": 125, "danioBase": 20, "ataquesTurno": 2, "tier": "Superior"},
     "elfoOscuro": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
+    "demonioInferior": {"vidaMax": 80, "danioBase": 30, "ataquesTurno": 1, "tier": "Especial"},
     "demonSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
     "leviatan": {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
     "reyEsqueleto": {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
     "reyDemon": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
+    "reyDemonio": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "kraken": {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "alpha": {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1, "tier": "Boss"},
 }
@@ -161,12 +163,9 @@ SALAS = {
          "bioma": "desierto", "cantidad": 2},
 
     4:  {"nombre": "Ciudad abrasada",
-         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas, donde las calles aún respiran calor y las sombras tiemblan como brasas vivas.",
-         "descripcion": "Sus torres, negras y agrietadas, susurran historias de un fuego que nunca se apaga,",
-         "descripcion": "mientras un cielo rojizo arde sin descanso sobre los últimos vestigios de vida.",
-         "descripcion": "Un demonio superior aguarda, tenéis que derrotarlo!",
+         "descripcion": "Una ciudad abrasada se alza entre cenizas eternas, donde las calles aún respiran calor y las sombras tiemblan como brasas vivas. Sus torres, negras y agrietadas, susurran historias de un fuego que nunca se apaga, mientras un cielo rojizo arde sin descanso sobre los últimos vestigios de vida. Un demonio superior aguarda, tenéis que derrotarlo!",
          "conexiones": {"este": 3},
-         "encuentros": [("demonioSuperior", 1)],
+         "encuentros": [("demonSuperior", 1)],
          "hospital": True},
 
     5:  {"nombre": "Valle muerto",
@@ -253,13 +252,13 @@ SALAS = {
 
     21: {"nombre": "Columnas del Olvido",
          "descripcion": "Pilares erosionados se alzan torcidos, marcando un lugar que el tiempo quiso borrar.",
-         "conexiones": {"este": 15},
+         "conexiones": {"este": 15, "oeste": 22},
          "bioma": "desierto", "cantidad": 2,
          "hospital": True, "tienda": True},
 
     22: {"nombre": "Templo de la Sangre Antigua",
          "descripcion": "Inscripciones vivas recorren las paredes, como si observaran a los intrusos.",
-         "conexiones": {"este": 23, "oeste": 16},
+         "conexiones": {"este": 21, "oeste": 16},
          "encuentros": [("demonioInferior", 2)]},
 
     23: {"nombre": "Abismo de los Caídos",
@@ -355,7 +354,7 @@ SALAS = {
 
     40: {"nombre": "Caverna de la Bruma Salina",
          "descripcion": "Una cueva húmeda llena de niebla con olor a sal.",
-         "conexiones": {},
+         "conexiones": {"este": 36},
          "bioma": "mar", "cantidad": 2},
 
     41: {"nombre": "Templo de las Olas Eternas",
@@ -535,7 +534,7 @@ SALAS = {
 
     74:  {"nombre": "Bosque de Hielo Negro",
           "descripcion": "Árboles oscuros cubiertos de escarcha absorben la luz y el calor.",
-          "conexiones": {"oeste": 76, "sur": 75, "este": 76},
+          "conexiones": {"oeste": 73, "sur": 75, "este": 76},
           "bioma": "nieve", "cantidad": 2},
 
     75:  {"nombre": "Grieta del Frío Abisal",
@@ -550,7 +549,7 @@ SALAS = {
 
     77:  {"nombre": "Cementerio Congelado",
           "descripcion": "Cuerpos atrapados en hielo parecen observar a los vivos.",
-          "conexiones": {"NORTE": 76, "este": 78},
+          "conexiones": {"norte": 76, "este": 78},
           "bioma": "nieve", "cantidad": 2},
 
     78:  {"nombre": "Tormenta Errante",
@@ -660,7 +659,7 @@ SALAS = {
 
     99:  {"nombre": "Valle del Sueño Helado",
           "descripcion": "Un frío que induce un sueño mortal.",
-          "conexiones": {"este": 98, "norte": 108},
+          "conexiones": {"este": 98, "norte": 100},
           "bioma": "nieve", "cantidad": 2},
 
     100: {"nombre": "Niebla Blanca",
@@ -845,12 +844,12 @@ SALAS = {
 
     136: {"nombre": "Paso de la Escarcha Mortal",
           "descripcion": "Cada segundo expuesto es un riesgo.",
-          "conexiones": {"sur": 127},
+          "conexiones": {"sur": 127, "este": 137},
           "bioma": "nieve", "cantidad": 2},
 
     137: {"nombre": "Caverna del Viento Helado",
           "descripcion": "Corrientes internas recorren el interior sin cesar.",
-          "conexiones": {"este": 138},
+          "conexiones": {"oeste": 136, "este": 138},
           "bioma": "nieve", "cantidad": 2},
 
     138: {"nombre": "Campos del Silencio",
@@ -941,8 +940,8 @@ def load_usuarios():
             try:
                 with open(os.path.join(SAVES_DIR, f)) as fp:
                     USUARIOS[usuario] = json.load(fp)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"[USERS] Error cargando {f}: {e}")
     print(f"[USERS] Cargados {len(USUARIOS)} usuarios")
 
 load_usuarios()
@@ -1043,25 +1042,31 @@ class Player:
         self.inventario = {}
         self.grupo = None
         self.salas_limpias = set()
-        self.lore_monedasstrado = False
+        self.lore_mostrado = False
         self.kills = 0
     
     async def send(self, data):
         try:
             await self.ws.send_json(data)
-        except:
-            pass
+        except Exception as e:
+            print(f"[PLAYER] Send error: {e}")
 
 # ==================== BROADCAST ====================
-async def broadcast_sala(sala_id, msg, exclude=None):
+async def broadcast_sala(sala_id, msg, exclude=None, from_player=None):
     for p in jugadores_conectados:
         if p.sala_id == sala_id and p != exclude:
-            await p.send({"type": "chat", "scope": "sala", "text": msg})
+            data = {"type": "chat", "scope": "sala", "text": msg}
+            if from_player:
+                data["from"] = from_player
+            await p.send(data)
 
-async def broadcast_global(msg, exclude=None):
+async def broadcast_global(msg, exclude=None, from_player=None):
     for p in jugadores_conectados:
         if p != exclude:
-            await p.send({"type": "chat", "scope": "global", "text": msg})
+            data = {"type": "chat", "scope": "global", "text": msg}
+            if from_player:
+                data["from"] = from_player
+            await p.send(data)
 
 async def broadcast_ranking():
     ranking = []
@@ -1095,8 +1100,6 @@ async def broadcast_stats(player):
 
 # ==================== COMBAT ====================
 COMBAT_TIMEOUT = 120  # 2 minutes
-
-fights_activos = {}
 
 class Combate:
     def __init__(self, sala_id, jugadores):
@@ -1184,34 +1187,42 @@ async def ejecutar_accion_player(player, accion, combate):
     elif accion == "3":
         for pj in combate.jugadores:
             await pj.send({"type": "message", "text": f"💤 {player.nombre} pasa el turno"})
+    
+    elif accion == "4":
+        await player.send({"type": "message", "text": "No puedes usar items en combate!"})
+        for pj in combate.jugadores:
+            await pj.send({"type": "message", "text": f"💤 {player.nombre} pasa el turno"})
 
 async def loop_combate(combate):
     sala_id = combate.sala_id
+    start_time = time.time()
     
     while True:
         if not combate.get_enemigos_vivos():
             xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
             oro = xp // 2
             for p in combate.get_jugadores_vivos():
-                await p.send({"type": "message", "text": f"\n🎉 VICTORIA! +{xp} XP, +{oro} monedas"})
-            for p in combate.get_jugadores_vivos():
                 if p.personaje and p.personaje["vidaActual"] > 0:
                     p.xp += xp
+                    p.monedas += oro
                     p.personaje["vidaActual"] = min(p.personaje["vidaActual"] + 20, p.personaje["vidaMax"])
                     p.salas_limpias.add(sala_id)
                     while p.xp >= xp_para_subir(p.nivel):
                         p.xp -= xp_para_subir(p.nivel)
                         p.nivel += 1
+                        p.monedas += MONEDAS_SUBIDA
+                        p.personaje["vidaActual"] = p.personaje["vidaMax"]
+                        p.personaje["manaActual"] = p.personaje["manaMax"]
                         await p.send({"type": "level_up", "nivel": p.nivel})
                     await p.send({"type": "combat_end", "victory": True, "xp": xp, "oro": oro})
                     await broadcast_stats(p)
-                    await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": p.personaje.get("nombreClase", "guerrero"), "nivel": p.nivel, "xp": p.xp, "monedas": p.moned})
+                    await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": p.personaje.get("nombreClase", "guerrero"), "nivel": p.nivel, "xp": p.xp, "monedas": p.monedas, "salas_limpias": list(p.salas_limpias)})
             break
             
         if not combate.get_jugadores_vivos():
             for p in combate.jugadores:
-                await p.send({"type": "message", "text": "\n💀 DERROTA. Todos los jugadores cayeron."})
-                await p.send({"type": "combat_end", "victory": False})
+                if not p.muerto:
+                    await p.send({"type": "combat_end", "victory": False})
             break
         
         # Check if all players have acted
@@ -1244,6 +1255,8 @@ async def loop_combate(combate):
             
             # Send updates
             for p in combate.jugadores:
+                if p.personaje and p.personaje["vidaActual"] <= 0:
+                    continue
                 await broadcast_stats(p)
                 pdata = {}
                 if p.personaje:
@@ -1265,6 +1278,13 @@ async def loop_combate(combate):
             
             # Reset actions for next turn
             combate.acciones = {}
+        
+        # Check combat timeout
+        if time.time() - start_time > COMBAT_TIMEOUT:
+            for p in combate.jugadores:
+                await p.send({"type": "message", "text": "\n⏰ Combate cancelado por timeout."})
+                await p.send({"type": "combat_end", "victory": False})
+            break
         
         # Wait a bit before checking again (no sleep, instant)
         await asyncio.sleep(0.1)
@@ -1311,7 +1331,7 @@ async def attack(player):
             if p.sala_id == player.sala_id and p != player and p.personaje and p.personaje["vidaActual"] > 0:
                 await p.send({"type": "combat_join_request", "from": player.nombre})
     
-        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos]})
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "player": {"hp": player.personaje.get("vidaActual", 0), "hpMax": player.personaje.get("vidaMax", 100), "mana": player.personaje.get("manaActual", 0), "manaMax": player.personaje.get("manaMax", 50)}})
     
     # Send immediate combat_update with player stats
     if player.personaje:
@@ -1383,12 +1403,12 @@ async def usar(player, item_id):
     else:
         await player.send({"type": "message", "text": "No tienes ese objeto."})
 
-async def monedaschila(player):
+async def mochila(player):
     items = []
     for iid, qty in player.inventario.items():
         if qty > 0:
-            item = CATALOGO.get(iid, {"nombre": iid, "emonedasji": "📦"})
-            items.append(f"{item.get('emonedasji', '📦')} {item['nombre']} x{qty}")
+            item = CATALOGO.get(iid, {"nombre": iid, "emoji": "📦"})
+            items.append(f"{item.get('emoji', '📦')} {item['nombre']} x{qty}")
     if items:
         await player.send({"type": "message", "text": "🎒 Inventario:\n" + "\n".join(items)})
     else:
@@ -1421,7 +1441,7 @@ async def websocket_handler(request):
                     data = json.loads(msg.data)
                     
                     if data.get("type") == "login":
-                        usuario = data.get("usuario", "")
+                        usuario = ''.join(c for c in data.get("usuario", "") if c.isalnum() or c in '._-')[:30]
                         password = data.get("password", "")
                         
                         result = await verificar_login(usuario, password)
@@ -1429,6 +1449,9 @@ async def websocket_handler(request):
                             player.usuario = usuario
                             player.nombre = result.get("nombre", usuario)
                             clase = result.get("clase", "guerrero")
+                            if clase not in CLASES:
+                                clase = "guerrero"
+                            player.clase = clase
                             player.nivel = result.get("nivel", 1)
                             player.xp = result.get("xp", 0)
                             player.monedas = result.get("monedas", 0)
@@ -1459,9 +1482,11 @@ async def websocket_handler(request):
                         await broadcast_ranking()
                     
                     elif data.get("type") == "register":
-                        usuario = data.get("usuario", "")
+                        usuario = ''.join(c for c in data.get("usuario", "") if c.isalnum() or c in '._-')[:30]
                         password = data.get("password", "")
                         nombre = data.get("nombre", usuario)
+                        # Sanitize name: strip HTML-dangerous chars
+                        nombre = ''.join(c for c in nombre if c.isalnum() or c in ' _-')[:20].strip() or usuario
                         clase = data.get("clase", "guerrero")
                         
                         if clase not in CLASES:
@@ -1500,21 +1525,23 @@ async def websocket_handler(request):
                     
                     elif data.get("type") == "action":
                         if player.combate:
-                            player.combate.acciones[player.id] = data.get("action", "1")
+                            action = data.get("action", "")
+                            if action in ["1", "2", "3", "4"]:
+                                player.combate.acciones[player.id] = action
                     
                     elif data.get("type") == "chat":
                         msg_text = data.get("message", "").strip()
                         if msg_text and player.nombre:
                             scope = data.get("scope", "sala")
                             if scope == "sala":
-                                await broadcast_sala(player.sala_id, msg_text, exclude=player)
+                                await broadcast_sala(player.sala_id, msg_text, exclude=player, from_player=player.nombre)
                                 await player.send({"type": "chat", "scope": "sala", "from": player.nombre, "text": msg_text})
                             elif scope == "global":
-                                await broadcast_global(msg_text, exclude=player)
+                                await broadcast_global(msg_text, exclude=player, from_player=player.nombre)
                                 await player.send({"type": "chat", "scope": "global", "from": player.nombre, "text": msg_text})
                 
-                except:
-                    pass
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    print(f"[WS] Message processing error: {e}")
             
             elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
                 break
@@ -1522,6 +1549,12 @@ async def websocket_handler(request):
     finally:
         if player in jugadores_conectados:
             jugadores_conectados.remove(player)
+        # Remove from combat if disconnecting mid-fight
+        if player.combate:
+            combate = player.combate
+            if player in combate.jugadores:
+                combate.jugadores.remove(player)
+            player.combate = None
         if player.usuario and player.personaje:
             await guardar_cuenta(player.usuario, {
                 "nombre": player.nombre,
@@ -1543,8 +1576,13 @@ async def process_command(player, cmd):
         return
     
     if player.combate:
-        if cmd in ["1", "2", "3"]:
+        if cmd in ["1", "2", "3", "4"]:
             player.combate.acciones[player.id] = cmd
+            return
+        elif cmd.startswith("decir ") or cmd.startswith("g "):
+            pass  # Allow chat during combat, fall through
+        else:
+            await player.send({"type": "message", "text": "En combate usa: 1(atacar), 2(especial), 3(pasar), 4(item), decir/g (chat)"})
             return
     
     if cmd in ["n", "norte"]:
@@ -1563,10 +1601,12 @@ async def process_command(player, cmd):
         await broadcast_stats(player)
     elif cmd.startswith("decir "):
         msg = cmd[6:]
-        await broadcast_sala(player.sala_id, f"[Sala] {player.nombre}: {msg}", exclude=player)
+        await broadcast_sala(player.sala_id, msg, exclude=player, from_player=player.nombre)
+        await player.send({"type": "chat", "scope": "sala", "from": player.nombre, "text": msg})
     elif cmd.startswith("g "):
         msg = cmd[2:]
-        await broadcast_global(f"[Global] {player.nombre}: {msg}", exclude=player)
+        await broadcast_global(msg, exclude=player, from_player=player.nombre)
+        await player.send({"type": "chat", "scope": "global", "from": player.nombre, "text": msg})
     elif cmd == "hospital":
         await hospital(player)
     elif cmd == "tienda":
@@ -1578,11 +1618,11 @@ async def process_command(player, cmd):
         item = cmd[5:].strip()
         await usar(player, item)
     elif cmd == "mochila":
-        await monedaschila(player)
+        await mochila(player)
     elif cmd == "ranking":
         await broadcast_ranking()
     elif cmd == "ayuda":
-        await player.send({"type": "message", "text": "Comandos: n/s/e/o (mover), atacar, stats, hospital, tienda, comprar <item>, usar <item>, mochila, ranking"})
+        await player.send({"type": "message", "text": "Comandos: n/s/e/o (mover), atacar, stats, hospital, tienda, comprar <item>, usar <item>, mochila, ranking, decir <texto>, mirar"})
     else:
         await player.send({"type": "message", "text": f"Comando '{cmd}' desconocido. Escribe 'ayuda'"})
 
