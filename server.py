@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import random
+import re
 from copy import deepcopy
 from aiohttp import web
 import aiohttp
@@ -37,19 +38,6 @@ if USAR_SUPABASE:
             _sb_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
         return _sb_session
     
-    async def _sb_get(usuario):
-        try:
-            s = _get_sb_session()
-            url = f"{SUPABASE_URL}/rest/v1/mud_saves?usuario=eq.{usuario}&select=*"
-            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-            async with s.get(url, headers=headers) as r:
-                if r.status == 200:
-                    rows = await r.json()
-                    return rows[0] if rows else None
-        except Exception as e:
-            print(f"[SB] GET error: {e}")
-        return None
-    
     async def _sb_upsert(row):
         try:
             s = _get_sb_session()
@@ -69,19 +57,17 @@ if USAR_SUPABASE:
 XP_POR_NIVEL = 150
 MONEDAS_SUBIDA = 20
 SALA_RESPAWN = 6
-TIEMPO_RESPAWN = 5
-COMBAT_TURN_TIME = 1
 
 # ==================== CLASES ====================
 CLASES = {
     "guerrero": {"vidaMax": 90, "danioBase": 40, "manaMax": 30, "manaTurno": 10, "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30},
-    "mago": {"vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 20, "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 60},
-    "arquero": {"vidaMax": 40, "danioBase": 10, "manaMax": 40, "manaTurno": 15, "danioEspecial": 10, "ataquesTurno": 2, "costoEspecial": 40},
+    "mago": {"vidaMax": 50, "danioBase": 30, "manaMax": 80, "manaTurno": 25, "danioEspecial": 75, "ataquesTurno": 1, "costoEspecial": 55},
+    "arquero": {"vidaMax": 40, "danioBase": 20, "manaMax": 40, "manaTurno": 15, "danioEspecial": 10, "ataquesTurno": 2, "costoEspecial": 40},
     "curandero": {"vidaMax": 50, "danioBase": 20, "manaMax": 50, "manaTurno": 20, "danioEspecial": 20, "ataquesTurno": 1, "costoEspecial": 30, "curacionEspecial": 20},
-    "nigromante": {"vidaMax": 50, "danioBase": 10, "manaMax": 80, "manaTurno": 20, "danioEspecial": 60, "ataquesTurno": 2, "costoEspecial": 60},
+    "nigromante": {"vidaMax": 50, "danioBase": 20, "manaMax": 80, "manaTurno": 20, "danioEspecial": 60, "ataquesTurno": 2, "costoEspecial": 60},
     "hechicero": {"vidaMax": 50, "danioBase": 30, "manaMax": 70, "manaTurno": 30, "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 70},
     "caballero": {"vidaMax": 70, "danioBase": 50, "manaMax": 40, "manaTurno": 10, "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 40},
-    "cazador": {"vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 10, "danioEspecial": 30, "ataquesTurno": 1, "costoEspecial": 30},
+    "cazador": {"vidaMax": 60, "danioBase": 40, "manaMax": 30, "manaTurno": 10, "danioEspecial": 60, "ataquesTurno": 1, "costoEspecial": 30},
     "asesino": {"vidaMax": 50, "danioBase": 20, "manaMax": 20, "manaTurno": 10, "danioEspecial": 60, "ataquesTurno": 2, "costoEspecial": 20},
     "barbaro": {"vidaMax": 60, "danioBase": 50, "manaMax": 30, "manaTurno": 5, "danioEspecial": 70, "ataquesTurno": 1, "costoEspecial": 30},
 }
@@ -104,7 +90,6 @@ ENEMIGOS = {
     "demonSuperior": {"vidaMax": 150, "danioBase": 60, "ataquesTurno": 1, "tier": "Superior"},
     "leviatan": {"vidaMax": 250, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
     "reyEsqueleto": {"vidaMax": 230, "danioBase": 80, "ataquesTurno": 1, "tier": "Elite"},
-    "reyDemon": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "reyDemonio": {"vidaMax": 250, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "kraken": {"vidaMax": 400, "danioBase": 70, "ataquesTurno": 1, "tier": "Boss"},
     "alpha": {"vidaMax": 500, "danioBase": 90, "ataquesTurno": 1, "tier": "Boss"},
@@ -221,7 +206,7 @@ SALAS = {
 
     15: {"nombre": "Vestigios Enterrados",
          "descripcion": "Ruinas antiguas asoman entre la arena, como recuerdos que se niegan a desaparecer.",
-         "conexiones": {"norte": 16, "sur": 14},
+         "conexiones": {"norte": 16, "sur": 14, "oeste": 21},
          "bioma": "desierto", "cantidad": 1},
 
     16: {"nombre": "Santuario Carmesí",
@@ -258,7 +243,7 @@ SALAS = {
 
     22: {"nombre": "Templo de la Sangre Antigua",
          "descripcion": "Inscripciones vivas recorren las paredes, como si observaran a los intrusos.",
-         "conexiones": {"este": 21, "oeste": 16},
+         "conexiones": {"este": 21, "oeste": 16, "sur": 23},
          "encuentros": [("demonioInferior", 2)]},
 
     23: {"nombre": "Abismo de los Caídos",
@@ -354,7 +339,7 @@ SALAS = {
 
     40: {"nombre": "Caverna de la Bruma Salina",
          "descripcion": "Una cueva húmeda llena de niebla con olor a sal.",
-         "conexiones": {"este": 36},
+         "conexiones": {"este": 36, "oeste": 39},
          "bioma": "mar", "cantidad": 2},
 
     41: {"nombre": "Templo de las Olas Eternas",
@@ -564,7 +549,7 @@ SALAS = {
 
     80:  {"nombre": "Hondonada del Eco Helado",
           "descripcion": "Cada sonido regresa distorsionado, como si algo respondiera.",
-          "conexiones": {"oeste": 79, "norte": 97},
+          "conexiones": {"oeste": 79, "norte": 97, "este": 83},
           "bioma": "nieve", "cantidad": 1},
 
     81:  {"nombre": "Río de Hielo Muerto",
@@ -578,14 +563,14 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     83:  {"nombre": "Campo de Estatuas Heladas",
-          "descripcion": "Figuras humanas congeladas en gestos de terror.",
-          "conexiones": {"sur": 82, "norte": 96, "este": 84, "oeste": 80},
-          "bioma": "nieve", "cantidad": 2},
+           "descripcion": "Figuras humanas congeladas en gestos de terror.",
+           "conexiones": {"sur": 82, "norte": 96, "este": 84, "oeste": 80},
+           "bioma": "nieve", "cantidad": 2},
 
     84:  {"nombre": "Abismo Nevado",
-          "descripcion": "Un vacío oculto bajo la nieve, listo para tragar incautos.",
-          "conexiones": {"sur": 85, "norte": 95, "oeste": 83},
-          "bioma": "nieve", "cantidad": 1},
+           "descripcion": "Un vacío oculto bajo la nieve, listo para tragar incautos.",
+           "conexiones": {"sur": 85, "norte": 95, "oeste": 83},
+           "bioma": "nieve", "cantidad": 1},
 
     85:  {"nombre": "Cumbre del Viento Cortante",
           "descripcion": "El aire corta como cuchillas invisibles.",
@@ -658,14 +643,14 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     99:  {"nombre": "Valle del Sueño Helado",
-          "descripcion": "Un frío que induce un sueño mortal.",
-          "conexiones": {"este": 98, "norte": 100},
-          "bioma": "nieve", "cantidad": 2},
+           "descripcion": "Un frío que induce un sueño mortal.",
+           "conexiones": {"este": 98, "norte": 100, "sur": 108},
+           "bioma": "nieve", "cantidad": 2},
 
     100: {"nombre": "Niebla Blanca",
-          "descripcion": "Una bruma espesa oculta todo peligro.",
-          "conexiones": {"norte": 109},
-          "bioma": "nieve", "cantidad": 1},
+           "descripcion": "Una bruma espesa oculta todo peligro.",
+           "conexiones": {"norte": 109, "sur": 99},
+           "bioma": "nieve", "cantidad": 1},
 
     101: {"nombre": "Cumbre Quebrada",
           "descripcion": "Fragmentos de hielo caen constantemente desde arriba.",
@@ -713,14 +698,14 @@ SALAS = {
           "bioma": "nieve", "cantidad": 1},
 
     110: {"nombre": "Travesía del Frío Mortal",
-          "descripcion": "Cada paso drena lentamente la vida.",
-          "conexiones": {"sur": 109, "norte": 111},
-          "bioma": "nieve", "cantidad": 2},
+           "descripcion": "Cada paso drena lentamente la vida.",
+           "conexiones": {"sur": 109, "norte": 111},
+           "bioma": "nieve", "cantidad": 2},
 
     111: {"nombre": "Tormenta Estática",
-          "descripcion": "El aire está cargado de energía helada.",
-          "conexiones": {"sur": 108, "este": 112},
-          "bioma": "nieve", "cantidad": 2},
+           "descripcion": "El aire está cargado de energía helada.",
+           "conexiones": {"sur": 108, "este": 112, "oeste": 110},
+           "bioma": "nieve", "cantidad": 2},
 
     112: {"nombre": "Cascada Congelada",
           "descripcion": "El agua quedó atrapada en pleno descenso.",
@@ -774,7 +759,7 @@ SALAS = {
 
     122: {"nombre": "Núcleo de Hielo Vivo",
           "descripcion": "Una fuente de energía helada palpita.",
-          "conexiones": {"sur": 115, "norte": 131, "oeste": 123, "este": 121},
+          "conexiones": {"sur": 115, "norte": 132, "oeste": 123, "este": 121},
           "bioma": "nieve", "cantidad": 2},
 
     123: {"nombre": "Paso de los Colosos Helados",
@@ -788,9 +773,9 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     125: {"nombre": "Colina del Último Suspiro",
-          "descripcion": "El frío roba el aliento lentamente.",
-          "conexiones": {"este": 124, "norte": 134},
-          "bioma": "nieve", "cantidad": 1},
+           "descripcion": "El frío roba el aliento lentamente.",
+           "conexiones": {"este": 124, "norte": 134, "sur": 112},
+           "bioma": "nieve", "cantidad": 1},
 
     126: {"nombre": "Catedral de Hielo Roto",
           "descripcion": "Estructuras que recuerdan a un templo destruido.",
@@ -823,9 +808,9 @@ SALAS = {
           "bioma": "nieve", "cantidad": 1},
 
     132: {"nombre": "Cumbre del Olvido",
-          "descripcion": "Quienes llegan aquí olvidan por qué vinieron.",
-          "conexiones": {"sur": 122, "norte": 142, "oeste": 133},
-          "bioma": "nieve", "cantidad": 2},
+           "descripcion": "Quienes llegan aquí olvidan por qué vinieron.",
+           "conexiones": {"sur": 122, "norte": 142, "oeste": 133, "este": 123},
+           "bioma": "nieve", "cantidad": 2},
 
     133: {"nombre": "Rugido Blanco",
           "descripcion": "El viento ensordece cualquier otro sonido.",
@@ -874,7 +859,7 @@ SALAS = {
 
     142: {"nombre": "Altar de Hielo Antiguo",
           "descripcion": "Un lugar olvidado donde el frío es venerado.",
-          "conexiones": {"sur": 131, "oeste": 141, "este": 143},
+          "conexiones": {"sur": 132, "oeste": 141, "este": 143},
           "bioma": "nieve", "cantidad": 2},
 
     143: {"nombre": "Sendero del Frío Infinito",
@@ -903,15 +888,14 @@ SALAS = {
           "bioma": "nieve", "cantidad": 2},
 
     148: {"nombre": "Trono del Invierno",
-          "descripcion": "Un asiento de poder donde el frío gobierna todo.",
-          "conexiones": {"sur": 146, "oeste": 147},
-          "encuentros": [("alpha", 1)]}, 
+           "descripcion": "Un asiento de poder donde el frío gobierna todo. Has derrotado al Alpha!",
+           "conexiones": {"sur": 146, "oeste": 147},
+           "encuentros": [("alpha", 1)],
+           "hospital": True, "tienda": True},
 }           
 # ==================== GLOBALS ====================
 jugadores_conectados = []
 fights_activos = {}
-_lb_cache = []
-_lb_cache_time = 0
 
 # ==================== HELPERS ====================
 def xp_para_subir(n):
@@ -925,6 +909,11 @@ def calcular_danio(base):
 
 def _hash_password(password, salt):
     return hashlib.sha256((password + salt).encode()).hexdigest()
+
+def _sanitize_text(text, max_len=200):
+    """Strip dangerous chars and limit length for chat/commands."""
+    text = re.sub(r'[<>"\'/\\]', '', str(text))
+    return text[:max_len].strip()
 
 # ==================== ACCOUNT SYSTEM (local files) ====================
 USUARIOS = {}
@@ -1020,6 +1009,31 @@ async def guardar_cuenta(usuario, data):
     if USAR_SUPABASE:
         await _sb_upsert(USUARIOS[usuario])
 
+def _safe_clase(player):
+    """Get class name safely, returns 'guerrero' if player or personaje is None."""
+    if player.personaje:
+        return player.personaje.get("nombreClase", "guerrero")
+    return getattr(player, 'clase', 'guerrero')
+
+def _init_personaje(clase):
+    """Initialize character stats from class."""
+    if clase not in CLASES:
+        clase = "guerrero"
+    base = CLASES[clase]
+    return {
+        "nombreClase": clase,
+        "vidaMax": base["vidaMax"],
+        "vidaActual": base["vidaMax"],
+        "manaMax": base["manaMax"],
+        "manaActual": base["manaMax"],
+        "danioBase": base["danioBase"],
+        "manaTurno": base.get("manaTurno", 0),
+        "ataquesTurno": base.get("ataquesTurno", 1),
+        "costoEspecial": base.get("costoEspecial", 0),
+        "danioEspecial": base.get("danioEspecial", base["danioBase"]),
+        "curacionEspecial": base.get("curacionEspecial", 0),
+    }
+
 # ==================== PLAYER CLASS =================###
 class Player:
     _id_counter = 0
@@ -1044,6 +1058,10 @@ class Player:
         self.salas_limpias = set()
         self.lore_mostrado = False
         self.kills = 0
+        self.misiones = {}
+        self.clase = None
+        self._last_cmd_time = 0
+        self._last_chat_time = 0
     
     async def send(self, data):
         try:
@@ -1053,7 +1071,7 @@ class Player:
 
 # ==================== BROADCAST ====================
 async def broadcast_sala(sala_id, msg, exclude=None, from_player=None):
-    for p in jugadores_conectados:
+    for p in list(jugadores_conectados):
         if p.sala_id == sala_id and p != exclude:
             data = {"type": "chat", "scope": "sala", "text": msg}
             if from_player:
@@ -1061,7 +1079,7 @@ async def broadcast_sala(sala_id, msg, exclude=None, from_player=None):
             await p.send(data)
 
 async def broadcast_global(msg, exclude=None, from_player=None):
-    for p in jugadores_conectados:
+    for p in list(jugadores_conectados):
         if p != exclude:
             data = {"type": "chat", "scope": "global", "text": msg}
             if from_player:
@@ -1071,13 +1089,13 @@ async def broadcast_global(msg, exclude=None, from_player=None):
 async def broadcast_ranking():
     ranking = []
     seen = set()
-    for p in jugadores_conectados:
+    for p in list(jugadores_conectados):
         if p.nombre and p.nombre not in seen:
             seen.add(p.nombre)
             clase = p.personaje.get("nombreClase", "?") if p.personaje else "?"
             ranking.append([p.nombre, p.nivel, clase])
     ranking.sort(key=lambda x: x[1], reverse=True)
-    for p in jugadores_conectados:
+    for p in list(jugadores_conectados):
         await p.send({"type": "ranking", "ranking": ranking})
 
 async def broadcast_stats(player):
@@ -1161,7 +1179,7 @@ async def ejecutar_accion_player(player, accion, combate):
                 dmg = int(dmg * 1.3)
                 player.buff_danio = False
             obj["hp"] = max(0, obj["hp"] - dmg)
-            for pj in combate.jugadores:
+            for pj in list(combate.jugadores):
                 await pj.send({"type": "message", "text": f"⚔️ {player.nombre} ataca a {obj['nombre']} por {dmg}"})
     
     elif accion == "2":
@@ -1173,7 +1191,7 @@ async def ejecutar_accion_player(player, accion, combate):
         if p.get("nombreClase") == "curandero":
             cur = p.get("curacionEspecial", 20)
             p["vidaActual"] = min(p["vidaActual"] + cur, p["vidaMax"])
-            for pj in combate.jugadores:
+            for pj in list(combate.jugadores):
                 await pj.send({"type": "message", "text": f"💚 {player.nombre} se cura {cur} HP"})
         else:
             dmg = calcular_danio(p.get("danioEspecial", p["danioBase"]))
@@ -1181,23 +1199,39 @@ async def ejecutar_accion_player(player, accion, combate):
                 dmg = int(dmg * 1.3)
                 player.buff_danio = False
             obj["hp"] = max(0, obj["hp"] - dmg)
-            for pj in combate.jugadores:
+            for pj in list(combate.jugadores):
                 await pj.send({"type": "message", "text": f"✨ {player.nombre} usa habilidad especial en {obj['nombre']} por {dmg}"})
     
     elif accion == "3":
-        for pj in combate.jugadores:
+        for pj in list(combate.jugadores):
             await pj.send({"type": "message", "text": f"💤 {player.nombre} pasa el turno"})
     
     elif accion == "4":
-        await player.send({"type": "message", "text": "No puedes usar items en combate!"})
-        for pj in combate.jugadores:
-            await pj.send({"type": "message", "text": f"💤 {player.nombre} pasa el turno"})
+        # Allow pocion_vida in combat
+        if player.inventario.get("pocion_vida", 0) > 0:
+            heal = min(80, player.personaje["vidaMax"] - player.personaje["vidaActual"])
+            if heal <= 0:
+                await player.send({"type": "message", "text": "Ya tienes la vida al maximo!"})
+            else:
+                player.inventario["pocion_vida"] -= 1
+                player.personaje["vidaActual"] += heal
+                await player.send({"type": "message", "text": f"🧪 Usas Pocion de Vida! +{heal} HP"})
+                for pj in list(combate.jugadores):
+                    await pj.send({"type": "message", "text": f"🧪 {player.nombre} usa Pocion de Vida!"})
+        else:
+            await player.send({"type": "message", "text": "No tienes pociones!"})
+            for pj in list(combate.jugadores):
+                await pj.send({"type": "message", "text": f"💤 {player.nombre} pasa el turno"})
 
 async def loop_combate(combate):
     sala_id = combate.sala_id
     start_time = time.time()
     
     while True:
+        # If no players left, end combat immediately
+        if not combate.jugadores:
+            break
+        
         if not combate.get_enemigos_vivos():
             xp = sum(XP_POR_TIER.get(e.get("tier", "Base"), 10) for e in combate.enemigos)
             oro = xp // 2
@@ -1215,12 +1249,14 @@ async def loop_combate(combate):
                         p.personaje["manaActual"] = p.personaje["manaMax"]
                         await p.send({"type": "level_up", "nivel": p.nivel})
                     await p.send({"type": "combat_end", "victory": True, "xp": xp, "oro": oro})
+                    p.buff_danio = False
                     await broadcast_stats(p)
-                    await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": p.personaje.get("nombreClase", "guerrero"), "nivel": p.nivel, "xp": p.xp, "monedas": p.monedas, "salas_limpias": list(p.salas_limpias)})
+                    await describe_sala(p)
+                    await guardar_cuenta(p.usuario, {"nombre": p.nombre, "clase": _safe_clase(p), "nivel": p.nivel, "xp": p.xp, "monedas": p.monedas, "salas_limpias": list(p.salas_limpias), "inventario": getattr(p, 'inventario', {}), "misiones": getattr(p, 'misiones', {})})
             break
             
         if not combate.get_jugadores_vivos():
-            for p in combate.jugadores:
+            for p in list(combate.jugadores):
                 if not p.muerto:
                     await p.send({"type": "combat_end", "victory": False})
             break
@@ -1244,17 +1280,19 @@ async def loop_combate(combate):
             
             # Enemy attacks
             for e in combate.get_enemigos_vivos():
-                objetivos = combate.get_jugadores_vivos()
-                if objetivos:
-                    obj = random.choice(objetivos)
-                    if obj.personaje:
-                        dmg = calcular_danio(e["danioBase"])
-                        obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - dmg)
-                        for p in combate.jugadores:
-                            await p.send({"type": "message", "text": f"  {e['nombre']} ataca a {obj.nombre} por {dmg}"})
+                ataques = e.get("ataquesTurno", 1)
+                for _ in range(ataques):
+                    objetivos = combate.get_jugadores_vivos()
+                    if objetivos:
+                        obj = random.choice(objetivos)
+                        if obj.personaje:
+                            dmg = calcular_danio(e["danioBase"])
+                            obj.personaje["vidaActual"] = max(0, obj.personaje["vidaActual"] - dmg)
+                            for p in list(combate.jugadores):
+                                await p.send({"type": "message", "text": f"  {e['nombre']} ataca a {obj.nombre} por {dmg}"})
             
             # Send updates
-            for p in combate.jugadores:
+            for p in list(combate.jugadores):
                 if p.personaje and p.personaje["vidaActual"] <= 0:
                     continue
                 await broadcast_stats(p)
@@ -1262,16 +1300,20 @@ async def loop_combate(combate):
                 if p.personaje:
                     pdata = {"hp": p.personaje["vidaActual"], "hpMax": p.personaje["vidaMax"], "mana": p.personaje["manaActual"], "manaMax": p.personaje["manaMax"]}
                 otros = []
-                for o in combate.jugadores:
+                for o in list(combate.jugadores):
                     if o != p and o.personaje:
                         otros.append({"nombre": o.nombre, "hp": o.personaje["vidaActual"], "hpMax": o.personaje["vidaMax"]})
                 await p.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in combate.get_enemigos_vivos()], "turno": combate.turno, "player": pdata, "otros": otros})
             
             # Check for deaths
-            for p in combate.jugadores:
+            for p in list(combate.jugadores):
                 if p.personaje and p.personaje["vidaActual"] <= 0 and not p.muerto:
                     p.muerto = True
-                    for pj in combate.jugadores:
+                    p.buff_danio = False
+                    if p in combate.jugadores:
+                        combate.jugadores.remove(p)
+                    p.combate = None
+                    for pj in list(combate.jugadores):
                         await pj.send({"type": "message", "text": f"💀 {p.nombre} ha caido!"})
                     await p.send({"type": "combat_end", "victory": False})
                     asyncio.create_task(respawn(p))
@@ -1281,16 +1323,16 @@ async def loop_combate(combate):
         
         # Check combat timeout
         if time.time() - start_time > COMBAT_TIMEOUT:
-            for p in combate.jugadores:
+            for p in list(combate.jugadores):
                 await p.send({"type": "message", "text": "\n⏰ Combate cancelado por timeout."})
                 await p.send({"type": "combat_end", "victory": False})
             break
         
-        # Wait a bit before checking again (no sleep, instant)
+        # Wait a bit before checking again
         await asyncio.sleep(0.1)
     
-# End combat
-    for p in combate.jugadores:
+    # End combat - cleanup
+    for p in list(combate.jugadores):
         p.combate = None
     fights_activos.pop(sala_id, None)
 
@@ -1318,7 +1360,7 @@ async def attack(player):
             c.jugadores.append(player)
             player.combate = c
         enemigos = c.enemigos
-        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "joined": is_new})
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "joined": is_new, "turno": c.turno})
     else:
         combate = Combate(player.sala_id, [player])
         combate.cargar_enemigos()
@@ -1327,7 +1369,7 @@ async def attack(player):
         asyncio.create_task(loop_combate(combate))
         enemigos = combate.enemigos
         
-        for p in jugadores_conectados:
+        for p in list(jugadores_conectados):
             if p.sala_id == player.sala_id and p != player and p.personaje and p.personaje["vidaActual"] > 0:
                 await p.send({"type": "combat_join_request", "from": player.nombre})
     
@@ -1335,10 +1377,11 @@ async def attack(player):
     
     # Send immediate combat_update with player stats
     if player.personaje:
+        actual_turno = player.combate.turno if player.combate else 1
         pdata = {"hp": player.personaje.get("vidaActual", 0), "hpMax": player.personaje.get("vidaMax", 100), "mana": player.personaje.get("manaActual", 0), "manaMax": player.personaje.get("manaMax", 50)}
-        await player.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "turno": 1, "player": pdata})
+        await player.send({"type": "combat_update", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "turno": actual_turno, "player": pdata})
     
-    for p in jugadores_conectados:
+    for p in list(jugadores_conectados):
         if p.sala_id == player.sala_id:
             await p.send({"type": "message", "text": f"⚔️ COMBATE! {player.nombre} ataca!"})
 
@@ -1346,6 +1389,7 @@ async def respawn(player):
     await asyncio.sleep(2)
     player.sala_id = SALA_RESPAWN
     player.muerto = False
+    player.buff_danio = False
     if player.personaje:
         player.personaje["vidaActual"] = player.personaje["vidaMax"]
         player.personaje["manaActual"] = player.personaje["manaMax"]
@@ -1385,14 +1429,21 @@ async def comprar(player, item_id):
 async def usar(player, item_id):
     if item_id in player.inventario and player.inventario[item_id] > 0:
         if item_id == "pocion_vida" and player.personaje:
-            player.personaje["vidaActual"] = player.personaje["vidaMax"]
-            player.inventario[item_id] -= 1
-            await player.send({"type": "message", "text": "🧪 Has usado Pocion de Vida!"})
-            await broadcast_stats(player)
+            heal = min(80, player.personaje["vidaMax"] - player.personaje["vidaActual"])
+            if heal <= 0:
+                await player.send({"type": "message", "text": "Ya tienes la vida al maximo!"})
+            else:
+                player.personaje["vidaActual"] += heal
+                player.inventario[item_id] -= 1
+                await player.send({"type": "message", "text": f"🧪 Has usado Pocion de Vida! +{heal} HP"})
+                await broadcast_stats(player)
         elif item_id == "pocion_danio":
-            player.buff_danio = True
-            player.inventario[item_id] -= 1
-            await player.send({"type": "message", "text": "⚗️ +30% dano por este combate!"})
+            if player.buff_danio:
+                await player.send({"type": "message", "text": "Ya tienes buff de dano activo!"})
+            else:
+                player.buff_danio = True
+                player.inventario[item_id] -= 1
+                await player.send({"type": "message", "text": "⚗️ +30% dano por este combate!"})
         elif item_id == "gema_teleporte":
             player.inventario[item_id] -= 1
             player.sala_id = SALA_RESPAWN
@@ -1458,24 +1509,12 @@ async def websocket_handler(request):
                             player.sala_id = result.get("sala_id", 1)
                             player.salas_limpias = set(result.get("salas_limpias", []))
                             player.inventario = result.get("inventario", {})
+                            player.misiones = result.get("misiones", {})
                         else:
                             await player.send({"type": "login_error", "text": "Usuario o contrasena incorrectos"})
                             continue
                         
-                        base = CLASES[clase]
-                        player.personaje = {
-                            "nombreClase": clase,
-                            "vidaMax": base["vidaMax"],
-                            "vidaActual": base["vidaMax"],
-                            "manaMax": base["manaMax"],
-                            "manaActual": base["manaMax"],
-                            "danioBase": base["danioBase"],
-                            "manaTurno": base.get("manaTurno", 0),
-                            "ataquesTurno": base.get("ataquesTurno", 1),
-                            "costoEspecial": base.get("costoEspecial", 0),
-                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
-                            "curacionEspecial": base.get("curacionEspecial", 0),
-                        }
+                        player.personaje = _init_personaje(clase)
                         
                         await player.send({"type": "login_ok"})
                         await broadcast_stats(player)
@@ -1501,26 +1540,17 @@ async def websocket_handler(request):
                         player.nombre = nombre
                         player.clase = clase
                         
-                        base = CLASES[clase]
-                        player.personaje = {
-                            "nombreClase": clase,
-                            "vidaMax": base["vidaMax"],
-                            "vidaActual": base["vidaMax"],
-                            "manaMax": base["manaMax"],
-                            "manaActual": base["manaMax"],
-                            "danioBase": base["danioBase"],
-                            "manaTurno": base.get("manaTurno", 0),
-                            "ataquesTurno": base.get("ataquesTurno", 1),
-                            "costoEspecial": base.get("costoEspecial", 0),
-                            "danioEspecial": base.get("danioEspecial", base["danioBase"]),
-                            "curacionEspecial": base.get("curacionEspecial", 0),
-                        }
+                        player.personaje = _init_personaje(clase)
                         
                         await player.send({"type": "register_ok"})
                         await broadcast_stats(player)
                         await broadcast_ranking()
                     
                     elif data.get("type") == "command":
+                        now = time.time()
+                        if now - player._last_cmd_time < 0.3:
+                            continue
+                        player._last_cmd_time = now
                         await process_command(player, data.get("cmd", ""))
                     
                     elif data.get("type") == "action":
@@ -1530,7 +1560,11 @@ async def websocket_handler(request):
                                 player.combate.acciones[player.id] = action
                     
                     elif data.get("type") == "chat":
-                        msg_text = data.get("message", "").strip()
+                        now = time.time()
+                        if now - player._last_chat_time < 1.0:
+                            continue
+                        player._last_chat_time = now
+                        msg_text = _sanitize_text(data.get("message", ""))
                         if msg_text and player.nombre:
                             scope = data.get("scope", "sala")
                             if scope == "sala":
@@ -1558,7 +1592,7 @@ async def websocket_handler(request):
         if player.usuario and player.personaje:
             await guardar_cuenta(player.usuario, {
                 "nombre": player.nombre,
-                "clase": player.personaje.get("nombreClase", "guerrero"),
+                "clase": _safe_clase(player),
                 "nivel": player.nivel,
                 "xp": player.xp,
                 "monedas": player.monedas,
@@ -1571,7 +1605,7 @@ async def websocket_handler(request):
     return ws
 
 async def process_command(player, cmd):
-    cmd = cmd.strip().lower()
+    cmd = _sanitize_text(cmd.strip().lower(), 100)
     if not cmd:
         return
     
@@ -1600,10 +1634,18 @@ async def process_command(player, cmd):
     elif cmd == "stats":
         await broadcast_stats(player)
     elif cmd.startswith("decir "):
+        now = time.time()
+        if now - player._last_chat_time < 1.0:
+            return
+        player._last_chat_time = now
         msg = cmd[6:]
         await broadcast_sala(player.sala_id, msg, exclude=player, from_player=player.nombre)
         await player.send({"type": "chat", "scope": "sala", "from": player.nombre, "text": msg})
     elif cmd.startswith("g "):
+        now = time.time()
+        if now - player._last_chat_time < 1.0:
+            return
+        player._last_chat_time = now
         msg = cmd[2:]
         await broadcast_global(msg, exclude=player, from_player=player.nombre)
         await player.send({"type": "chat", "scope": "global", "from": player.nombre, "text": msg})
@@ -1633,6 +1675,8 @@ async def move(player, direction):
     if player.muerto:
         await player.send({"type": "message", "text": "Estas muerto."})
         return
+    if not player.personaje:
+        return
     
     sala = SALAS.get(player.sala_id)
     if not sala:
@@ -1652,7 +1696,7 @@ async def move(player, direction):
     player.sala_id = nueva
     await broadcast_sala(player.sala_id, f"🚪 {player.nombre} ha llegado.", exclude=player)
     await describe_sala(player)
-    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": player.personaje.get("nombreClase", "guerrero"), "nivel": player.nivel, "xp": player.xp, "monedas": player.monedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias)})
+    await guardar_cuenta(player.usuario, {"nombre": player.nombre, "clase": _safe_clase(player), "nivel": player.nivel, "xp": player.xp, "monedas": player.monedas, "sala_id": player.sala_id, "salas_limpias": list(player.salas_limpias), "inventario": getattr(player, 'inventario', {}), "misiones": getattr(player, 'misiones', {})})
 
 async def describe_sala(player):
     sala = SALAS.get(player.sala_id, {})
@@ -1664,7 +1708,7 @@ async def describe_sala(player):
     
     tiene_enemigos = player.sala_id not in player.salas_limpias and ("bioma" in sala or sala.get("encuentros"))
     
-    others = [p.nombre for p in jugadores_conectados if p.sala_id == player.sala_id and p != player and p.nombre]
+    others = [p.nombre for p in list(jugadores_conectados) if p.sala_id == player.sala_id and p != player and p.nombre]
     others_str = f" 👥 Jugadores: {', '.join(others)}" if others else ""
     
     await player.send({
@@ -1675,6 +1719,7 @@ async def describe_sala(player):
         "conexiones": sala.get("conexiones", {}),
         "hospital": sala.get("hospital", False),
         "tienda": sala.get("tienda", False),
+        "tesoro": sala.get("tesoro", False),
         "enemigos": tiene_enemigos,
         "others": others_str,
     })
