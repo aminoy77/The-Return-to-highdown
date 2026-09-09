@@ -437,6 +437,7 @@ async function connectWs(onOpen){
     if(!connected && wsId === myId){
       connectRetries++;
       if(connectRetries >= MAX_RETRIES){
+        isReconnecting = false;
         document.getElementById('loading').querySelector('h2').textContent = 'Servidor caído. Refresca la pagina.';
         return;
       }
@@ -501,6 +502,7 @@ function handleMessage(data){
     }
   }
   else if(data.type === 'login_error'){
+    isReconnecting = false;
     showLoginError(data.text || 'Error de login');
   }
   else if(data.type === 'message'){
@@ -522,6 +524,7 @@ function handleMessage(data){
   else if(data.type === 'combat_join_request'){
     document.getElementById('combat-join-text').textContent = data.from + ' necesita ayuda en combate!';
     openModal('combat-join-modal');
+    setTimeout(() => closeModal('combat-join-modal'), 10000);
   }
   else if(data.type === 'combat_end'){
     if(data.victory){

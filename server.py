@@ -1165,6 +1165,9 @@ async def ejecutar_accion_player(player, accion, combate):
     p = player.personaje
     if not p:
         return
+    # Skip action if player died this turn
+    if p.get("vidaActual", 0) <= 0:
+        return
     
     if accion == "1":
         num = ataques_por_turno(p.get("ataquesTurno", 1))
@@ -1324,6 +1327,7 @@ async def loop_combate(combate):
         # Check combat timeout
         if time.time() - start_time > COMBAT_TIMEOUT:
             for p in list(combate.jugadores):
+                p.buff_danio = False
                 await p.send({"type": "message", "text": "\n⏰ Combate cancelado por timeout."})
                 await p.send({"type": "combat_end", "victory": False})
             break
@@ -1355,12 +1359,16 @@ async def attack(player):
     
     if player.sala_id in fights_activos:
         c = fights_activos[player.sala_id]
+        # If fight already over, don't let player join
+        if not c.get_enemigos_vivos():
+            await player.send({"type": "combat_end", "victory": True, "xp": 0, "oro": 0})
+            return
         is_new = player not in c.jugadores
         if is_new:
             c.jugadores.append(player)
             player.combate = c
         enemigos = c.enemigos
-        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos], "joined": is_new, "turno": c.turno})
+        await player.send({"type": "combat_start", "enemigos": [{"nombre": e["nombre"], "hp": e["hp"], "hpMax": e["vidaMax"]} for e in enemigos if e["hp"] > 0], "joined": is_new, "turno": c.turno, "player": {"hp": player.personaje.get("vidaActual", 0), "hpMax": player.personaje.get("vidaMax", 100), "mana": player.personaje.get("manaActual", 0), "manaMax": player.personaje.get("manaMax", 50)}})
     else:
         combate = Combate(player.sala_id, [player])
         combate.cargar_enemigos()
@@ -1445,7 +1453,9 @@ async def usar(player, item_id):
                 player.inventario[item_id] -= 1
                 await player.send({"type": "message", "text": "⚗️ +30% dano por este combate!"})
         elif item_id == "gema_teleporte":
+            old_room = player.sala_id
             player.inventario[item_id] -= 1
+            await broadcast_sala(old_room, f"✨ {player.nombre} se ha teleportado!", exclude=player)
             player.sala_id = SALA_RESPAWN
             await player.send({"type": "message", "text": "💎 Te has teleportado al oasis!"})
             await describe_sala(player)
@@ -1497,6 +1507,20 @@ async def websocket_handler(request):
                         
                         result = await verificar_login(usuario, password)
                         if result:
+                            # Disconnect existing session for this user
+                            for existing in list(jugadores_conectados):
+                                if existing.usuario == usuario and existing != player:
+                                    existing.usuario = None
+                                    if existing.combate:
+                                        c = existing.combate
+                                        if existing in c.jugadores:
+                                            c.jugadores.remove(existing)
+                                        existing.combate = None
+                                    try:
+                                        await existing.ws.close(code=4001, message=b'Other session logged in')
+                                    except Exception:
+                                        pass
+                                    break
                             player.usuario = usuario
                             player.nombre = result.get("nombre", usuario)
                             clase = result.get("clase", "guerrero")
@@ -1519,6 +1543,7 @@ async def websocket_handler(request):
                         await player.send({"type": "login_ok"})
                         await broadcast_stats(player)
                         await broadcast_ranking()
+                        await describe_sala(player)
                     
                     elif data.get("type") == "register":
                         usuario = ''.join(c for c in data.get("usuario", "") if c.isalnum() or c in '._-')[:30]
@@ -1545,6 +1570,7 @@ async def websocket_handler(request):
                         await player.send({"type": "register_ok"})
                         await broadcast_stats(player)
                         await broadcast_ranking()
+                        await describe_sala(player)
                     
                     elif data.get("type") == "command":
                         now = time.time()
@@ -1607,6 +1633,10 @@ async def websocket_handler(request):
 async def process_command(player, cmd):
     cmd = _sanitize_text(cmd.strip().lower(), 100)
     if not cmd:
+        return
+    
+    if player.muerto:
+        await player.send({"type": "message", "text": "Estas muerto. Espera a respawnear."})
         return
     
     if player.combate:
