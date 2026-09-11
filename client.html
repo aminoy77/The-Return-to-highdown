@@ -165,17 +165,17 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
     
     <!-- Login Section -->
     <form id="login-form" onsubmit="return false">
-      <input type="text" id="username" placeholder="Usuario">
-      <input type="password" id="password" placeholder="Contrasena">
-      <button onclick="login()">🎮 INICIAR SESION</button>
-      <button class="secondary" onclick="showRegister()">➕ CREAR CUENTA</button>
+      <input type="text" id="username" placeholder="Usuario" onkeydown="if(event.key==='Enter') login()">
+      <input type="password" id="password" placeholder="Contrasena" onkeydown="if(event.key==='Enter') login()">
+      <button type="button" onclick="login()">🎮 INICIAR SESION</button>
+      <button type="button" class="secondary" onclick="showRegister()">➕ CREAR CUENTA</button>
     </form>
     
     <!-- Register Section (hidden by default) -->
     <form id="register-form" style="display:none" onsubmit="return false">
-      <input type="text" id="reg-username" placeholder="Usuario">
-      <input type="password" id="reg-password" placeholder="Contrasena">
-      <input type="text" id="char-name" placeholder="Nombre de personaje">
+      <input type="text" id="reg-username" placeholder="Usuario" onkeydown="if(event.key==='Enter') doRegister()">
+      <input type="password" id="reg-password" placeholder="Contrasena" onkeydown="if(event.key==='Enter') doRegister()">
+      <input type="text" id="char-name" placeholder="Nombre de personaje" onkeydown="if(event.key==='Enter') doRegister()">
       <select id="char-class">
         <option value="guerrero">⚔️ Guerrero - Alta vida</option>
         <option value="mago">🔮 Mago - Magia poderosa</option>
@@ -188,8 +188,8 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
         <option value="asesino">🗡️ Asesino - Criticos letales</option>
         <option value="barbaro">🔥 Barbaro - Dano brutal</option>
       </select>
-      <button onclick="doRegister()">➕ CREAR CUENTA</button>
-      <button class="secondary" onclick="showLogin()">YA Tengo cuenta</button>
+      <button type="button" onclick="doRegister()">➕ CREAR CUENTA</button>
+      <button type="button" class="secondary" onclick="showLogin()">YA Tengo cuenta</button>
     </form>
     
     <div id="login-error"></div>
@@ -357,10 +357,13 @@ let ws = null;
 let GAME_URL = window.location.origin;
 let currentChat = 'sala';
 let inCombat = false;
+let loggedIn = false;
 let serverAwake = false;
 let chatCooldown = false;
 let savedUser = null;
 let savedPass = null;
+let combatEndTimer = null;
+let combatJoinTimer = null;
 
 const MAX_LOG_ENTRIES = 200;
 const MAX_CHAT_ENTRIES = 50;
@@ -491,6 +494,7 @@ async function connectWs(onOpen){
 
 function handleMessage(data){
   if(data.type === 'login_ok' || data.type === 'register_ok'){
+    loggedIn = true;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('loading').style.display = 'none';
@@ -502,6 +506,7 @@ function handleMessage(data){
     }
   }
   else if(data.type === 'login_error'){
+    loggedIn = false;
     isReconnecting = false;
     showLoginError(data.text || 'Error de login');
   }
@@ -515,6 +520,7 @@ function handleMessage(data){
     updateRoom(data);
   }
   else if(data.type === 'combat_start'){
+    if(combatEndTimer){clearTimeout(combatEndTimer);combatEndTimer=null;}
     showCombat(data.enemigos, data.player || null);
     if(data.turno) updateTurn(data.turno);
     if(data.joined){
@@ -524,7 +530,8 @@ function handleMessage(data){
   else if(data.type === 'combat_join_request'){
     document.getElementById('combat-join-text').textContent = data.from + ' necesita ayuda en combate!';
     openModal('combat-join-modal');
-    setTimeout(() => closeModal('combat-join-modal'), 10000);
+    if(combatJoinTimer) clearTimeout(combatJoinTimer);
+    combatJoinTimer = setTimeout(() => closeModal('combat-join-modal'), 10000);
   }
   else if(data.type === 'combat_end'){
     if(data.victory){
@@ -534,7 +541,7 @@ function handleMessage(data){
       // Disable combat buttons on death
       document.querySelectorAll('.combat-btn').forEach(btn => btn.disabled = true);
     }
-    setTimeout(() => hideCombat(), 2000);
+    combatEndTimer = setTimeout(() => hideCombat(), 2000);
   }
   else if(data.type === 'combat_update'){
     renderEnemies(data.enemigos);
@@ -615,6 +622,7 @@ let playerStats = { hp: 0, hpMax: 100, mana: 0, manaMax: 50 };
 function showCombat(enemies, player){
   inCombat = true;
   document.getElementById('combat-overlay').classList.add('active');
+  document.querySelectorAll('.combat-btn').forEach(btn => btn.disabled = false);
   
   if(player){
     playerStats = player;
@@ -629,10 +637,10 @@ function updatePlayerStats(){
   try {
     document.getElementById('combat-hp').textContent = playerStats.hp;
     document.getElementById('combat-hp-max').textContent = playerStats.hpMax;
-    document.getElementById('combat-hp-bar').style.width = (playerStats.hp / playerStats.hpMax * 100) + '%';
+    document.getElementById('combat-hp-bar').style.width = (playerStats.hp / (playerStats.hpMax || 1) * 100) + '%';
     document.getElementById('combat-mana').textContent = playerStats.mana;
     document.getElementById('combat-mana-max').textContent = playerStats.manaMax;
-    document.getElementById('combat-mana-bar').style.width = (playerStats.mana / playerStats.manaMax * 100) + '%';
+    document.getElementById('combat-mana-bar').style.width = (playerStats.mana / (playerStats.manaMax || 1) * 100) + '%';
   } catch(e) {
     console.error('Error updating player stats:', e);
   }
@@ -840,8 +848,10 @@ async function init(){
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  // Ignore shortcuts when typing in input fields
+  // Ignore shortcuts when typing in input fields or modals are open
   if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if(document.querySelector('.modal.active')) return;
+  if(!loggedIn) return;
   
   if(inCombat){
     if(e.key === '1') sendAction('1');
