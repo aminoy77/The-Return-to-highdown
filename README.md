@@ -2,7 +2,7 @@
 # 🗡️ The Return to Highdown
 ### Un MUD Multiplayer en Tiempo Real
 
-[![Jugar Ahora](https://img.shields.io/badge/JUGAR%20AHORA-En%20Render-brightgreen?style=for-the-badge)](https://the-return-to-highdown.onrender.com)
+[![Jugar Ahora](https://img.shields.io/badge/JUGAR%20AHORA-En%20Vercel-brightgreen?style=for-the-badge)](https://the-return-to-highdown.vercel.app)
 [![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)](https://python.org)
 [![WebSocket](https://img.shields.io/badge/Real--Time-WebSocket-orange?style=for-the-badge)](https://developer.mozilla.org/es/docs/Web/API/WebSocket)
 
@@ -19,7 +19,7 @@ Explora tres reinos mortales: el **Desierto Ardiente**, el **Mar Tormentoso** y 
 ## 🚀 Cómo Jugar
 
 ### Opción 1: Navegador Web (Recomendado)
-👉 **[Haz clic aquí para jugar](https://the-return-to-highdown.onrender.com)**
+👉 **[Haz clic aquí para jugar](https://the-return-to-highdown.vercel.app)**
 
 - Interfaz gráfica con chat en tiempo real
 - Inventario visual
@@ -135,9 +135,9 @@ python client.py the-return-to-highdown.onrender.com
 
 - **Backend:** Python 3.11 + asyncio
 - **Web:** aiohttp (HTTP) + websockets (WS)
-- **Frontend:** HTML5 + CSS3 + JavaScript vanilla
+- **Frontend:** React 18 + Vite (`frontend/`)
 - **Base de datos:** Supabase (PostgreSQL) o JSON local
-- **Deploy:** Render
+- **Deploy:** Vercel (frontend) + Render (backend)
 
 ---
 
@@ -166,7 +166,7 @@ LOS AUTORES NO SERÁN RESPONSABLES DE NINGÚN DAÑO O PROBLEMA DERIVADO DE SU US
 
 ---
 
-**🎮 [Jugar Ahora - The Return to Highdown](https://the-return-to-highdown.onrender.com)**
+**🎮 [Jugar Ahora - The Return to Highdown](https://the-return-to-highdown.vercel.app)**
 
 *¡Que los dioses antiguos te acompañen en tu viaje!*
 

@@ -1553,11 +1553,15 @@ async def api_health(request):
 async def wake(request):
     return web.json_response({"status": "awake", "players": len(jugadores_conectados)})
 
-# ==================== HTTP HANDLER (client web) ====================
+# ==================== HTTP HANDLER (solo API: la UI vive en Vercel) ====================
 async def index(request):
-    with open(os.path.join(os.path.dirname(__file__), "client.html")) as f:
-        html = f.read()
-    return web.Response(text=html, content_type="text/html")
+    return web.json_response({
+        "ok": True,
+        "game": "The Return to Highdown",
+        "frontend": "https://the-return-to-highdown.vercel.app",
+        "ws": "/ws",
+        "health": "/api/health",
+    })
 
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
