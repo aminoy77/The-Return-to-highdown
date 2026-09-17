@@ -160,17 +160,20 @@ SALAS = {
     1:  {"nombre": "North Mass",
          "descripcion": "Arena caliente bajo tus pies. El sol abrasa sin piedad.",
          "conexiones": {"norte": 2, "este": 13, "sur": 6},
-         "bioma": "desierto", "cantidad": 1},
+         # Primer combate real: zombie fijo (80 HP, 10 dmg) en vez de pool
+         # aleatorio. Todas las clases lo matan antes de que las mate él.
+         "encuentros": [("zombie", 1)]},
 
     2:  {"nombre": "Dunas del Norte",
          "descripcion": "Dunas interminables. Algo se mueve entre la arena.",
          "conexiones": {"sur": 1, "norte": 3},
-         "bioma": "desierto", "cantidad": 2},
+         # Nivel 1: un solo enemigo. Dos aleatorios matan a cualquier tela.
+         "bioma": "desierto", "cantidad": 1},
 
     3:  {"nombre": "Ruinas del Desierto",
          "descripcion": "Columnas rotas a medias enterradas. Silencio inquietante.",
          "conexiones": {"oeste": 4, "norte": 5, "este": 16},
-         "bioma": "desierto", "cantidad": 2},
+         "bioma": "desierto", "cantidad": 1},
 
     4:  {"nombre": "Ciudad abrasada",
          "descripcion": "Una ciudad abrasada se alza entre cenizas eternas, donde las calles aún respiran calor y las sombras tiemblan como brasas vivas.",
@@ -180,7 +183,9 @@ SALAS = {
     5:  {"nombre": "Valle muerto",
          "descripcion": "Centenares de cuerpos muertos, esqueletos más grandes que buques navales.",
          "conexiones": {"sur": 3},
-         "bioma": "desierto", "cantidad": 2},
+         # Un slime entre los cadáveres: esponja de 90 HP que pega 10/turno.
+         # Una pareja aquí hace 2 focos de daño y entierra a los magos.
+         "encuentros": [("slime", 1)]},
 
     6:  {"nombre": "Sala del Viento Susurrante",
          "descripcion": "Columnas de arena giran lentamente. Un lugar seguro para descansar.",
@@ -970,7 +975,10 @@ async def crear_cuenta(usuario, password, nombre, clase):
         "nivel": 1,
         "xp": 0,
         "monedas": 50,
-        "sala_id": 1,
+        # Curva inicial: se arranca en el tutorial (0.1-0.4), no en el desierto.
+        # El pool aleatorio del desierto puede soltar un esqueleto (25 dmg) que
+        # mata a un mago (50 HP) antes de que aprenda a jugar.
+        "sala_id": 0.1,
         "salas_limpias": [],
         "inventario": {},
         "misiones": {}
@@ -1067,7 +1075,7 @@ class Player:
         self.nombre = None
         self.usuario = None
         self.personaje = None
-        self.sala_id = 1
+        self.sala_id = 0.1  # arranque en tutorial (ver crear_cuenta)
         self.combate = None
         self.nivel = 1
         self.xp = 0

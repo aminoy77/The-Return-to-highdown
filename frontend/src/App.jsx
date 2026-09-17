@@ -37,15 +37,15 @@ function Login({ g }) {
   return (
     <div className="login-wrap">
       <form className="login-box" onSubmit={submit}>
-        <p className="kicker">Un MUD multiplayer en tiempo real</p>
-        <h1>⚔️ The Return to Highdown</h1>
+        <p className="kicker">mud multiplayer en tiempo real · v5.2</p>
+        <h1>THE RETURN TO HIGHDOWN</h1>
         <BackendPill backend={g.backend} onRetry={g.recheck} />
         {mode === "login" ? (
           <>
             <input value={usuario} onChange={(e) => setUsuario(e.target.value)} placeholder="Usuario" autoComplete="username" />
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Contraseña" autoComplete="current-password" />
-            <button className="btn primary" type="submit">🎮 Iniciar sesión</button>
-            <button className="btn ghost" type="button" onClick={() => setMode("register")}>➕ Crear cuenta</button>
+            <button className="btn primary" type="submit">Conectar</button>
+            <button className="btn ghost" type="button" onClick={() => setMode("register")}>Nuevo personaje</button>
           </>
         ) : (
           <>
@@ -57,7 +57,7 @@ function Login({ g }) {
                 <option key={v} value={v}>{label}</option>
               ))}
             </select>
-            <button className="btn primary" type="submit">➕ Crear cuenta</button>
+            <button className="btn primary" type="submit">Crear personaje</button>
             <button className="btn ghost" type="button" onClick={() => setMode("login")}>Ya tengo cuenta</button>
           </>
         )}
@@ -190,7 +190,7 @@ function Combat({ g }) {
   return (
     <div className="overlay">
       <div className="combat">
-        <h2>⚔️ Combate</h2>
+        <h2>COMBATE</h2>
         <p className="turn">Turno {c.turno}</p>
         {c.player && (
           <div className="combat-self">
@@ -243,7 +243,7 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>⚔️ The Return to Highdown</h1>
+        <h1>THE RETURN TO HIGHDOWN</h1>
         <div className="hud">
           <span className="chip">⭐ Nv{s?.nivel || 1}</span>
           <span className="chip hp">❤️ {s?.hp ?? 0}/{s?.hpMax ?? 1}</span>
