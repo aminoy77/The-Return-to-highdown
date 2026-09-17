@@ -24,6 +24,31 @@ PORT = int(os.environ.get("PORT", 8080))
 SAVES_DIR = "saves"
 os.makedirs(SAVES_DIR, exist_ok=True)
 
+# CORS: frontend Vercel separado. Sin esto fetch cross-origin bloqueado.
+# FRONTEND_URL=https://tu-front.vercel.app en Render. Local: http://localhost:XXXX.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+ALLOWED_ORIGINS = {"http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5500"}
+if FRONTEND_URL:
+    ALLOWED_ORIGINS.add(FRONTEND_URL)
+
+@web.middleware
+async def cors_middleware(request, handler):
+    origin = request.headers.get("Origin", "")
+    # Preflight navegador: responde sin pasar al handler
+    if request.method == "OPTIONS":
+        resp = web.Response(status=204)
+    else:
+        try:
+            resp = await handler(request)
+        except web.HTTPException as ex:
+            resp = ex
+    # Whitelist exacta + previews *.vercel.app. Nunca "*".
+    if origin in ALLOWED_ORIGINS or (origin.endswith(".vercel.app") and origin.startswith("https://")):
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return resp
+
 # Supabase config
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
@@ -1521,6 +1546,10 @@ async def mochila(player):
 async def health_check(request):
     return web.json_response({"status": "ok", "players": len(jugadores_conectados)})
 
+async def api_health(request):
+    # Endpoint prueba para frontend Vercel: GET /api/health
+    return web.json_response({"status": "ok", "message": "Conectado al backend en Render"})
+
 async def wake(request):
     return web.json_response({"status": "awake", "players": len(jugadores_conectados)})
 
@@ -1808,9 +1837,13 @@ async def describe_sala(player):
     })
 
 # ==================== APP ====================
-app = web.Application()
+# middlewares=[cors_middleware]: añade cabeceras CORS a cada respuesta HTTP.
+# WS (/ws) no necesita CORS (protocolo distinto), funciona cross-origin solo.
+app = web.Application(middlewares=[cors_middleware])
 app.router.add_get('/', index)
 app.router.add_get('/health', health_check)
+app.router.add_options('/{tail:.*}', health_check)
+app.router.add_get('/api/health', api_health)
 app.router.add_get('/wake', wake)
 app.router.add_get('/ws', websocket_handler)
 

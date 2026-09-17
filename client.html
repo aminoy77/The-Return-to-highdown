@@ -354,7 +354,14 @@ header h1{color:var(--accent);font-size:18px;font-weight:bold}
 
 <script>
 let ws = null;
-let GAME_URL = window.location.origin;
+// Split Vercel/Render: edita esta constante con tu backend Render.
+// Local (localhost) usa mismo origen automáticamente; prod Vercel usa BACKEND_URL.
+const BACKEND_URL = "https://the-return-to-highdown.onrender.com";
+const _backendParam = new URLSearchParams(location.search).get("backend");
+if (_backendParam) localStorage.setItem("backend_url", _backendParam.replace(/\/$/, ""));
+const _isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+let GAME_URL = _backendParam || localStorage.getItem("backend_url") || (_isLocal ? window.location.origin : BACKEND_URL);
+GAME_URL = GAME_URL.replace(/\/$/, "");
 let currentChat = 'sala';
 let inCombat = false;
 let loggedIn = false;
@@ -835,11 +842,18 @@ function showLoginError(msg){
   setTimeout(()=>el.style.display = 'none', 3000);
 }
 
-// Init
+// Init: verifica backend vía /api/health (prueba CORS+conectividad) y luego abre WS
 async function init(){
-  document.getElementById('loading').querySelector('h2').textContent = 'Conectando...';
-  
-  // Always try to connect via WebSocket
+  const loadingH2 = document.getElementById('loading').querySelector('h2');
+  loadingH2.textContent = 'Conectando a ' + GAME_URL + '...';
+  try {
+    const r = await fetch(GAME_URL + '/api/health');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    console.log('[health]', await r.json());
+  } catch(e) {
+    loadingH2.textContent = 'No se pudo conectar al backend (' + GAME_URL + '). Reintentando WS...';
+  }
+  // WS cross-origin funciona sin CORS; solo HTTP necesita el middleware
   connectWs(() => {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';

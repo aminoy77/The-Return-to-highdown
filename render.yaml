@@ -1,0 +1,11 @@
+# Render: solo backend. Frontend vive en Vercel (vercel.json).
+services:
+  - type: web
+    name: highdown-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      # Cambia por tu URL Vercel real. Permite fetch cross-origin.
+      - key: FRONTEND_URL
+        value: https://TU-FRONT.vercel.app
